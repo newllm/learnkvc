@@ -162,12 +162,16 @@ bash macos/llama-cpp/run.sh \
 
 内存账：权重 4.36 GB + 32K KV（56 KiB/token ≈ 1.75 GiB）+ 运行时约 1–2 GB，16 GB 机器能放下，但别同时开太多大应用。
 
+> 注意：Qwen2.5-Coder-7B 的代码能力好，但**不等价于 Agent 工具调用好**。实测在 Ollama 里它经常把工具调用输出成裸 JSON（不带 `<tool_call>` 标签），OpenCode/Cline 拿不到 `tool_calls`，表现为“只聊天不改文件”。如果遇到这种情况，Agent 场景换 `qwen3.5:4b`（Ollama，256K 原生、tools/thinking、MLX）或云端模型；Qwen2.5-Coder 更适合 FIM 补全和直接问答。
+
 ### 2. 安装并配置 OpenCode
 
 ```bash
 curl -fsSL https://opencode.ai/install | bash
 opencode --version
 ```
+
+> 如果你的机器上已经装了 **OpenCode Desktop 2.x**（`/Applications/OpenCode.app`），不要再装它的 v1 CLI 去共用同一个数据库：v1/v2 的 `~/.local/share/opencode/opencode.db` schema 不同，会报 `Database is not empty and has no session table`，Ollama 侧表现为 `could not read OpenCode configuration: exit status 1`。用 Desktop 自带的 `Contents/Resources/opencode-cli`，或按 [`../ollama/README.md`](../ollama/README.md) 的「OpenCode Desktop 2.x 与 CLI 1.x 共库冲突」处理。
 
 把本目录的 [`opencode.jsonc`](opencode.jsonc) 复制到项目根（只对当前项目生效）或全局配置目录：
 
@@ -215,7 +219,7 @@ cp macos/llama-cpp/opencode.jsonc ~/.config/opencode/opencode.jsonc
 
 ### 64K 上下文
 
-OpenCode 这类 Agent 建议 64K 以上上下文，但这台 16 GB 机器上要分两条路看：
+OpenCode 本身没有全局“默认 64K”的硬编码：不在 catalog 里的模型它会按 fallback 假设 200K context / 32K output，实际以 provider 返回或你在 `limit.context` 里写的值为准（见 [OpenCode models 文档](https://opencode.ai/docs/models/)）。**64K 来自 Ollama 的 OpenCode 接入建议**（“requires a context length of 64k or higher”，见 [Ollama OpenCode 文档](https://docs.ollama.com/integrations/opencode)）。在这台 16 GB 机器上要分两条路看：
 
 - **Ollama 路线**：Ollama 会把 `num_ctx` 限制在模型训练长度内（源码 `llm/server.go` 里 `opts.NumCtx > trainCtx` 时直接压回，并打 `requested context size too large for model` 警告）。`qwen2.5-coder:7b` 是 32K，所以 `OLLAMA_CONTEXT_LENGTH=65536` 实际还是 32K。要用 Ollama 跑 64K，得换原生 64K+ 的模型（如 `llama3.1:8b` 的 128K，配合 `OLLAMA_KV_CACHE_TYPE=q8_0`），但它的代码能力不如 Qwen Coder。
 - **llama.cpp 路线**：可以显式 `-c 65536`，并用 YaRN 把 32K 的 Qwen2.5-Coder-7B 外推到 64K：
@@ -233,6 +237,7 @@ OpenCode 这类 Agent 建议 64K 以上上下文，但这台 16 GB 机器上要�
 
   用了 64K 就把 OpenCode 配置里的 `limit.context` 改成 `65536`，并确认 `curl http://127.0.0.1:9931/props` 里的 `n_ctx` 也是 65536。
 
+- **Qwen3.5 的 KV 比同尺寸稠密模型小**：它是混合注意力（32 层里只有 8 层 full attention，其余 linear attention），full attention 部分约 **32 KiB/token**，64K 只有约 2 GiB。所以 `qwen3.5:4b` 跑 64K 很轻松；`qwen3.5:9b`（权重 6.6–7.6 GB）跑 64K 会接近 10.7 GiB 的 Metal 预算，需要实测。
 - **结论**：16 GB 上 64K 是“能跑但别指望和原生 128K 模型一样好用”；认真做仓库级 Agent，建议更大内存的机器或云端模型。
 
 ### 3. 在项目里使用

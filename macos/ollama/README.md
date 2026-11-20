@@ -352,6 +352,106 @@ ollama launch opencode --model qwen2.5-coder:7b
 - 16 GB 上想用 Ollama 跑 64K，得换原生 64K+ 的模型（如 `llama3.1:8b` 的 128K，配合 `OLLAMA_KV_CACHE_TYPE=q8_0`），但代码能力不如 Qwen Coder；想 64K + Qwen Coder 只能用 llama.cpp 的 YaRN 外推，见 [`../llama-cpp/README.md`](../llama-cpp/README.md#64k-上下文)。现实一点的组合仍是本地 32K + OpenCode 自动压缩，长任务用云端模型。
 - 本地模型写代码的选型和 OpenCode 的详细配置见 [`../llama-cpp/README.md`](../llama-cpp/README.md#对接-opencode本地代码-agent)。
 
+## 对接 Cline（VS Code 编程 Agent）
+
+[Cline](https://docs.cline.bot) 内置 Ollama 提供方，是本地代码 Agent 里配置成本最低的选项之一。
+
+### 1. 启动 Ollama 并准备模型
+
+```bash
+ollama pull qwen2.5-coder:7b
+
+# 关键：Ollama 默认上下文只有 4K，Cline 需要至少 32K
+OLLAMA_CONTEXT_LENGTH=32768 ollama serve
+```
+
+如果用的是菜单栏 App，在 App 的 Settings 里把 context length 调到 `32768`，然后重启 App。
+
+模型选择（16 GB / 10.7 GiB Metal 预算）：
+
+- `qwen3.5:4b`（4.0 GB）：快，32K/64K 都放得下，适合日常 Agent。
+- `qwen3.5:9b`（6.6–7.6 GB，同家族 tools/thinking/256K）：质量更好，32K 仍能 100% GPU（权重 + 32K KV 约 1 GiB + 开销），64K 接近上限、需实测。
+- `qwen2.5-coder:7b`：代码补全好，但 Agent 工具调用不稳定（见下），不推荐给 Cline。
+
+### 2. Cline 里的设置
+
+VS Code 安装 Cline 后，打开 Cline 设置 → **API Configuration**：
+
+| 设置项 | 值 |
+| --- | --- |
+| API Provider | `Ollama` |
+| Base URL | `http://localhost:11434` |
+| Model | `qwen2.5-coder:7b`（下拉选择；列表为空先 `ollama pull`） |
+| Context Window | `32768` |
+| API Key | 留空（本地 Ollama 不需要） |
+
+然后到 Cline 设置 → **Features**，打开 **Use Compact Prompt**（Cline 官方对本地推理的推荐设置，能明显省 token）。任务变长时新开一个 task，别让上下文无限增长。
+
+### 3. 几个容易踩的坑
+
+- **上下文两边都要设**：Ollama 侧 `OLLAMA_CONTEXT_LENGTH`（或 App 滑块）和 Cline 的 `Context Window` 都设 32768。只设 Cline 的话，Ollama 实际仍按 4K 截断，表现为「Cline 突然忘事/输出被截断」。
+- **Qwen2.5-Coder 原生就是 32K**：在这条 Ollama 路线上不要写 64K，Ollama 会把 `num_ctx` 压回 32K（日志警告 `requested context size too large for model`）。要 64K 得换原生 64K+ 模型（如 `llama3.1:8b`）或改用 llama.cpp 的 YaRN。
+- **工具调用**：Cline 的改文件/执行命令依赖 tool calling。`qwen2.5-coder:7b` 以代码见长；如果出现「只聊天不改文件 / 不调用工具」，换 `qwen3:8b`（Ollama Cline 文档的示例模型）或云端模型，也可以试下面的 OpenAI Compatible 入口。
+- **内存**：16 GB 上 7B Q4 + 32K 上下文约 6–8 GB，再开浏览器/IDE 会紧；不要同时再跑一个 Ollama 模型。
+- **远程 Ollama**：Base URL 换成 `http://<Mac-IP>:11434`，服务端用 `OLLAMA_HOST=0.0.0.0:11434` 启动；只在内网用，别暴露公网。
+
+### 4. OpenAI Compatible 兜底
+
+如果 Cline 的 Ollama provider 连不上或模型列表为空，可以走 OpenAI 兼容入口：
+
+| 设置项 | 值 |
+| --- | --- |
+| API Provider | `OpenAI Compatible` |
+| Base URL | `http://localhost:11434/v1` |
+| API Key | `ollama`（Ollama 不校验） |
+| Model ID | `qwen2.5-coder:7b` |
+| Context Window | `32768` |
+
+### 5. Cline Desktop
+
+如果用的是 Cline Desktop，它的 **Local Models** 页面可以直接发现 Ollama、下载模型并自动填好上面的配置，比手动填更省事。
+
+### 常见问题：OpenCode Desktop 2.x 与 CLI 1.x 共库冲突
+
+如果你已经装了 **OpenCode Desktop 2.x**（`/Applications/OpenCode.app`），再用 `ollama launch opencode` 时，Ollama 可能会自动装一个 **v1 稳定版 CLI**（`~/.opencode/bin/opencode`，`opencode --version` 显示 `1.x`）。两者共用 `~/.local/share/opencode/opencode.db`，但数据库 schema 不同：
+
+```text
+Error: could not read OpenCode configuration: exit status 1
+Run `opencode debug config` for details.
+```
+
+手动运行 `opencode debug config` 会看到：
+
+```text
+Database is not empty and has no session table
+```
+
+原因是这个 DB 由 Desktop 2.x 创建（表是 `session_v2` / `session_message`），而 v1 CLI 期待旧的 `session` 表，于是直接退出 1。
+
+修法（推荐第一种）：
+
+```bash
+# 1) 用 Desktop 自带的 v2 CLI 替换 v1 CLI（先备份）
+mv ~/.opencode/bin/opencode ~/.opencode/bin/opencode-v1.bak
+ln -s /Applications/OpenCode.app/Contents/Resources/opencode-cli ~/.opencode/bin/opencode
+
+# 2) 确认版本与配置读取
+opencode --version          # 应显示 v2.x
+opencode debug config       # 应正常输出，而不是 Database ... session table
+
+# 3) 再启动
+ollama launch opencode --model qwen3.5:4b
+```
+
+如果更想继续用 v1 CLI，也可以把 v2 的 DB 挪走让它重建（**会丢 Desktop 里的会话历史，先备份**）：
+
+```bash
+mkdir -p ~/opencode-db-backup
+mv ~/.local/share/opencode/opencode.db* ~/opencode-db-backup/
+```
+
+另外，[`../llama-cpp/opencode.jsonc`](../llama-cpp/opencode.jsonc) 用的是 **v2 的 `providers` / `package` / `settings` 格式**；v1 CLI 不认这套，别混用。
+
 ## 上下文与 KV cache：和本仓库的关系
 
 macOS 原生版和 Docker 版用的是同一套 Ollama，参数含义完全相同，只是内存来源从“容器能看到的宿主内存”变成了 Apple 统一内存。
@@ -378,7 +478,7 @@ macOS 原生版和 Docker 版用的是同一套 Ollama，参数含义完全相�
          \"options\":{\"num_ctx\":8192,\"num_predict\":256}}"
   ```
 
-- `ollama ps` 的 `SIZE` 是加载后的总占用（权重 + 上下文 + 运行时开销），`PROCESSOR` 列显示 `100% GPU` / `100% CPU` / `xx%/yy% CPU/GPU`，`CONTEXT` 列是实际分配的上下文长度——这是确认 Metal 有没有生效、默认档位是否如预期、以及 `num_ctx` 调大后内存涨了多少的最直接方式。
+- `ollama ps` 的列含义：`SIZE` 是加载后的总占用（权重 + 上下文 + 运行时开销）；`PROCESSOR` 显示 `100% GPU` / `100% CPU` / `xx%/yy% CPU/GPU`；`CONTEXT` 是实际分配的上下文长度；`RUNNER` 是实际用的推理后端（Apple Silicon 上可能是 `mlx` 或 `llamacpp`，两者都走 Apple GPU，具体由 Ollama 按模型选择）。这是确认 Metal 有没有生效、默认档位是否如预期、以及 `num_ctx` 调大后内存涨了多少的最直接方式。
 
 对比 [`../../example/kv_cache.py`](../../example/kv_cache.py)：那边是单请求的 K/V 追加与复用；Ollama 把同样的 K/V 放在 Metal GPU 的统一内存里，并处理多请求、采样和上下文管理。跨请求的前缀共享见 [`../../example/prefix_cache_demo.py`](../../example/prefix_cache_demo.py)。
 
@@ -427,6 +527,49 @@ CLI 只是客户端，需要有服务在跑。`curl -s http://127.0.0.1:11434/ap
 **模型跑在 CPU 上 / 速度不对**
 
 先看 `ollama ps` 的 `PROCESSOR` 列。Apple Silicon 正常应是 `100% GPU`；Intel Mac 只有 CPU。如果 Apple Silicon 上跑的是 Rosetta 转译的 x86_64 CLI，可能退回通用 CPU 库——用 `uname -m` 和 `file "$(command -v ollama)"` 确认，装 arm64 原生版本。
+
+**`ollama ps` 的 CONTEXT 一直是 4096，怎么调大？**
+
+`CONTEXT` 是**当前 Ollama 服务启动时**分配的默认上下文（16 GB 机器默认 4K），不是单次 `ollama run` 能改的；已经加载的模型也不会因为你在 shell 里 export 就变。改法：
+
+- App 模式（菜单栏 Ollama）：Settings 里把 context length 滑块调到 `32768`，然后 Quit 再重开 App。
+- CLI 模式：先退出 App，再带环境变量起服务：
+
+  ```bash
+  osascript -e 'quit app "Ollama"'
+  OLLAMA_CONTEXT_LENGTH=32768 ollama serve
+  ```
+
+- 本仓库脚本：先停掉已有服务，再让脚本自己起 serve（脚本只在“自己启动 serve”时应用 `--ctx`）：
+
+  ```bash
+  ./macos/ollama/run.sh --ctx 32768 --no-pull --no-demo
+  ```
+
+重启后第一次加载模型，再用 `ollama ps` 确认 `CONTEXT` 变成 `32768`。16 GB 上建议 32K；64K 的前提是模型原生支持且 KV 装得下，别硬设。
+
+**日志里的 `vram-based default context` 是什么意思？**
+
+Ollama 启动时会探测 Metal 可用显存，按分档决定默认上下文：
+
+```text
+inference compute ... library=Metal name=MTL0 description="Apple M2" total="10.7 GiB"
+vram-based default context total_vram="10.7 GiB" default_num_ctx=4096
+```
+
+- 16 GB 统一内存的 Mac，macOS 给 Metal 的预算约 **10.7 GiB**（其余留给系统），落在 `< 23 GiB` 档，所以默认 `4096`。
+- 这个默认值只是“起点”，`OLLAMA_CONTEXT_LENGTH` 可以覆盖；**日志里即使还打印 `default_num_ctx=4096` 也不代表没生效**——那行只是 VRAM 分档的兜底值，实际加载优先级是：请求 `num_ctx` > Modelfile/模型参数 > `OLLAMA_CONTEXT_LENGTH` > VRAM 默认。用 `ollama ps` 的 `CONTEXT` 列验证真实值。
+- 但**权重 + KV 要装进这 10.7 GiB 才能保持 `100% GPU`**，超了会 offload 到 CPU（`ollama ps` 的 `PROCESSOR` 会显示 CPU/GPU 混合）。
+- 本机参考：`qwen2.5-coder:7b`（4.7 GB 权重 + 32K KV 约 1.75 GiB）≈ 7 GB，32K 可以稳稳 100% GPU；`llama3.2:3b` 的 64K KV 约 7 GiB + 2.6 GB 权重，已经接近 10.7 GiB 上限，容易掉 CPU。所以 16 GB 上 **32K 是安全档，64K 要先实测**。
+
+**同时加载了两个模型，内存吃紧？**
+
+`ollama ps` 里出现多行说明多个模型都在内存里（默认最多 3 个，空闲 5 分钟后卸载）。16 GB 上写代码只留一个：
+
+```bash
+ollama stop llama3.2:3b          # 停掉不用的
+OLLAMA_MAX_LOADED_MODELS=1 OLLAMA_KEEP_ALIVE=5m ollama serve   # 或启动时限制
+```
 
 **下载到一半 Mac 睡眠**
 

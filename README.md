@@ -258,15 +258,17 @@ llama bench -m model.gguf -p 512 -n 128
 
 | 模型 | 代码能力 | 16 GB 可行性 | 用途 |
 | --- | --- | --- | --- |
-| Qwen2.5-Coder-7B-Instruct Q4（4.36 GB，32K） | 强（同尺寸里第一梯队） | ✅ 32K 上下文很稳 | **本地写代码首选**：补全、小项目、OpenCode |
+| Qwen2.5-Coder-7B-Instruct Q4（4.36 GB，32K） | 强（同尺寸里第一梯队） | ✅ 32K 上下文很稳 | 补全/FIM、单文件、小项目；**Agent 工具调用不稳定** |
+| Qwen3.5-4B（4.0 GB，256K，MLX/tools/thinking） | 中上，偏 Agent | ✅ 32K 很稳；64K 也放得下 | Agent 的**速度优先**选择 |
+| Qwen3.5-9B（6.6–7.6 GB，256K，tools/thinking） | 更强，偏 Agent | ✅ 32K 可 100% GPU；64K 接近 10.7 GiB 上限 | Agent 的**质量优先**选择 |
 | Qwen3-Coder-30B-A3B Q4（17.3 GB，256K，MoE） | 最强本地 Agent 级 | ❌ 24 GB+ | 仓库级/Agent 任务，大内存机器 |
 | Llama 3.1 8B Q4（4.9 GB，128K） | 中等，通用型 | ⚠️ 能跑但写代码一般 | 通用对话/推理，不建议专用于编程 |
 | Llama 3.2 3B（2.0 GB） | 弱 | ✅ | 演示、轻量问答 |
 | Llama 3.3 70B / Llama 4 | 强但通用 | ❌ 43–245 GB | 大内存/服务器 |
 
-- 接 OpenCode 时还要看**工具调用**：Qwen3-Coder 是专门为 Agent 训练过的；Qwen2.5-Coder-7B 在 16 GB 上够用，但复杂 Agent 任务遇到工具调用不稳定时，优先考虑云端/更大模型。
-- **64K 上下文**：Ollama 会把 `num_ctx` 压回模型训练长度，`qwen2.5-coder:7b` 设 64K 实际仍是 32K；llama.cpp 可以用 `--rope-scaling yarn --rope-scale 2` 把它外推到 64K（16 GB 能跑，但质量有损）。细节见 [`macos/llama-cpp/README.md`](macos/llama-cpp/README.md) 的「64K 上下文」。
-- 结论：**本地代码任务用 Qwen2.5-Coder-7B；Llama 留给通用对话，或等你有 24 GB+ 内存再考虑更大的 Qwen3-Coder。** 参考：[Qwen2.5-Coder 发布博客](https://qwenlm.github.io/blog/qwen2.5-coder-family/)、[Qwen3-Coder 仓库](https://github.com/QwenLM/Qwen3-Coder)、[Ollama qwen2.5-coder](https://ollama.com/library/qwen2.5-coder)、[Ollama qwen3-coder](https://ollama.com/library/qwen3-coder)。
+- 接 OpenCode / Cline 时还要看**工具调用**：Qwen2.5-Coder-7B 虽然代码强，但实测常把工具调用输出成裸 JSON、不产生 `tool_calls`，Agent 会“只聊天不改文件”；Agent 场景优先 `qwen3.5:4b`（快）或 `qwen3.5:9b`（质量更好、32K 仍能 100% GPU），复杂任务再上云端/更大模型。
+- **64K 上下文**：OpenCode 自身没有全局 64K 默认值（catalog 外模型 fallback 是 200K/32K），64K 是 Ollama 接入 OpenCode 时的建议值。Ollama 会把 `num_ctx` 压回模型训练长度，`qwen2.5-coder:7b` 设 64K 实际仍是 32K；llama.cpp 可以用 `--rope-scaling yarn --rope-scale 2` 把它外推到 64K（16 GB 能跑，但质量有损）。细节见 [`macos/llama-cpp/README.md`](macos/llama-cpp/README.md) 的「64K 上下文」。
+- 结论：**补全/直接写代码用 Qwen2.5-Coder-7B；Agent 写代码用 Qwen3.5-4B；Llama 留给通用对话，或等你有 24 GB+ 内存再考虑更大的 Qwen3-Coder。** 参考：[Qwen2.5-Coder 发布博客](https://qwenlm.github.io/blog/qwen2.5-coder-family/)、[Qwen3-Coder 仓库](https://github.com/QwenLM/Qwen3-Coder)、[Ollama qwen2.5-coder](https://ollama.com/library/qwen2.5-coder)、[Ollama qwen3-coder](https://ollama.com/library/qwen3-coder)。
 
 **这台 16 GB M2 上的建议：**
 
@@ -290,7 +292,7 @@ llama bench -m model.gguf -p 512 -n 128
 | [`example/PREFIX_CACHE_READING.md`](example/PREFIX_CACHE_READING.md) | 块池、链式哈希、前缀匹配、引用计数、LRU + 叶子优先淘汰、与 vLLM / SGLang 的对应关系 |
 | [`example/PAGED_ATTENTION_READING.md`](example/PAGED_ATTENTION_READING.md) | PagedAttention：块池、block table、gather、内部碎片、与 vLLM 的对应关系 |
 | [`docker/ollama/README.md`](docker/ollama/README.md) | Docker 跑 Ollama/Llama：CPU/GPU、API、上下文与 KV cache 参数 |
-| [`macos/ollama/README.md`](macos/ollama/README.md) | macOS 原生跑 Ollama/Llama（Metal GPU）：安装、App/brew/serve 启动、Llama 选型与内存、OpenCode 对接、环境变量、卸载 |
+| [`macos/ollama/README.md`](macos/ollama/README.md) | macOS 原生跑 Ollama/Llama（Metal GPU）：安装、App/brew/serve 启动、Llama 选型与内存、OpenCode / Cline 对接、环境变量、卸载 |
 | [`macos/llama-cpp/README.md`](macos/llama-cpp/README.md) | macOS 上用 llama.cpp 跑 Llama：安装、`-hf` 模型、编程模型选型、OpenCode 对接、参数表、API、KV cache 与调优 |
 | [`docker/vllm/README.md`](docker/vllm/README.md) | Docker 跑 vLLM：PagedAttention 参数、块池日志与指标 |
 
