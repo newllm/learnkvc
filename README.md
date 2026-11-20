@@ -158,6 +158,7 @@ bash docker/vllm/run.sh                              # 有 GPU 用 GPU，否则�
 bash docker/vllm/run.sh --cpu                        # 强制 CPU（vllm/vllm-openai-cpu）
 bash docker/vllm/run.sh --gpu                        # 强制 GPU（vllm/vllm-openai）
 VLLM_CPU_KVCACHE_SPACE=8 DTYPE=bfloat16 bash docker/vllm/run.sh --cpu
+HF_ENDPOINT=https://hf-mirror.com bash docker/vllm/run.sh --cpu   # HF 下载慢时
 ```
 
 脚本会按 `nvidia-smi` 自动选择镜像，等待 `/health`，从日志里打印 KV cache 块规模，并调用一次 `/v1/chat/completions`。README 里还有 CPU/GPU 前提、模型来源、`--block-size` / `--gpu-memory-utilization` / `VLLM_CPU_KVCACHE_SPACE` 与块池大小的关系，以及 `/metrics` 的用法。

@@ -59,8 +59,8 @@ bash docker/vllm/run.sh --gpu          # 强制 GPU 镜像
 1. 按 `nvidia-smi` 自动选择 CPU / GPU（可用 `--cpu` / `--gpu` 覆盖）；
 2. 检查 docker、daemon、curl；GPU 模式额外检查 `nvidia-smi`；
 3. 删掉同名旧容器（HF 缓存保留在宿主机目录）；
-4. `docker run` 启动 vLLM，映射 `8000`，挂载 HF 缓存；
-5. 轮询 `/health` 直到就绪（首次要下载模型、编译 kernel，可能几分钟）；
+4. `docker run` 启动 vLLM，映射 `8000`，挂载 HF 缓存和 vLLM 的 torch.compile 缓存；
+5. 轮询 `/health` 直到就绪（首次要下载模型、编译 kernel，可能几分钟）；等待期间每 15 秒打印一次 HF / vLLM 缓存大小和容器最后一行日志；
 6. 从日志里过滤 `KV cache size` / `Maximum concurrency`，调一次 `/v1/chat/completions` 并打印回答。
 
 其他常用参数：
@@ -92,6 +92,8 @@ CPU 相关的参数：
 | `DTYPE=bfloat16` | CPU 上推荐显式指定 bfloat16，避免 fp16 在 CPU 上的数值/性能问题 |
 | `TP` | CPU 也支持张量并行，建议按 NUMA 节点设置 |
 | `BLOCK_SIZE` | CPU 默认 128；官方建议用 32 的倍数（8/16 会导致 kernel 效率低） |
+| `VLLM_CACHE` | 宿主机上的 torch.compile 缓存目录（默认 `~/.cache/vllm`） |
+| `EAGER=1` / `--eager` | 跳过编译，快速启动 |
 
 脚本在 CPU 模式下会额外加 `--security-opt seccomp=unconfined --cap-add SYS_NICE --shm-size=4g`：vLLM CPU 的 NUMA 调用（`get_mempolicy` / `migrate_pages`）在默认 seccomp 下可能被拒绝，这两个参数是官方文档给出的最小放宽方式。如果你不能接受放宽 seccomp，可以自定义 profile 或忽略这些 warning（功能不受影响，只是 NUMA 优化可能不生效）。
 
@@ -157,6 +159,7 @@ vLLM 的 KV cache 是固定大小块的池子，每个请求有一张 block tabl
 | `VLLM_CPU_KVCACHE_SPACE` | CPU 模式：KV cache 空间（GiB） |
 | `--max-model-len` | 单请求最大上下文，决定一个请求最多要多少块，也影响并发数 |
 | `--tensor-parallel-size` | 多卡/多 NUMA 并行 |
+| `--enforce-eager` | 跳过 torch.compile / CUDA graph（`run.sh --eager`），启动快、吞吐低 |
 
 启动日志里能看到块池规模，例如：
 
@@ -175,6 +178,72 @@ INFO ... Maximum concurrency for 4,096 tokens per request: 24.41x
 - [`example/PAGED_ATTENTION_READING.md`](../../example/PAGED_ATTENTION_READING.md)：逐段讲解块池、`gather()`、causal mask 与 vLLM 的对应关系；
 - 本目录：把同一套机制跑在真实的 vLLM 容器里，用参数和 `/metrics` 观察它。
 
+## 首次启动为什么慢：torch.compile 与缓存
+
+下载完成后，日志通常会停在类似这几行：
+
+```text
+Loading safetensors checkpoint shards: 0% Completed | 0/1 ...
+INFO ... Warming up model for the compilation...
+INFO ... saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/...
+```
+
+这不是卡住：vLLM 在加载权重后会用 `torch.compile` 捕获计算图并做 warmup，CPU 上尤其慢（几分钟很常见，GPU 也可能 1–3 分钟）。判断方法：
+
+- `[Ns] HF ... MB | vLLM 缓存 ... MB` 里 **vLLM 缓存**在增长，说明编译在推进；
+- `docker logs -f vllm` 能看到 `saved AOT compiled function` 之类的日志；
+- 编译完成后 `/health` 才会返回 200。
+
+脚本把宿主机的 `${VLLM_CACHE:-~/.cache/vllm}` 挂到容器的 `/root/.cache/vllm`，所以**编译结果会跨容器重启复用**，第二次启动通常快很多。第一次仍要付编译成本。
+
+如果只想快速把链路跑通，可以跳过编译：
+
+```bash
+bash docker/vllm/run.sh --eager        # 加 --enforce-eager
+# 或
+EAGER=1 bash docker/vllm/run.sh --cpu
+```
+
+`--enforce-eager` 关闭 torch.compile / CUDA graph，启动快，但推理吞吐会下降；适合调试或验证接口，不适合压测。
+
+等待超时默认 900 秒，可用 `--timeout` / `HEALTH_TIMEOUT` 调整。
+
+## Hugging Face 下载很慢或看起来没动
+
+等待期间脚本会打印类似下面的进度行，可以直接看出缓存有没有增长：
+
+```text
+  [  15s] HF 缓存 512 MB | Downloading model.safetensors: 42%| 1.2G/2.8G
+```
+
+如果缓存大小长时间不变，按顺序排查：
+
+1. **另开一个终端看完整日志**：`docker logs -f vllm`。vLLM/huggingface_hub 的进度条只写在容器日志里，脚本只显示最后一行。
+2. **国内网络或公司网络**：设置 Hugging Face 镜像，脚本会把 `HF_ENDPOINT` 传进容器：
+
+   ```bash
+   HF_ENDPOINT=https://hf-mirror.com bash docker/vllm/run.sh --cpu
+   ```
+
+3. **需要代理**：Docker 不会自动继承宿主机的代理，显式传入：
+
+   ```bash
+   HTTP_PROXY=http://127.0.0.1:7890 \
+   HTTPS_PROXY=http://127.0.0.1:7890 \
+   NO_PROXY=localhost,127.0.0.1 \
+   bash docker/vllm/run.sh
+   ```
+
+4. **gated 模型**：下载 401/403 多半是没接受 Hugging Face 许可或没传 `HF_TOKEN`。
+5. **确认容器内能访问**：
+
+   ```bash
+   docker exec vllm python -c "import urllib.request; print(urllib.request.urlopen('https://huggingface.co', timeout=10).status)"
+   ```
+
+6. **看磁盘**：`du -sh ~/.cache/huggingface`，空间不足时下载会失败。
+7. 下载支持断点续传，中断后重跑脚本会复用已下载的分片。
+
 ## 常见问题
 
 **CPU 启动报 illegal instruction**：CPU 需要 AVX2（推荐 AVX512），先用 `lscpu | grep avx` 确认；老 CPU 建议换机器或改用 Ollama 示例。
@@ -185,7 +254,7 @@ INFO ... Maximum concurrency for 4,096 tokens per request: 24.41x
 
 **模型下载失败（401/403）**：gated 模型需要 `HF_TOKEN`，并先在 Hugging Face 页面接受许可。
 
-**第一次启动很慢**：要下载数 GB 权重并做编译/图捕获；后续启动会复用缓存。
+**第一次启动很慢**：先下载数 GB 权重，再做 torch.compile / warmup。看 `docker logs -f`；编译缓存现在挂在 `~/.cache/vllm`，重启用会快很多。急用可以加 `--eager` 跳过编译。
 
 **端口被占用**：`lsof -i :8000`，或 `PORT=8001`。
 

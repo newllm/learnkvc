@@ -17,6 +17,8 @@
 # 环境变量：
 #   ACCEL(auto|cpu|gpu) / MODEL / PORT / MAX_MODEL_LEN / GPU_MEM_UTIL / TP /
 #   BLOCK_SIZE / DTYPE / HF_CACHE / HF_TOKEN / HEALTH_TIMEOUT /
+#   HF_ENDPOINT（Hugging Face 镜像）/ HTTP_PROXY / HTTPS_PROXY / NO_PROXY /
+#   VLLM_CACHE（torch.compile 缓存目录）/ EAGER=1（跳过编译，快速启动） /
 #   VLLM_CPU_KVCACHE_SPACE / VLLM_CPU_OMP_THREADS_BIND / CPU_IMAGE / GPU_IMAGE
 
 set -euo pipefail
@@ -36,7 +38,10 @@ TP="${TP:-1}"
 BLOCK_SIZE="${BLOCK_SIZE:-}"
 DTYPE="${DTYPE:-}"
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
-HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-600}"
+VLLM_CACHE="${VLLM_CACHE:-$HOME/.cache/vllm}"
+EAGER="${EAGER:-0}"
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-900}"
+PROGRESS_INTERVAL="${PROGRESS_INTERVAL:-15}"
 ACCEL="${ACCEL:-auto}"
 DEMO=1
 DRY_RUN=0
@@ -70,15 +75,18 @@ usage() {
   --tp N                 CPU/GPU 并行度（GPU 为卡数，CPU 建议按 NUMA 节点）
   --block-size N         PagedAttention 块大小（不设则用 vLLM 默认：GPU 16 / CPU 128）
   --dtype TYPE           模型精度，如 bfloat16（CPU 上推荐显式指定）
-  --timeout SEC          等待服务就绪的最长秒数（默认 600）
+  --timeout SEC          等待服务就绪的最长秒数（默认 900）
+  --eager                跳过 torch.compile / CUDA graph（启动快，吞吐低）
   --no-demo              不调用示例接口
   --cpu / --gpu          强制 CPU 或 GPU（默认自动检测 nvidia-smi）
   --dry-run              只打印将执行的 docker 命令
   -h, --help             显示本帮助
 
 环境变量：ACCEL=auto|cpu|gpu / MODEL / PORT / MAX_MODEL_LEN / GPU_MEM_UTIL /
-          TP / BLOCK_SIZE / DTYPE / HF_CACHE / HF_TOKEN / HEALTH_TIMEOUT /
-          VLLM_CPU_KVCACHE_SPACE / VLLM_CPU_OMP_THREADS_BIND
+          TP / BLOCK_SIZE / DTYPE / HF_CACHE / VLLM_CACHE / EAGER / HF_TOKEN /
+          HEALTH_TIMEOUT /
+          VLLM_CPU_KVCACHE_SPACE / VLLM_CPU_OMP_THREADS_BIND /
+          HF_ENDPOINT（如 https://hf-mirror.com）/ HTTP_PROXY / HTTPS_PROXY
 
 CPU 模式说明：
   - 镜像 vllm/vllm-openai-cpu:latest-x86_64 需要 Linux x86_64 + AVX2（推荐 AVX512）；
@@ -119,6 +127,7 @@ while [[ $# -gt 0 ]]; do
             HEALTH_TIMEOUT="$2"; shift 2 ;;
         --cpu) ACCEL=cpu; shift ;;
         --gpu) ACCEL=gpu; shift ;;
+        --eager) EAGER=1; shift ;;
         --no-demo) DEMO=0; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -138,6 +147,10 @@ for value in "$MAX_MODEL_LEN" "$TP" "$HEALTH_TIMEOUT"; do
 done
 if [[ -n "$BLOCK_SIZE" ]] && ! { [[ "$BLOCK_SIZE" =~ ^[0-9]+$ ]] && (( BLOCK_SIZE > 0 )); }; then
     echo "--block-size 需要正整数: $BLOCK_SIZE" >&2
+    exit 1
+fi
+if ! [[ "$PROGRESS_INTERVAL" =~ ^[0-9]+$ ]] || (( PROGRESS_INTERVAL < 1 )); then
+    echo "PROGRESS_INTERVAL 需要正整数: $PROGRESS_INTERVAL" >&2
     exit 1
 fi
 
@@ -181,7 +194,7 @@ if [[ "$DRY_RUN" != 1 ]]; then
             exit 1
         }
     fi
-    mkdir -p "$HF_CACHE"
+    mkdir -p "$HF_CACHE" "$VLLM_CACHE"
 fi
 
 if [[ "$DRY_RUN" != 1 ]] && docker ps -a --format '{{.Names}}' | grep -Fxq "$CONTAINER"; then
@@ -191,7 +204,8 @@ fi
 
 docker_args=(run -d --name "$CONTAINER"
     -p "$PORT":8000
-    -v "$HF_CACHE":/root/.cache/huggingface)
+    -v "$HF_CACHE":/root/.cache/huggingface
+    -v "$VLLM_CACHE":/root/.cache/vllm)
 
 if [[ "$ACCEL" == "gpu" ]]; then
     docker_args+=(--gpus all --ipc=host)
@@ -203,6 +217,13 @@ fi
 if [[ -n "${HF_TOKEN:-}" ]]; then
     docker_args+=(-e HF_TOKEN)
 fi
+# Hugging Face 镜像与代理需要显式传进容器，Docker 不会自动继承。
+for name in HF_ENDPOINT HF_HUB_ENABLE_HF_TRANSFER \
+    HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+    if [[ -n "${!name:-}" ]]; then
+        docker_args+=(-e "$name")
+    fi
+done
 if [[ "$ACCEL" == "cpu" ]]; then
     for name in VLLM_CPU_KVCACHE_SPACE VLLM_CPU_OMP_THREADS_BIND; do
         if [[ -n "${!name:-}" ]]; then
@@ -229,6 +250,9 @@ fi
 if [[ -n "$DTYPE" ]]; then
     docker_args+=(--dtype "$DTYPE")
 fi
+if [[ "$EAGER" == 1 ]]; then
+    docker_args+=(--enforce-eager)
+fi
 
 log "启动 vLLM（模型：${MODEL}）"
 if ! run docker "${docker_args[@]}"; then
@@ -237,18 +261,30 @@ if ! run docker "${docker_args[@]}"; then
 fi
 
 if [[ "$DRY_RUN" != 1 ]]; then
-    log "等待 vLLM 就绪（最多 ${HEALTH_TIMEOUT}s，首次会下载模型并编译 kernel）"
+    log "等待 vLLM 就绪（最多 ${HEALTH_TIMEOUT}s；首次会下载模型并做 torch.compile，可能几分钟）"
+    log "每 ${PROGRESS_INTERVAL}s 打印一次 HF / vLLM 缓存大小和最后一行日志；也可以另开终端 docker logs -f ${CONTAINER}"
     ready=0
+    next_report=0
     for ((i = 0; i < HEALTH_TIMEOUT; i += 5)); do
         if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
             ready=1
             break
+        fi
+        if (( i >= next_report )); then
+            cache_mb=$(du -sm "$HF_CACHE" 2>/dev/null | awk '{print $1}' || true)
+            compile_mb=$(du -sm "$VLLM_CACHE" 2>/dev/null | awk '{print $1}' || true)
+            last_log=$(docker logs --tail 1 "$CONTAINER" 2>&1 | tr '\r' ' ' | tail -1 || true)
+            printf '  [%4ss] HF %s MB | vLLM 缓存 %s MB | %s\n' \
+                "$i" "${cache_mb:-?}" "${compile_mb:-?}" "${last_log:-等待容器输出...}"
+            next_report=$((i + PROGRESS_INTERVAL))
         fi
         sleep 5
     done
     if [[ "$ready" != 1 ]]; then
         echo "启动超时。最近日志：" >&2
         docker logs --tail 40 "$CONTAINER" >&2 || true
+        echo "提示：若 Hugging Face 下载卡住，可以设置 HF_ENDPOINT=https://hf-mirror.com、" \
+             "给 Docker 配代理（HTTP_PROXY/HTTPS_PROXY），或先 docker logs -f 观察进度。" >&2
         exit 1
     fi
     log "vLLM 已就绪"
