@@ -1,6 +1,6 @@
 # learnkvc
 
-用两份最小可运行的示例代码，把 LLM 推理里的 **KV Cache** 从「单请求的重算与复用」讲到「多请求的共享块」；另附一个用 Docker 跑 Ollama（Llama 模型）的实操示例。
+用三份最小可运行的示例代码，把 LLM 推理里的 **KV Cache** 从「单请求的重算与复用」讲到「多请求的共享块」，再到「PagedAttention 的块表与显存管理」；另附用 Docker 跑 Ollama / vLLM 的实操示例。
 
 没有模型权重：`kv_cache.py` 用一个 2 层玩具模型把「无 cache 重算」和「KV cache 增量」跑在同一份代码里（需要 PyTorch），`prefix_cache_demo.py` 用纯标准库模拟服务端的块级前缀共享。每个结论都有可执行的代码和断言。
 
@@ -15,19 +15,24 @@
 ```text
 .
 ├── docker/
-│   └── ollama/                     # 用 Docker 跑 Ollama + Llama 的示例
-│       ├── run.sh                  # CPU/GPU 启动 + 拉模型 + 调用一次 API
-│       └── README.md               # GPU 前提、API、上下文与 KV cache 参数
+│   ├── ollama/                     # 用 Docker 跑 Ollama + Llama 的示例
+│   │   ├── run.sh                  # CPU/GPU 启动 + 拉模型 + 调用一次 API
+│   │   └── README.md               # GPU 前提、API、上下文与 KV cache 参数
+│   └── vllm/                       # 用 Docker 跑 vLLM（PagedAttention）的示例
+│       ├── run.sh                  # GPU 启动 + 等待就绪 + 调用 OpenAI 接口
+│       └── README.md               # 镜像/模型来源、参数、块池指标
 ├── example/
 │   ├── kv_cache.py                 # 单请求：无 cache 重算 vs KV cache 增量 + 完整缓存实现
 │   ├── KV_CACHE_READING.md         # 逐段阅读导图：两条流程 + 缓存实现
 │   ├── prefix_cache_demo.py        # 多请求共享前缀：块池 + 哈希匹配 + 引用计数 + LRU
-│   └── PREFIX_CACHE_READING.md     # 逐段阅读导图
+│   ├── PREFIX_CACHE_READING.md     # 逐段阅读导图
+│   ├── paged_attention.py          # 块表 + PagedAttention：逻辑位置 → 物理块
+│   └── PAGED_ATTENTION_READING.md  # 逐段阅读导图
 ├── LICENSE
 └── README.md
 ```
 
-## 两个层次的 KV Cache
+## KV Cache 的三个视角
 
 ### 1. 单请求：从「每步重算」到「只算新 token」
 
@@ -74,6 +79,24 @@ KV 显存被切成固定大小的块（`block_size = 4`），块的身份是 `ha
 - **场景 2**：把块池缩小到 10 块，让 LRU 真的发生淘汰，观察「命中 → 淘汰 → 全量重算」的完整过程。
 - **场景 3**：同一段 4 个 token 在 prompt 里出现两次，说明块哈希为什么必须带上父块——相同的 token 不等于相同的 K/V。
 
+### 3. 显存管理：PagedAttention
+
+`example/paged_attention.py` 把前两份示例接起来：KV 真的存放在固定大小的块里，每个请求用一张 **block table** 把逻辑位置映射到物理块，attention 通过块表取数。
+
+```text
+token 位置 → 逻辑块 + 槽位 → block_table → 物理块
+```
+
+示例让两个请求交错 prefill/decode，物理块是 `b5, b1, b3` 这种不连续编号，但每一步 attention 都与连续缓存逐位一致（差异 0）；随后释放一个请求、让第三个请求复用它的块，并统计最后一块产生的内部碎片。
+
+```text
+逻辑块 0: token 0-3 → 物理块 b5
+逻辑块 1: token 4-7 → 物理块 b1
+逻辑块 2: token 8-9 → 物理块 b3（2/4）
+```
+
+逐段讲解见 [`example/PAGED_ATTENTION_READING.md`](example/PAGED_ATTENTION_READING.md)；vLLM 的 `--block-size`、`--gpu-memory-utilization` 就是这套机制的真实参数。
+
 ## 快速开始
 
 只需要 Python 3.10+。
@@ -85,6 +108,14 @@ python3 example/kv_cache.py
 
 # 有 CUDA 会自动用 GPU；也可以显式指定（cpu / cuda / mps）
 KVCACHE_DEVICE=cuda python3 example/kv_cache.py
+```
+
+```bash
+# PagedAttention：块表 + 物理块（需要 PyTorch）
+python3 example/paged_attention.py
+
+# 有 CUDA 会自动用 GPU；也可以显式指定
+PAGED_DEVICE=cuda python3 example/paged_attention.py
 ```
 
 ```bash
@@ -105,9 +136,9 @@ python3 example/prefix_cache_demo.py
   相当于省下的 prefill: 96 个 token（不提速 decode，只减少首 token 前的计算量）
 ```
 
-`example/` 里的两份代码都是确定性输出（固定种子、greedy 解码），重复运行结果一致；末尾都会跑断言，失败说明实现被改坏了。
+`example/` 里的三份代码都是确定性输出（固定种子、greedy 解码），重复运行结果一致；末尾都会跑断言，失败说明实现被改坏了。
 
-## 用 Docker 跑 Ollama（Llama）
+## Docker 示例：Ollama 与 vLLM
 
 想先跑一个真实模型、再回头看 KV cache 的实现，可以用 [`docker/ollama/`](docker/ollama/) 里的示例：
 
@@ -120,11 +151,22 @@ bash docker/ollama/run.sh --dry-run       # 只打印将执行的 docker 命令
 
 模型列表由环境变量 `MODELS`（空格/逗号分隔）或可重复的 `--model` 指定，`MODEL` 保留为单模型别名。镜像是 Docker Hub 的 `ollama/ollama`，模型默认来自 [Ollama 官方模型库](https://ollama.com/library)（`llama3.2:3b` 的完整坐标是 `registry.ollama.ai/library/llama3.2:3b`，也支持 Hugging Face 上的 GGUF）。脚本会启动容器、等待就绪、逐个拉取模型、调用一次 `/api/generate`，并打印 `ollama ps` 的内存占用；README 里还有 GPU 前提、API 用法，以及 `num_ctx` / `OLLAMA_KV_CACHE_TYPE` 和 KV cache 大小的对应关系。
 
+### vLLM（NVIDIA GPU，PagedAttention）
+
+```bash
+bash docker/vllm/run.sh                              # 默认 Qwen2.5-0.5B + PagedAttention
+MODEL=Qwen/Qwen2.5-1.5B-Instruct bash docker/vllm/run.sh
+BLOCK_SIZE=8 MAX_MODEL_LEN=8192 bash docker/vllm/run.sh
+```
+
+脚本启动 `vllm/vllm-openai` 容器，等待 `/health`，从日志里打印 KV cache 块规模，并调用一次 `/v1/chat/completions`。README 里还有 GPU 前提、模型来源、`--block-size` / `--gpu-memory-utilization` 与块池大小的关系，以及 `/metrics` 的用法。
+
 ## 建议的阅读路线
 
 1. 先读 [`example/KV_CACHE_READING.md`](example/KV_CACHE_READING.md)，对着 `kv_cache.py` 理解「无 cache 为什么在重复算、`past` 为什么要先读、mask 为什么要按绝对位置对齐、位置嵌入为什么要接着历史」。
-2. 再读 [`example/PREFIX_CACHE_READING.md`](example/PREFIX_CACHE_READING.md)，对着 `prefix_cache_demo.py` 理解「块哈希为什么带父块、引用计数和 LRU 怎么配合、为什么只能淘汰叶子块」。
-3. 用文档末尾的问题自测，再动手改参数（生成长度、模型层数、`block_size`、块池容量、请求到达顺序），观察计算量和命中率变化。
+2. 再读 [`example/PAGED_ATTENTION_READING.md`](example/PAGED_ATTENTION_READING.md)，对着 `paged_attention.py` 理解「逻辑位置怎么映射到物理块、gather 为什么能还原顺序、内部碎片从哪来」。
+3. 然后读 [`example/PREFIX_CACHE_READING.md`](example/PREFIX_CACHE_READING.md)，对着 `prefix_cache_demo.py` 理解「块哈希为什么带父块、引用计数和 LRU 怎么配合、为什么只能淘汰叶子块」。
+4. 用文档末尾的问题自测，再动手改参数（生成长度、模型层数、`block_size`、块池容量、请求到达顺序），观察计算量和命中率变化。
 
 ## 文档索引
 
@@ -132,7 +174,9 @@ bash docker/ollama/run.sh --dry-run       # 只打印将执行的 docker 命令
 | --- | --- |
 | [`example/KV_CACHE_READING.md`](example/KV_CACHE_READING.md) | 无 cache 流程、`append()`、`cached_attention`、mask 与位置对齐、GQA、滑动窗口、`reorder()`/`fork()`、两条生成循环的统计口径 |
 | [`example/PREFIX_CACHE_READING.md`](example/PREFIX_CACHE_READING.md) | 块池、链式哈希、前缀匹配、引用计数、LRU + 叶子优先淘汰、与 vLLM / SGLang 的对应关系 |
+| [`example/PAGED_ATTENTION_READING.md`](example/PAGED_ATTENTION_READING.md) | PagedAttention：块池、block table、gather、内部碎片、与 vLLM 的对应关系 |
 | [`docker/ollama/README.md`](docker/ollama/README.md) | Docker 跑 Ollama/Llama：CPU/GPU、API、上下文与 KV cache 参数 |
+| [`docker/vllm/README.md`](docker/vllm/README.md) | Docker 跑 vLLM：PagedAttention 参数、块池日志与指标 |
 
 ## 这个仓库是什么、不是什么
 
