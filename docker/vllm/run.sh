@@ -1,34 +1,43 @@
 #!/usr/bin/env bash
 # 用 Docker 起一个 vLLM OpenAI 兼容服务，并用 PagedAttention 跑一次推理。
 #
-# vLLM 把 KV cache 放在固定大小的 block 池里（默认 16 token 一块），每个请求
-# 用 block table 索引；这个脚本只负责把服务拉起来并验证接口：
-#   镜像来源：Docker Hub 的 vllm/vllm-openai
+# vLLM 把 KV cache 放在固定大小的 block 池里，每个请求用 block table 索引；
+# 这个脚本只负责把服务拉起来并验证接口：
+#   镜像来源：Docker Hub 的 vllm/vllm-openai（GPU）与 vllm/vllm-openai-cpu（CPU）
 #   模型来源：Hugging Face（默认 Qwen/Qwen2.5-0.5B-Instruct）
 #
 # 用法：
-#   bash docker/vllm/run.sh
+#   bash docker/vllm/run.sh                 # 有 NVIDIA GPU 用 GPU，否则用 CPU
+#   bash docker/vllm/run.sh --cpu           # 强制 CPU（官方 CPU 镜像）
+#   bash docker/vllm/run.sh --gpu           # 强制 GPU
 #   MODEL=Qwen/Qwen2.5-1.5B-Instruct bash docker/vllm/run.sh
-#   bash docker/vllm/run.sh --model meta-llama/Llama-3.2-3B-Instruct
-#   MAX_MODEL_LEN=8192 bash docker/vllm/run.sh
+#   VLLM_CPU_KVCACHE_SPACE=8 bash docker/vllm/run.sh --cpu
 #   bash docker/vllm/run.sh --dry-run
 #
 # 环境变量：
-#   MODEL / PORT / MAX_MODEL_LEN / GPU_MEM_UTIL / TP / BLOCK_SIZE /
-#   HF_CACHE / HF_TOKEN / HEALTH_TIMEOUT
+#   ACCEL(auto|cpu|gpu) / MODEL / PORT / MAX_MODEL_LEN / GPU_MEM_UTIL / TP /
+#   BLOCK_SIZE / DTYPE / HF_CACHE / HF_TOKEN / HEALTH_TIMEOUT /
+#   VLLM_CPU_KVCACHE_SPACE / VLLM_CPU_OMP_THREADS_BIND / CPU_IMAGE / GPU_IMAGE
 
 set -euo pipefail
 
 CONTAINER="${CONTAINER:-vllm}"
-IMAGE="${IMAGE:-vllm/vllm-openai:latest}"
+GPU_IMAGE="${GPU_IMAGE:-vllm/vllm-openai:latest}"
+case "$(uname -m)" in
+    arm64|aarch64) DEFAULT_CPU_TAG="latest-arm64" ;;
+    *)             DEFAULT_CPU_TAG="latest-x86_64" ;;
+esac
+CPU_IMAGE="${CPU_IMAGE:-vllm/vllm-openai-cpu:${DEFAULT_CPU_TAG}}"
 MODEL="${MODEL:-Qwen/Qwen2.5-0.5B-Instruct}"
 PORT="${PORT:-8000}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-4096}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.90}"
 TP="${TP:-1}"
-BLOCK_SIZE="${BLOCK_SIZE:-16}"
+BLOCK_SIZE="${BLOCK_SIZE:-}"
+DTYPE="${DTYPE:-}"
 HF_CACHE="${HF_CACHE:-$HOME/.cache/huggingface}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-600}"
+ACCEL="${ACCEL:-auto}"
 DEMO=1
 DRY_RUN=0
 
@@ -57,19 +66,28 @@ usage() {
   --model NAME           Hugging Face 模型 id（默认 Qwen/Qwen2.5-0.5B-Instruct）
   --port PORT            宿主机端口（默认 8000）
   --max-model-len N      最大上下文（默认 4096；越大 KV cache 占用越多）
-  --gpu-mem-util F       显存使用上限比例（默认 0.90）
-  --tp N                 张量并行卡数（默认 1）
-  --block-size N         PagedAttention 块大小（默认 16，常用 8/16/32）
+  --gpu-mem-util F       GPU 显存上限比例（默认 0.90；CPU 模式不使用）
+  --tp N                 CPU/GPU 并行度（GPU 为卡数，CPU 建议按 NUMA 节点）
+  --block-size N         PagedAttention 块大小（不设则用 vLLM 默认：GPU 16 / CPU 128）
+  --dtype TYPE           模型精度，如 bfloat16（CPU 上推荐显式指定）
   --timeout SEC          等待服务就绪的最长秒数（默认 600）
   --no-demo              不调用示例接口
+  --cpu / --gpu          强制 CPU 或 GPU（默认自动检测 nvidia-smi）
   --dry-run              只打印将执行的 docker 命令
   -h, --help             显示本帮助
 
-环境变量：MODEL / PORT / MAX_MODEL_LEN / GPU_MEM_UTIL / TP / BLOCK_SIZE /
-          HF_CACHE / HF_TOKEN / HEALTH_TIMEOUT
+环境变量：ACCEL=auto|cpu|gpu / MODEL / PORT / MAX_MODEL_LEN / GPU_MEM_UTIL /
+          TP / BLOCK_SIZE / DTYPE / HF_CACHE / HF_TOKEN / HEALTH_TIMEOUT /
+          VLLM_CPU_KVCACHE_SPACE / VLLM_CPU_OMP_THREADS_BIND
+
+CPU 模式说明：
+  - 镜像 vllm/vllm-openai-cpu:latest-x86_64 需要 Linux x86_64 + AVX2（推荐 AVX512）；
+  - KV cache 大小用 VLLM_CPU_KVCACHE_SPACE（GiB）控制，而不是 --gpu-mem-util；
+  - 线程绑定可用 VLLM_CPU_OMP_THREADS_BIND=0-15 或 auto。
 
 模型来源：Hugging Face（https://huggingface.co），gated 模型需要 HF_TOKEN。
-镜像来源：Docker Hub 的 docker.io/vllm/vllm-openai。
+镜像来源：Docker Hub 的 docker.io/vllm/vllm-openai（GPU）与
+          docker.io/vllm/vllm-openai-cpu（CPU）。
 EOF
 }
 
@@ -88,14 +106,19 @@ while [[ $# -gt 0 ]]; do
             [[ $# -ge 2 ]] || { echo "--gpu-mem-util 需要比例" >&2; exit 1; }
             GPU_MEM_UTIL="$2"; shift 2 ;;
         --tp)
-            [[ $# -ge 2 ]] || { echo "--tp 需要卡数" >&2; exit 1; }
+            [[ $# -ge 2 ]] || { echo "--tp 需要并行度" >&2; exit 1; }
             TP="$2"; shift 2 ;;
         --block-size)
             [[ $# -ge 2 ]] || { echo "--block-size 需要数字" >&2; exit 1; }
             BLOCK_SIZE="$2"; shift 2 ;;
+        --dtype)
+            [[ $# -ge 2 ]] || { echo "--dtype 需要类型" >&2; exit 1; }
+            DTYPE="$2"; shift 2 ;;
         --timeout)
             [[ $# -ge 2 ]] || { echo "--timeout 需要秒数" >&2; exit 1; }
             HEALTH_TIMEOUT="$2"; shift 2 ;;
+        --cpu) ACCEL=cpu; shift ;;
+        --gpu) ACCEL=gpu; shift ;;
         --no-demo) DEMO=0; shift ;;
         --dry-run) DRY_RUN=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -107,12 +130,37 @@ if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
     echo "端口不合法: $PORT" >&2
     exit 1
 fi
-for value in "$MAX_MODEL_LEN" "$TP" "$BLOCK_SIZE" "$HEALTH_TIMEOUT"; do
+for value in "$MAX_MODEL_LEN" "$TP" "$HEALTH_TIMEOUT"; do
     if ! [[ "$value" =~ ^[0-9]+$ ]] || (( value < 1 )); then
         echo "需要正整数: $value" >&2
         exit 1
     fi
 done
+if [[ -n "$BLOCK_SIZE" ]] && ! { [[ "$BLOCK_SIZE" =~ ^[0-9]+$ ]] && (( BLOCK_SIZE > 0 )); }; then
+    echo "--block-size 需要正整数: $BLOCK_SIZE" >&2
+    exit 1
+fi
+
+# 自动选择 CPU / GPU。
+case "$ACCEL" in
+    auto)
+        if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+            ACCEL=gpu
+        else
+            ACCEL=cpu
+        fi
+        ;;
+    cpu|gpu) ;;
+    *) echo "ACCEL 只能是 auto / cpu / gpu" >&2; exit 1 ;;
+esac
+
+if [[ "$ACCEL" == "gpu" ]]; then
+    IMAGE="$GPU_IMAGE"
+    log "使用 GPU（--gpus all，镜像 ${IMAGE}）"
+else
+    IMAGE="$CPU_IMAGE"
+    log "使用 CPU（镜像 ${IMAGE}）"
+fi
 
 if [[ "$DRY_RUN" != 1 ]]; then
     command -v docker >/dev/null 2>&1 || {
@@ -123,14 +171,16 @@ if [[ "$DRY_RUN" != 1 ]]; then
         echo "Docker daemon 不可用，请先启动 Docker。" >&2
         exit 1
     }
-    command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1 || {
-        echo "vllm/vllm-openai 需要 NVIDIA GPU；没有 GPU 时请改用 docker/ollama 示例。" >&2
-        exit 1
-    }
     command -v curl >/dev/null 2>&1 || {
         echo "需要 curl 等待服务就绪并调用接口。" >&2
         exit 1
     }
+    if [[ "$ACCEL" == "gpu" ]]; then
+        command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1 || {
+            echo "GPU 模式需要 NVIDIA 驱动；没有 GPU 时去掉 --gpu，或加 --cpu 使用官方 CPU 镜像。" >&2
+            exit 1
+        }
+    fi
     mkdir -p "$HF_CACHE"
 fi
 
@@ -140,19 +190,45 @@ if [[ "$DRY_RUN" != 1 ]] && docker ps -a --format '{{.Names}}' | grep -Fxq "$CON
 fi
 
 docker_args=(run -d --name "$CONTAINER"
-    --gpus all
-    --ipc=host
     -p "$PORT":8000
     -v "$HF_CACHE":/root/.cache/huggingface)
+
+if [[ "$ACCEL" == "gpu" ]]; then
+    docker_args+=(--gpus all --ipc=host)
+else
+    # vLLM CPU 的 NUMA 调用在默认 seccomp 下可能被拒绝；官方文档建议这两个参数。
+    docker_args+=(--security-opt seccomp=unconfined --cap-add SYS_NICE --shm-size=4g)
+fi
+
 if [[ -n "${HF_TOKEN:-}" ]]; then
     docker_args+=(-e HF_TOKEN)
 fi
-docker_args+=("$IMAGE"
-    --model "$MODEL"
-    --max-model-len "$MAX_MODEL_LEN"
-    --gpu-memory-utilization "$GPU_MEM_UTIL"
-    --tensor-parallel-size "$TP"
-    --block-size "$BLOCK_SIZE")
+if [[ "$ACCEL" == "cpu" ]]; then
+    for name in VLLM_CPU_KVCACHE_SPACE VLLM_CPU_OMP_THREADS_BIND; do
+        if [[ -n "${!name:-}" ]]; then
+            docker_args+=(-e "$name")
+        fi
+    done
+fi
+
+docker_args+=("$IMAGE")
+# GPU 镜像的文档写法是 --model；CPU 镜像的入口是 `vllm serve`，文档用位置参数。
+if [[ "$ACCEL" == "gpu" ]]; then
+    docker_args+=(--model "$MODEL")
+else
+    docker_args+=("$MODEL")
+fi
+docker_args+=(--max-model-len "$MAX_MODEL_LEN" --tensor-parallel-size "$TP")
+
+if [[ "$ACCEL" == "gpu" ]]; then
+    docker_args+=(--gpu-memory-utilization "$GPU_MEM_UTIL")
+fi
+if [[ -n "$BLOCK_SIZE" ]]; then
+    docker_args+=(--block-size "$BLOCK_SIZE")
+fi
+if [[ -n "$DTYPE" ]]; then
+    docker_args+=(--dtype "$DTYPE")
+fi
 
 log "启动 vLLM（模型：${MODEL}）"
 if ! run docker "${docker_args[@]}"; then
@@ -207,6 +283,7 @@ cat <<EOF
   停止容器     docker stop ${CONTAINER}
   彻底清理     docker rm -f ${CONTAINER}
 
+当前模式     ${ACCEL}（镜像 ${IMAGE}）
 PagedAttention 的块表与 attention 读取方式见 example/PAGED_ATTENTION_READING.md；
-本目录 README.md 里还有 GPU 前提、参数和 KV cache 的对应关系。
+本目录 README.md 里还有 CPU/GPU 参数与 KV cache 的对应关系。
 EOF

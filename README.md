@@ -18,7 +18,7 @@
 │   ├── ollama/                     # 用 Docker 跑 Ollama + Llama 的示例
 │   │   ├── run.sh                  # CPU/GPU 启动 + 拉模型 + 调用一次 API
 │   │   └── README.md               # GPU 前提、API、上下文与 KV cache 参数
-│   └── vllm/                       # 用 Docker 跑 vLLM（PagedAttention）的示例
+│   └── vllm/                       # 用 Docker 跑 vLLM（CPU / GPU）的示例
 │       ├── run.sh                  # GPU 启动 + 等待就绪 + 调用 OpenAI 接口
 │       └── README.md               # 镜像/模型来源、参数、块池指标
 ├── example/
@@ -151,15 +151,16 @@ bash docker/ollama/run.sh --dry-run       # 只打印将执行的 docker 命令
 
 模型列表由环境变量 `MODELS`（空格/逗号分隔）或可重复的 `--model` 指定，`MODEL` 保留为单模型别名。镜像是 Docker Hub 的 `ollama/ollama`，模型默认来自 [Ollama 官方模型库](https://ollama.com/library)（`llama3.2:3b` 的完整坐标是 `registry.ollama.ai/library/llama3.2:3b`，也支持 Hugging Face 上的 GGUF）。脚本会启动容器、等待就绪、逐个拉取模型、调用一次 `/api/generate`，并打印 `ollama ps` 的内存占用；README 里还有 GPU 前提、API 用法，以及 `num_ctx` / `OLLAMA_KV_CACHE_TYPE` 和 KV cache 大小的对应关系。
 
-### vLLM（NVIDIA GPU，PagedAttention）
+### vLLM（CPU / GPU，PagedAttention）
 
 ```bash
-bash docker/vllm/run.sh                              # 默认 Qwen2.5-0.5B + PagedAttention
-MODEL=Qwen/Qwen2.5-1.5B-Instruct bash docker/vllm/run.sh
-BLOCK_SIZE=8 MAX_MODEL_LEN=8192 bash docker/vllm/run.sh
+bash docker/vllm/run.sh                              # 有 GPU 用 GPU，否则用官方 CPU 镜像
+bash docker/vllm/run.sh --cpu                        # 强制 CPU（vllm/vllm-openai-cpu）
+bash docker/vllm/run.sh --gpu                        # 强制 GPU（vllm/vllm-openai）
+VLLM_CPU_KVCACHE_SPACE=8 DTYPE=bfloat16 bash docker/vllm/run.sh --cpu
 ```
 
-脚本启动 `vllm/vllm-openai` 容器，等待 `/health`，从日志里打印 KV cache 块规模，并调用一次 `/v1/chat/completions`。README 里还有 GPU 前提、模型来源、`--block-size` / `--gpu-memory-utilization` 与块池大小的关系，以及 `/metrics` 的用法。
+脚本会按 `nvidia-smi` 自动选择镜像，等待 `/health`，从日志里打印 KV cache 块规模，并调用一次 `/v1/chat/completions`。README 里还有 CPU/GPU 前提、模型来源、`--block-size` / `--gpu-memory-utilization` / `VLLM_CPU_KVCACHE_SPACE` 与块池大小的关系，以及 `/metrics` 的用法。
 
 ## 建议的阅读路线
 
