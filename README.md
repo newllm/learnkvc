@@ -113,11 +113,12 @@ python3 example/prefix_cache_demo.py
 
 ```bash
 bash docker/ollama/run.sh                 # 默认 llama3.2:3b，自动判断 CPU/GPU
-MODEL=llama3.1:8b bash docker/ollama/run.sh
+MODELS="llama3.2:3b qwen2.5:3b" bash docker/ollama/run.sh   # 一次拉多个
+bash docker/ollama/run.sh --model llama3.1:8b               # 也可重复 --model
 bash docker/ollama/run.sh --dry-run       # 只打印将执行的 docker 命令
 ```
 
-脚本会启动 `ollama/ollama` 容器、等待就绪、拉取模型、调用一次 `/api/generate`，并打印 `ollama ps` 的内存占用；README 里还有 GPU 前提、API 用法，以及 `num_ctx` / `OLLAMA_KV_CACHE_TYPE` 和 KV cache 大小的对应关系。
+模型列表由环境变量 `MODELS`（空格/逗号分隔）或可重复的 `--model` 指定，`MODEL` 保留为单模型别名。镜像是 Docker Hub 的 `ollama/ollama`，模型默认来自 [Ollama 官方模型库](https://ollama.com/library)（`llama3.2:3b` 的完整坐标是 `registry.ollama.ai/library/llama3.2:3b`，也支持 Hugging Face 上的 GGUF）。脚本会启动容器、等待就绪、逐个拉取模型、调用一次 `/api/generate`，并打印 `ollama ps` 的内存占用；README 里还有 GPU 前提、API 用法，以及 `num_ctx` / `OLLAMA_KV_CACHE_TYPE` 和 KV cache 大小的对应关系。
 
 ## 建议的阅读路线
 

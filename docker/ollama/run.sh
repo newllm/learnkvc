@@ -11,20 +11,28 @@
 #
 # 用法：
 #   bash docker/ollama/run.sh                 # 默认拉 llama3.2:3b，自动判断 CPU/GPU
-#   MODEL=llama3.1:8b bash docker/ollama/run.sh
-#   bash docker/ollama/run.sh --model qwen2.5:3b --port 11434
+#   MODELS="llama3.2:3b qwen2.5:3b" bash docker/ollama/run.sh   # 一次拉多个
+#   MODEL=llama3.1:8b bash docker/ollama/run.sh                 # 单模型别名
+#   bash docker/ollama/run.sh --model qwen2.5:3b --model llama3.2:1b
 #   bash docker/ollama/run.sh --cpu           # 强制 CPU（没有 NVIDIA GPU 的机器）
 #   bash docker/ollama/run.sh --dry-run       # 只打印命令，不真正执行
 #   bash docker/ollama/run.sh --no-demo       # 不跑示例请求
 #
-# 环境变量： MODEL / PORT / GPU_MODE(auto|on|off) / PULL / DEMO / HEALTH_TIMEOUT
+# 环境变量： MODELS="a b"（空格/逗号分隔）/ MODEL（单模型别名）/
+#           PORT / GPU_MODE(auto|on|off) / PULL / DEMO / HEALTH_TIMEOUT
+#
+# 模型来源：默认从 Ollama 官方模型库拉取（https://ollama.com/library），
+#           name:tag 的完整坐标是 registry.ollama.ai/library/<name>:<tag>；
+#           也支持 hf.co/<user>/<repo>:<quant> 这种 Hugging Face GGUF。
+# 镜像来源：Docker Hub 的 docker.io/ollama/ollama。
 
 set -euo pipefail
 
 CONTAINER="${CONTAINER:-ollama}"
 IMAGE="${IMAGE:-ollama/ollama}"
 VOLUME="${VOLUME:-ollama}"
-MODEL="${MODEL:-llama3.2:3b}"
+MODELS="${MODELS:-}"
+MODEL="${MODEL:-}"
 PORT="${PORT:-11434}"
 GPU_MODE="${GPU_MODE:-auto}"
 PULL="${PULL:-1}"
@@ -36,7 +44,8 @@ usage() {
     cat <<'EOF'
 用法: run.sh [选项]
 
-  --model NAME      要拉取/使用的模型（默认 llama3.2:3b，也可以是 llama3.1:8b 等）
+  --model NAME      要拉取的模型，可重复；不传时用 MODELS / MODEL 环境变量
+                    （默认 llama3.2:3b，也可以是 llama3.1:8b 等）
   --port PORT       映射到宿主机的端口（默认 11434）
   --gpu             强制使用 GPU（需要 NVIDIA 驱动 + nvidia-container-toolkit）
   --cpu             强制使用 CPU
@@ -46,7 +55,17 @@ usage() {
   --dry-run         只打印将要执行的 docker 命令
   -h, --help        显示本帮助
 
-环境变量与选项等价：MODEL, PORT, GPU_MODE=auto|on|off, PULL=0|1, DEMO=0|1
+环境变量：
+  MODELS="llama3.2:3b qwen2.5:3b"   要拉取的模型列表（空格或逗号分隔）
+  MODEL=llama3.1:8b                 单个模型的别名，等价于 MODELS="llama3.1:8b"
+  PORT / GPU_MODE=auto|on|off / PULL=0|1 / DEMO=0|1
+
+优先级：--model（可重复） > MODELS > MODEL > 默认 llama3.2:3b
+
+模型来源：默认 Ollama 官方模型库 https://ollama.com/library
+          （完整坐标 registry.ollama.ai/library/<name>:<tag>）；
+          也支持 hf.co/<user>/<repo>:<quant> 的 Hugging Face GGUF。
+镜像来源：Docker Hub 的 docker.io/ollama/ollama。
 EOF
 }
 
@@ -69,11 +88,12 @@ run() {
     "$@"
 }
 
+cli_models=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --model)
             [[ $# -ge 2 ]] || { echo "--model 需要模型名" >&2; exit 1; }
-            MODEL="$2"; shift 2 ;;
+            cli_models+=("$2"); shift 2 ;;
         --port)
             [[ $# -ge 2 ]] || { echo "--port 需要端口号" >&2; exit 1; }
             PORT="$2"; shift 2 ;;
@@ -89,6 +109,23 @@ while [[ $# -gt 0 ]]; do
         *)          echo "未知参数: $1" >&2; usage; exit 1 ;;
     esac
 done
+
+# 解析模型列表：--model 优先，其次 MODELS，最后 MODEL；支持空格/逗号分隔。
+if (( ${#cli_models[@]} > 0 )); then
+    raw_models="${cli_models[*]}"
+else
+    raw_models="${MODELS:-${MODEL:-llama3.2:3b}}"
+fi
+IFS=', ' read -r -a models <<< "$raw_models"
+clean_models=()
+for model_name in "${models[@]}"; do
+    [[ -n "$model_name" ]] && clean_models+=("$model_name")
+done
+if (( ${#clean_models[@]} == 0 )); then
+    echo "没有可用的模型名，请设置 MODELS 或使用 --model 指定。" >&2
+    exit 1
+fi
+models=("${clean_models[@]}")
 
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
     echo "端口不合法: $PORT" >&2
@@ -168,8 +205,10 @@ if [[ "$DRY_RUN" != 1 ]]; then
 fi
 
 if [[ "$PULL" == 1 ]]; then
-    log "拉取模型 ${MODEL}（首次会下载数 GB，可先用小模型试）"
-    run docker exec "$CONTAINER" ollama pull "$MODEL"
+    log "拉取模型：${models[*]}（首次会下载数 GB，可先用小模型试）"
+    for model_name in "${models[@]}"; do
+        run docker exec "$CONTAINER" ollama pull "$model_name"
+    done
 fi
 
 if [[ "$DEMO" == 1 && "$DRY_RUN" != 1 ]]; then
@@ -177,8 +216,8 @@ if [[ "$DEMO" == 1 && "$DRY_RUN" != 1 ]]; then
         echo "缺少 curl，无法调用示例接口；可加 --no-demo 跳过。" >&2
         exit 1
     }
-    log "调用 POST /api/generate"
-    payload=$(printf '{"model":"%s","prompt":"用一句话解释 KV cache 为什么能加速推理","stream":false}' "$MODEL")
+    log "调用 POST /api/generate（模型：${models[0]}）"
+    payload=$(printf '{"model":"%s","prompt":"用一句话解释 KV cache 为什么能加速推理","stream":false}' "${models[0]}")
     response=$(curl -fsS "http://127.0.0.1:$PORT/api/generate" \
         -H 'Content-Type: application/json' -d "$payload")
     if command -v python3 >/dev/null 2>&1; then
@@ -195,7 +234,8 @@ cat <<EOF
 
 完成。常用命令：
   服务地址     http://127.0.0.1:$PORT
-  交互聊天     docker exec -it $CONTAINER ollama run $MODEL
+  交互聊天     docker exec -it $CONTAINER ollama run ${models[0]}
+  本次模型     ${models[*]}
   模型列表     docker exec $CONTAINER ollama list
   查看占用     docker exec $CONTAINER ollama ps
   停止容器     docker stop $CONTAINER

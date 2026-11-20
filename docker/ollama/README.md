@@ -1,6 +1,6 @@
 # 用 Docker 跑 Ollama（Llama 等模型）
 
-一个可以直接照抄的本地大模型运行示例：用 Docker 起 [Ollama](https://ollama.com/)，拉一个 Llama 模型，然后用 HTTP API 对话。Ollama 内部是 llama.cpp，模型默认 4-bit 量化，CPU 也能跑，有 NVIDIA GPU 时会自动用上。
+一个可以直接照抄的本地大模型运行示例：用 Docker 起 [Ollama](https://ollama.com/)，拉一个 Llama 模型，然后用 HTTP API 对话。镜像是 Docker Hub 上的 `ollama/ollama`，模型默认来自 [Ollama 官方模型库](https://ollama.com/library)。Ollama 内部是 llama.cpp，模型默认 4-bit 量化，CPU 也能跑，有 NVIDIA GPU 时会自动用上。
 
 目录内容：
 
@@ -19,6 +19,54 @@ docker/ollama/
 | GPU 运行 | NVIDIA 驱动 + [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)，`nvidia-smi` 能正常输出 |
 | macOS | Docker 容器**用不到** Apple GPU（Metal），只能 CPU；想用 GPU 建议直接在 macOS 上装 Ollama |
 
+## 模型和镜像从哪里来
+
+| 东西 | 来源 |
+| --- | --- |
+| Docker 镜像 | Docker Hub 的 [`ollama/ollama`](https://hub.docker.com/r/ollama/ollama)（`docker.io/ollama/ollama:latest`） |
+| 模型 | [Ollama 官方模型库](https://ollama.com/library)，也可以直接使用 [Hugging Face 上的 GGUF](https://huggingface.co/docs/hub/ollama) |
+
+`MODELS` / `--model` 里写的就是模型库中的 `name:tag`，例如 `llama3.2:3b` 的完整坐标是：
+
+```text
+registry.ollama.ai/library/llama3.2:3b
+```
+
+所以脚本里的 `ollama pull llama3.2:3b` 会去 `registry.ollama.ai` 下载清单和 GGUF 分片。用 Ollama 也可以直接拉 Hugging Face 上的 GGUF（需要对方仓库提供 GGUF 文件，格式见 [Hugging Face 文档](https://huggingface.co/docs/hub/ollama)）：
+
+```bash
+docker exec -it ollama ollama run hf.co/<user>/<repo>:<quant>
+```
+
+如果要**完全离线**，把 GGUF 文件拷进容器，用 Modelfile 导入：
+
+```bash
+# Modelfile
+# FROM ./llama-3.2-3b-instruct.Q4_K_M.gguf
+# PARAMETER num_ctx 4096
+docker cp Modelfile ollama:/tmp/Modelfile
+docker cp llama-3.2-3b-instruct.Q4_K_M.gguf ollama:/tmp/
+docker exec ollama ollama create my-llama -f /tmp/Modelfile
+```
+
+下载后的模型落在容器的 `/root/.ollama/models`（`manifests/` 存清单，`blobs/` 存权重分片），由 volume `ollama` 持久化。查看实际位置和占用：
+
+```bash
+docker volume inspect ollama --format '{{ .Mountpoint }}'   # Docker Desktop 上在虚拟机内
+docker exec ollama du -sh /root/.ollama/models
+docker exec ollama ollama list
+```
+
+`OLLAMA_MODELS` 可以改容器内的模型目录，例如挂载宿主机目录：
+
+```bash
+docker run -d --name ollama \
+  -v /data/ollama:/models -e OLLAMA_MODELS=/models \
+  -p 11434:11434 ollama/ollama
+```
+
+公司内网可以把 `ollama/ollama` 镜像同步到私有镜像仓库，再按上面的方式导入 GGUF；私有 OCI registry 的认证配置不在本示例范围内。
+
 ## 快速开始
 
 ```bash
@@ -33,17 +81,37 @@ bash docker/ollama/run.sh
 3. 删掉同名旧容器（模型数据在 volume 里，不会重复下载）；
 4. `docker run` 启动 Ollama，映射 `11434`；
 5. 轮询 `ollama list` 等待服务就绪；
-6. `ollama pull` 拉取模型；
+6. 按 `MODELS` / `--model` 拉取一个或多个模型（默认 `llama3.2:3b`）；
 7. 调一次 `POST /api/generate`，并打印 `ollama ps` 的内存占用。
 
 换模型、端口或强制 CPU：
 
 ```bash
+# 一次拉多个模型：空格或逗号分隔
+MODELS="llama3.2:3b qwen2.5:3b" bash docker/ollama/run.sh
+
+# 单模型别名
 MODEL=llama3.1:8b bash docker/ollama/run.sh
+
+# 也可以用可重复的 --model（会覆盖 MODELS）
+bash docker/ollama/run.sh --model llama3.2:3b --model qwen2.5:3b
+
 PORT=11500 bash docker/ollama/run.sh
 bash docker/ollama/run.sh --cpu
 bash docker/ollama/run.sh --dry-run    # 只打印将执行的 docker 命令
 ```
+
+## 模型选择：环境变量与优先级
+
+模型名不写死在脚本里，三种方式任选：
+
+| 方式 | 示例 | 说明 |
+| --- | --- | --- |
+| `MODELS`（推荐） | `MODELS="llama3.2:3b qwen2.5:3b"` | 空格或逗号分隔，可一次拉多个 |
+| `MODEL` | `MODEL=llama3.1:8b` | 单个模型的别名 |
+| `--model` | `--model llama3.2:3b --model qwen2.5:3b` | 可重复，存在时覆盖 `MODELS` |
+
+优先级：`--model` > `MODELS` > `MODEL` > 默认值 `llama3.2:3b`。脚本会把列表里的每个模型都 `ollama pull` 一遍，示例请求用列表中的第一个模型；后续调用 API 时仍然可以指定任意已下载的模型。
 
 ## CPU / GPU 的原始命令
 
@@ -74,13 +142,15 @@ docker logs ollama | head              # 启动日志里会打印检测到的 GP
 | `qwen2.5:3b` / `qwen2.5:7b` | 1.9 / 4.7 GB | 中文表现不错 |
 | `deepseek-r1:7b` | 4.7 GB | 带推理链输出的蒸馏模型 |
 
-体积以实际下载为准；Ollama 默认拉取 4-bit 量化版本，所以比原始 fp16 权重小很多。
+上表的名字都来自 Ollama 官方模型库，可以直接写进 `MODELS` 或 `--model`。体积以实际下载为准；Ollama 默认拉取 4-bit 量化版本，所以比原始 fp16 权重小很多。
 
 ## API 示例
 
-服务起来后（`http://127.0.0.1:11434`）：
+服务起来后（`http://127.0.0.1:11434`）。下面的请求统一用 `MODEL` 环境变量指定模型，和脚本里的写法保持一致：
 
 ```bash
+MODEL="${MODEL:-llama3.2:3b}"
+
 # 版本 / 已下载模型
 curl -s http://127.0.0.1:11434/api/version
 curl -s http://127.0.0.1:11434/api/tags
@@ -88,12 +158,12 @@ curl -s http://127.0.0.1:11434/api/tags
 # 生成（stream=false 一次性返回）
 curl -s http://127.0.0.1:11434/api/generate \
   -H 'Content-Type: application/json' \
-  -d '{"model":"llama3.2:3b","prompt":"用一句话解释 KV cache","stream":false}'
+  -d "{\"model\":\"$MODEL\",\"prompt\":\"用一句话解释 KV cache\",\"stream\":false}"
 
 # 对话
 curl -s http://127.0.0.1:11434/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"model":"llama3.2:3b","messages":[{"role":"user","content":"你好"}],"stream":false}'
+  -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"stream\":false}"
 
 # 当前加载的模型与内存占用
 curl -s http://127.0.0.1:11434/api/ps
@@ -102,12 +172,12 @@ curl -s http://127.0.0.1:11434/api/ps
 默认 `stream=true` 会返回 NDJSON 流；脚本里用 `stream:false` 方便直接解析。也可以进容器交互聊天：
 
 ```bash
-docker exec -it ollama ollama run llama3.2:3b
+docker exec -it ollama ollama run "$MODEL"
 ```
 
 ## 数据、端口与常用环境变量
 
-- 模型与配置存在 volume `ollama` 里，对应容器的 `/root/.ollama`；删容器不会删模型，删 volume 才会。
+- 模型与配置存在 volume `ollama` 里，对应容器的 `/root/.ollama`（模型在 `/root/.ollama/models`）；删容器不会删模型，删 volume 才会。
 - 宿主机端口由 `-p` 映射，默认 `11434`；冲突时换 `PORT=11500`。
 - 常用环境变量（较新版本的 Ollama 支持）：
 
@@ -151,12 +221,13 @@ docker run -d --name ollama \
 - 用 API 显式设置上下文和最多生成多少 token：
 
   ```bash
+  MODEL="${MODEL:-llama3.2:3b}"
   curl -s http://127.0.0.1:11434/api/chat \
     -H 'Content-Type: application/json' \
-    -d '{"model":"llama3.2:3b",
-         "messages":[{"role":"user","content":"你好"}],
-         "stream":false,
-         "options":{"num_ctx":8192,"num_predict":256}}'
+    -d "{\"model\":\"$MODEL\",
+         \"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],
+         \"stream\":false,
+         \"options\":{\"num_ctx\":8192,\"num_predict\":256}}"
   ```
 
 - `docker exec ollama ollama ps` 里的 SIZE 是加载后的总占用（权重 + 上下文 + 运行时开销），可以用来验证 `num_ctx` 的效果。
