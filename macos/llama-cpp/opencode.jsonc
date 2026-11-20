@@ -1,0 +1,39 @@
+{
+  // 给 OpenCode 用的示例配置：把 llama.cpp 的 OpenAI 兼容服务注册成 provider。
+  //
+  // 放置位置（二选一）：
+  //   全局： ~/.config/opencode/opencode.jsonc
+  //   项目： <项目根>/opencode.jsonc 或 <项目根>/.opencode/opencode.jsonc
+  //
+  // 前提：llama.cpp 服务按下面这条命令启动（端口/别名与配置保持一致）：
+  //   bash macos/llama-cpp/run.sh \
+  //     --hf unsloth/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M \
+  //     --ctx 32768 --alias qwen2.5-coder-7b
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "llamacpp": {
+      "name": "llama.cpp (local)",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:9931/v1",
+        // llama.cpp 默认不校验 API key；如果启动时加了 --api-key，这里换成同一个值。
+        "apiKey": "local"
+      },
+      "models": {
+        // key 是 OpenCode 里的 model ID，必须和 llama serve 的 -a/--alias 一致。
+        "qwen2.5-coder-7b": {
+          "name": "Qwen2.5 Coder 7B (llama.cpp)",
+          // 要和服务端的 -c 对齐，否则 OpenCode 可能发出超过上下文预算的请求。
+          // 32K 是 Qwen2.5-Coder 的原生窗口，最稳；要用 64K 见 README「64K 上下文」，
+          // 并把这里改成 65536（服务端同时加 --ctx 65536 和 YaRN 参数）。
+          "limit": {
+            "context": 32768,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  // 默认模型；也可以在 opencode 里用 /models 切换。
+  "model": "llamacpp/qwen2.5-coder-7b"
+}

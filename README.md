@@ -1,6 +1,6 @@
 # learnkvc
 
-用三份最小可运行的示例代码，把 LLM 推理里的 **KV Cache** 从「单请求的重算与复用」讲到「多请求的共享块」，再到「PagedAttention 的块表与显存管理」；另附用 Docker 跑 Ollama / vLLM 的实操示例。
+用三份最小可运行的示例代码，把 LLM 推理里的 **KV Cache** 从「单请求的重算与复用」讲到「多请求的共享块」，再到「PagedAttention 的块表与显存管理」；另附用 Docker 跑 Ollama / vLLM、在 macOS 上用 Ollama / llama.cpp 原生跑 Llama 的实操示例。
 
 没有模型权重：`kv_cache.py` 用一个 2 层玩具模型把「无 cache 重算」和「KV cache 增量」跑在同一份代码里（需要 PyTorch），`prefix_cache_demo.py` 用纯标准库模拟服务端的块级前缀共享。每个结论都有可执行的代码和断言。
 
@@ -28,6 +28,13 @@
 │   ├── PREFIX_CACHE_READING.md     # 逐段阅读导图
 │   ├── paged_attention.py          # 块表 + PagedAttention：逻辑位置 → 物理块
 │   └── PAGED_ATTENTION_READING.md  # 逐段阅读导图
+├── macos/
+│   ├── ollama/                     # 在 macOS 上原生跑 Ollama（Metal GPU）的示例
+│   │   ├── run.sh                  # 检查/启动 serve + 拉模型 + 调用一次 API
+│   │   └── README.md               # 三种安装、四种启动、Llama 选型、环境变量、与 Docker 版的差异
+│   └── llama-cpp/                  # 用 llama.cpp 直接在 macOS 上跑 Llama 的示例
+│       ├── run.sh                  # 启动 llama serve + 等 /health + 调用一次 API
+│       └── README.md               # 安装、模型来源、参数表、API、KV cache 与调优
 ├── LICENSE
 └── README.md
 ```
@@ -163,6 +170,111 @@ HF_ENDPOINT=https://hf-mirror.com bash docker/vllm/run.sh --cpu   # HF 下载慢
 
 脚本会按 `nvidia-smi` 自动选择镜像，等待 `/health`，从日志里打印 KV cache 块规模，并调用一次 `/v1/chat/completions`。README 里还有 CPU/GPU 前提、模型来源、`--block-size` / `--gpu-memory-utilization` / `VLLM_CPU_KVCACHE_SPACE` 与块池大小的关系，以及 `/metrics` 的用法。
 
+## macOS 原生跑 Llama（Ollama / llama.cpp，Apple GPU）
+
+Docker 在 macOS 上跑的是 Linux 容器，拿不到 Apple GPU；想用 Metal 直接在 Mac 上跑 Llama，有两条路：省心用 Ollama，想调底层参数用 llama.cpp。
+
+### Ollama（模型库 + 菜单栏 App）
+
+看 [`macos/ollama/`](macos/ollama/)：
+
+```bash
+bash macos/ollama/run.sh                 # 后台起 serve，默认 llama3.2:3b
+bash macos/ollama/run.sh --ctx 8192      # 显式设 8K（默认按显存取 4k/32k/256k）
+bash macos/ollama/run.sh --app           # 用菜单栏 App 启动
+bash macos/ollama/run.sh --install       # 没装时先跑官方安装脚本
+bash macos/ollama/run.sh --dry-run       # 只打印将执行的命令
+```
+
+文档里写了三种安装方式（官方 App / 一键脚本 / Homebrew）、三种原生启动方式（菜单栏 App / `ollama serve` / `brew services`，另有脚本封装）、macOS 上 `launchctl setenv` 与 shell 环境变量的区别；还有一节专门讲 Llama 家族在 Mac 上的选型：1B/3B/8B/11B/70B/405B 与 Llama 4 的下载体积、长上下文 KV 开销、按内存挑模型的建议，以及 `num_ctx`、`OLLAMA_KV_CACHE_TYPE`、`OLLAMA_NUM_PARALLEL` 与 `ollama ps` 的对应关系——和 Docker 版是同一套 Ollama 参数，只是改用 Apple 统一内存。
+
+### llama.cpp（手动参数、Metal GPU）
+
+想看底层引擎、自己调 `-c` / `-ngl` / `-fa` / `-ctk/-ctv`，用 [`macos/llama-cpp/`](macos/llama-cpp/)：
+
+```bash
+# 官方脚本安装（Apple Silicon 预编译 Metal 版，装到 ~/.local/bin/llama）
+curl -LsSf https://llama.app/install.sh | sh
+
+# 起 OpenAI 兼容服务（默认端口 9931，注意别用 -c 0）
+llama serve -hf bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M -c 4096 -ngl auto
+
+# 或本仓库脚本：自动等 /health、调一次 API、打印上下文与吞吐
+bash macos/llama-cpp/run.sh --ctx 8192
+bash macos/llama-cpp/run.sh --kv-type q8_0      # KV cache 量化，省一半
+
+# 写代码请换 Coder 模型（默认的 Llama 3.2 3B 只用于演示）
+bash macos/llama-cpp/run.sh \
+  --hf unsloth/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M --ctx 8192
+```
+
+文档里写了三种安装方式（官方脚本 / Homebrew / 源码）、模型来源（`-hf` / 本地 GGUF）、编程模型选型（Llama 3.2 3B 不适合写代码，16 GB Mac 上 7B / 14B Coder 怎么挑）、OpenCode 对接（custom OpenAI-compatible provider + 样例配置）、常用参数表、OpenAI 兼容 API，以及 `-c` / `-ctk/-ctv` 与 KV cache 大小的对应关系。
+
+### 怎么选：Ollama 还是 llama.cpp
+
+两者在 Apple Silicon 上都走 Metal + 统一内存，跑同一个 7B Q4 模型的速度和内存占用很接近；差别主要在模型管理、参数控制和接入成本。以本仓库这台测试机（Apple M2 / 16 GB / macOS 14.6 Sonoma）为例：
+
+| 维度 | Ollama | llama.cpp |
+| --- | --- | --- |
+| 安装（Sonoma） | 官方 App / `install.sh` 直接可用；**不要用 `brew install ollama`**（14 没有 bottle，会源码编译） | `llama.app` 的 `install.sh` 直接可用（M2 有预编译 Metal 包）；**`brew install llama.cpp` 同样会源码编译** |
+| Metal GPU | ✅ | ✅ |
+| 模型管理 | 内置模型库、`ollama pull/rm`、自动更新 | `-hf` 从 Hugging Face 拉 GGUF，或本地 `.gguf`；模型缓存在 `~/Library/Caches/llama.cpp` |
+| 参数控制 | `OLLAMA_*` 环境变量 + `num_ctx` | 全部底层参数：`-c`、`-ngl`、`-fa`、`-ctk/-ctv`、`-b/-ub`、`-np` |
+| 默认上下文 | 按显存档位自动选（16 GB 机器通常是 4k，以启动日志 `vram-based default context` 为准），Agent 场景要显式 `OLLAMA_CONTEXT_LENGTH=32768` | 默认 `-c 0` = 模型训练长度（Llama 3.2 是 128K，容易吃爆内存），必须显式 `-c` |
+| OpenCode | 内置 provider + 自动发现，`ollama launch opencode` 一键可跑 | 需要 custom provider 配置（本文档附了 `opencode.jsonc` 样例） |
+| 更新 | App 自动更新 / 重跑安装脚本 | 重跑 `llama.app` 安装脚本或 `llama update` |
+| 适合 | 日常使用、省心、写代码接 OpenCode | 调参、对照 KV cache、需要最新特性/单一二进制 |
+
+### 性能：谁更快
+
+同一模型、同一量化、同一上下文、同一 prompt 下，Ollama 和 llama.cpp 的差距通常只有个位数到 ~10%：Ollama 底层就是 llama.cpp（Apple Silicon 上还可能走 MLX runner），两边用的都是 Metal 内核，decode 阶段都受 M2 约 100 GB/s 内存带宽的限制——量级由硬件决定，不是框架。
+
+- **Ollama 的优势是“默认就调得差不多”**：新版默认自动 FlashAttention、按显存调度，Apple Silicon 上还有 MLX runner，不用自己试参数。
+- **llama.cpp 的优势是“能调”**：`-fa on`、`-ngl all`、`-ctk/-ctv q8_0`（减少 KV 读取带宽，长上下文下可能更快）、`-b/-ub`、`-lm`。Ollama 也能设 `OLLAMA_FLASH_ATTENTION`、`OLLAMA_KV_CACHE_TYPE`，两边都调好后性能会趋同。
+- **公平对比要固定条件**：同一模型/量化、同一 `-c`/`num_ctx`、同一 prompt 与输出长度、模型已预热，并且把 prefill（pp）和 decode（tg）分开看；不要拿默认 4k 上下文的 Ollama 和 32k 的 llama.cpp 直接比。
+- 本机（M2 / 16 GB）跑 7B Q4：decode 大致是十几 tok/s 的量级，具体随上下文长度、KV 量化、内存压力和散热波动；16 GB 内存和上下文长度对体验的影响，比“选哪个框架”更大。
+
+```bash
+# Ollama：/api/generate 返回 eval_count / eval_duration（纳秒）
+curl -s http://127.0.0.1:11434/api/generate \
+  -d '{"model":"qwen2.5-coder:7b","prompt":"用一句话解释 KV cache","stream":false,"options":{"num_ctx":32768}}' \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print("decode", round(d["eval_count"]/d["eval_duration"]*1e9, 2), "tok/s"); print("prefill", round(d["prompt_eval_count"]/d["prompt_eval_duration"]*1e9, 2), "tok/s")'
+
+# llama.cpp：启动时加 --metrics，看最近窗口的吞吐
+curl -s http://127.0.0.1:9931/metrics | grep -E 'prompt_tokens_seconds|predicted_tokens_seconds'
+
+# 或直接跑离线基准（prompt 512 / 生成 128）
+llama bench -m model.gguf -p 512 -n 128
+```
+
+### 写代码：Qwen 还是 Llama？
+
+**写代码选 Qwen 的 Coder 系列，Llama 更适合通用对话/推理。**
+
+- Qwen 有专门的代码模型：Qwen2.5-Coder 覆盖 0.5B/1.5B/3B/7B/14B/32B，是按代码生成、修复、补全（FIM）训练的；Qwen3-Coder 进一步面向 Agent 场景（256K 上下文、专门的 function call 格式，支持 Qwen Code / CLINE / Claude Code 这类工具）。官方模型卡和公开代码基准上，Qwen Coder 系列在同尺寸里通常明显强于通用模型。
+- Llama 3.x / Llama 4 是通用模型，强项在通用对话、推理、多语言和安全对齐，代码不是主攻方向。文档里默认的 Llama 3.2 3B 更是“能跑 demo”的尺寸，写代码只能回答简单问题。
+
+这台 16 GB M2 上的现实选择：
+
+| 模型 | 代码能力 | 16 GB 可行性 | 用途 |
+| --- | --- | --- | --- |
+| Qwen2.5-Coder-7B-Instruct Q4（4.36 GB，32K） | 强（同尺寸里第一梯队） | ✅ 32K 上下文很稳 | **本地写代码首选**：补全、小项目、OpenCode |
+| Qwen3-Coder-30B-A3B Q4（17.3 GB，256K，MoE） | 最强本地 Agent 级 | ❌ 24 GB+ | 仓库级/Agent 任务，大内存机器 |
+| Llama 3.1 8B Q4（4.9 GB，128K） | 中等，通用型 | ⚠️ 能跑但写代码一般 | 通用对话/推理，不建议专用于编程 |
+| Llama 3.2 3B（2.0 GB） | 弱 | ✅ | 演示、轻量问答 |
+| Llama 3.3 70B / Llama 4 | 强但通用 | ❌ 43–245 GB | 大内存/服务器 |
+
+- 接 OpenCode 时还要看**工具调用**：Qwen3-Coder 是专门为 Agent 训练过的；Qwen2.5-Coder-7B 在 16 GB 上够用，但复杂 Agent 任务遇到工具调用不稳定时，优先考虑云端/更大模型。
+- **64K 上下文**：Ollama 会把 `num_ctx` 压回模型训练长度，`qwen2.5-coder:7b` 设 64K 实际仍是 32K；llama.cpp 可以用 `--rope-scaling yarn --rope-scale 2` 把它外推到 64K（16 GB 能跑，但质量有损）。细节见 [`macos/llama-cpp/README.md`](macos/llama-cpp/README.md) 的「64K 上下文」。
+- 结论：**本地代码任务用 Qwen2.5-Coder-7B；Llama 留给通用对话，或等你有 24 GB+ 内存再考虑更大的 Qwen3-Coder。** 参考：[Qwen2.5-Coder 发布博客](https://qwenlm.github.io/blog/qwen2.5-coder-family/)、[Qwen3-Coder 仓库](https://github.com/QwenLM/Qwen3-Coder)、[Ollama qwen2.5-coder](https://ollama.com/library/qwen2.5-coder)、[Ollama qwen3-coder](https://ollama.com/library/qwen3-coder)。
+
+**这台 16 GB M2 上的建议：**
+
+- **主力用 Ollama**：装官方 App 或 `curl -fsSL https://ollama.com/install.sh | sh`，拉 `qwen2.5-coder:7b`，接 OpenCode 几乎零配置；把上下文设到 32K（16 GB 上 64K 会和系统抢内存，7B 原生窗口也只有 32K）。
+- **llama.cpp 留作调参/实验**：仓库里的 `macos/llama-cpp/` 用来看 `-c`、`-ctk/-ctv`、`-ngl` 对 KV cache 和 Metal 卸载的影响；OpenCode 也能接，但要自己维护 provider 配置。
+- 两者可以并存（Ollama 11434、llama.cpp 9931），但**不要同时各加载一个 7B**，16 GB 会吃紧。
+- 真正吃力的不是框架，是 16 GB 统一内存和 M2 的内存带宽：Agent 长任务/读大仓库建议用云端模型，本地 7B + 32K 适合补全、单文件修改和小项目。
+
 ## 建议的阅读路线
 
 1. 先读 [`example/KV_CACHE_READING.md`](example/KV_CACHE_READING.md)，对着 `kv_cache.py` 理解「无 cache 为什么在重复算、`past` 为什么要先读、mask 为什么要按绝对位置对齐、位置嵌入为什么要接着历史」。
@@ -178,6 +290,8 @@ HF_ENDPOINT=https://hf-mirror.com bash docker/vllm/run.sh --cpu   # HF 下载慢
 | [`example/PREFIX_CACHE_READING.md`](example/PREFIX_CACHE_READING.md) | 块池、链式哈希、前缀匹配、引用计数、LRU + 叶子优先淘汰、与 vLLM / SGLang 的对应关系 |
 | [`example/PAGED_ATTENTION_READING.md`](example/PAGED_ATTENTION_READING.md) | PagedAttention：块池、block table、gather、内部碎片、与 vLLM 的对应关系 |
 | [`docker/ollama/README.md`](docker/ollama/README.md) | Docker 跑 Ollama/Llama：CPU/GPU、API、上下文与 KV cache 参数 |
+| [`macos/ollama/README.md`](macos/ollama/README.md) | macOS 原生跑 Ollama/Llama（Metal GPU）：安装、App/brew/serve 启动、Llama 选型与内存、OpenCode 对接、环境变量、卸载 |
+| [`macos/llama-cpp/README.md`](macos/llama-cpp/README.md) | macOS 上用 llama.cpp 跑 Llama：安装、`-hf` 模型、编程模型选型、OpenCode 对接、参数表、API、KV cache 与调优 |
 | [`docker/vllm/README.md`](docker/vllm/README.md) | Docker 跑 vLLM：PagedAttention 参数、块池日志与指标 |
 
 ## 这个仓库是什么、不是什么

@@ -17,7 +17,7 @@ docker/ollama/
 | Docker | Docker Desktop 或 Docker Engine，daemon 已启动 |
 | CPU 运行 | x86_64 / arm64 均可；内存 ≥ 模型大小 + 上下文开销 |
 | GPU 运行 | NVIDIA 驱动 + [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)，`nvidia-smi` 能正常输出 |
-| macOS | Docker 容器**用不到** Apple GPU（Metal），只能 CPU；想用 GPU 建议直接在 macOS 上装 Ollama |
+| macOS | Docker 容器**用不到** Apple GPU（Metal），只能 CPU；想用 GPU 请按 [`../../macos/ollama/README.md`](../../macos/ollama/README.md) 直接在 macOS 上原生运行 |
 
 ## 模型和镜像从哪里来
 
@@ -252,7 +252,7 @@ docker exec ollama nvidia-smi    # 容器内也能识别
 
 **容器名冲突**：脚本会自动 `docker rm -f ollama`；手工执行时先删同名容器。
 
-**macOS 上很慢**：Docker 里的 Ollama 只能用 CPU。想用 Apple GPU，请在 macOS 上直接安装 Ollama（`brew install ollama` 或官网 dmg），不要走容器。
+**macOS 上很慢**：Docker 里的 Ollama 只能用 CPU。想用 Apple GPU，请改成本机原生运行，见 [`../../macos/ollama/README.md`](../../macos/ollama/README.md)（官方 App / `brew install ollama` / 本仓库的 `macos/ollama/run.sh`），不要走容器。
 
 ## 清理
 
