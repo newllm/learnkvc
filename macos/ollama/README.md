@@ -1,6 +1,6 @@
 # 在 macOS 上跑 Ollama / Llama（Apple GPU / Metal）
 
-在 Mac 上直接跑 [Ollama](https://ollama.com/)：装官方 App 或 CLI，拉一个 Llama 模型，用 HTTP API 对话。文档既讲 Ollama 本身的安装/启动，也讲 Llama 家族在 Mac 上怎么选模型、内存怎么算。和 [`docker/ollama/`](../../docker/ollama/README.md) 是同一件事的两种跑法——那边是 Docker 容器（在 macOS 上只能用 CPU，Linux + NVIDIA 才用得到 GPU）；这边是 macOS 原生版，Apple Silicon 上会走 **Metal GPU**，模型权重和 KV cache 都放在统一内存里。
+在 Mac 上直接跑 [Ollama](https://ollama.com/)：装官方 App 或 CLI，拉一个 Llama 模型，用 HTTP API 对话。文档既讲 Ollama 本身的安装/启动，也讲 Llama 家族在 Mac 上怎么选模型、内存怎么算，另有一节把 Qwen3-Coder-30B（30B MoE 代码模型）的显存账、10K prompt 的 prefill 与每步 decode 占用算清楚。和 [`docker/ollama/`](../../docker/ollama/README.md) 是同一件事的两种跑法——那边是 Docker 容器（在 macOS 上只能用 CPU，Linux + NVIDIA 才用得到 GPU）；这边是 macOS 原生版，Apple Silicon 上会走 **Metal GPU**，模型权重和 KV cache 都放在统一内存里。
 
 目录内容：
 
@@ -9,6 +9,66 @@ macos/ollama/
 ├── run.sh     # 检查/安装 + 启动 serve + 拉模型 + 调一次 API 的脚本
 └── README.md  # 本文件
 ```
+
+## 目录
+
+- [前置条件](#前置条件)
+- [安装（三种方式，选一种）](#安装三种方式选一种)
+  - [1. 官方 App（推荐）](#1-官方-app推荐)
+  - [2. 官方一键脚本](#2-官方一键脚本)
+  - [3. Homebrew（CLI + brew services）](#3-homebrewcli--brew-services)
+- [启动（三种原生方式 + 本目录脚本）](#启动三种原生方式--本目录脚本)
+  - [方式 A：菜单栏 App](#方式-a菜单栏-app)
+  - [方式 B：终端前台 `ollama serve`](#方式-b终端前台-ollama-serve)
+  - [方式 C：Homebrew service](#方式-chomebrew-service)
+  - [方式 D：本目录的脚本（推荐先跑这个）](#方式-d本目录的脚本推荐先跑这个)
+- [环境变量：macOS 上最容易踩的坑](#环境变量macos-上最容易踩的坑)
+  - [App 模式：用 launchctl](#app-模式用-launchctl)
+  - [终端 / 脚本模式：直接前缀](#终端--脚本模式直接前缀)
+  - [Homebrew service 模式](#homebrew-service-模式)
+  - [常用变量](#常用变量)
+- [模型、目录与 API](#模型目录与-api)
+  - [模型从哪来](#模型从哪来)
+  - [文件都在哪](#文件都在哪)
+  - [HTTP API](#http-api)
+- [在 Mac 上跑 Llama：选型、内存与速度](#在-mac-上跑-llama选型内存与速度)
+  - [按内存挑模型](#按内存挑模型)
+  - [量化怎么选](#量化怎么选)
+  - [速度由什么决定](#速度由什么决定)
+  - [和 llama.cpp / MLX 的关系](#和-llamacpp--mlx-的关系)
+- [Qwen3-Coder-30B：复杂代码开发的显存要求](#qwen3-coder-30b复杂代码开发的显存要求)
+  - [结论：24 GB 独显起，统一内存按约 2/3 折算](#结论24-gb-独显起统一内存按约-23-折算)
+  - [权重与 KV：每 token 96 KiB](#权重与-kv每-token-96-kib)
+  - [Prefill：10K prompt 的额外占用](#prefill10k-prompt-的额外占用)
+  - [Decode：每步只涨 96 KiB](#decode每步只涨-96-kib)
+  - [Ollama 上怎么配](#ollama-上怎么配)
+- [对接 OpenCode（编程 Agent）](#对接-opencode编程-agent)
+- [对接 Cline（VS Code 编程 Agent）](#对接-clinevs-code-编程-agent)
+  - [1. 启动 Ollama 并准备模型](#1-启动-ollama-并准备模型)
+  - [2. Cline 里的设置](#2-cline-里的设置)
+  - [3. 几个容易踩的坑](#3-几个容易踩的坑)
+  - [4. OpenAI Compatible 兜底](#4-openai-compatible-兜底)
+  - [5. Cline Desktop](#5-cline-desktop)
+  - [常见问题：OpenCode Desktop 2.x 与 CLI 1.x 共库冲突](#常见问题opencode-desktop-2x-与-cli-1x-共库冲突)
+- [上下文与 KV cache：和本仓库的关系](#上下文与-kv-cache和本仓库的关系)
+- [和 Docker 版的差异](#和-docker-版的差异)
+- [怎么自己测模型](#怎么自己测模型)
+- [token 输出慢怎么定位](#token-输出慢怎么定位)
+  - [看懂 MLX runner 的日志](#看懂-mlx-runner-的日志)
+  - [一组 API 数字怎么算](#一组-api-数字怎么算)
+  - [先关掉 thinking 再比速度](#先关掉-thinking-再比速度)
+  - [让模型常驻（避免每次请求都等加载）](#让模型常驻避免每次请求都等加载)
+  - [怎么判断有没有触发 offload](#怎么判断有没有触发-offload)
+  - [prefill 到底占多少内存、为什么慢](#prefill-到底占多少内存为什么慢)
+- [日常开发要多大上下文](#日常开发要多大上下文)
+  - [一次 7m45s 请求的拆解](#一次-7m45s-请求的拆解)
+- [能不能看算子级耗时（类似 Linux perf）](#能不能看算子级耗时类似-linux-perf)
+  - [1. CPU 侧：`sample`（无需 Xcode）](#1-cpu-侧sample无需-xcode)
+  - [2. GPU 侧：`powermetrics`（需要 sudo）](#2-gpu-侧powermetrics需要-sudo)
+  - [3. 真正到 kernel：Xcode / Metal GPU Trace](#3-真正到-kernelxcode--metal-gpu-trace)
+- [常见问题](#常见问题)
+- [清理 / 卸载](#清理--卸载)
+- [参考](#参考)
 
 ## 前置条件
 
@@ -306,6 +366,84 @@ bash macos/ollama/run.sh --model llama3.1:8b --ctx 8192
 - Ollama 在 Apple Silicon 上同时带 Metal（llama.cpp 系）和 MLX 两个后端，模型格式是 GGUF，具体走哪条由 Ollama 自己选，日常不用关心。
 - 想手动调 offload 层数、上下文长度、KV 量化等底层参数，可以改用 llama.cpp：安装与用法见 [`../llama-cpp/README.md`](../llama-cpp/README.md)。
 - 想试 Apple 的 MLX 框架，用 `mlx-lm` 加载 Hugging Face 格式的权重；它和 Ollama 的 GGUF 不通用。
+
+## Qwen3-Coder-30B：复杂代码开发的显存要求
+
+前面按体积挑模型；这一节换成一个具体场景：**用 Qwen3-Coder-30B-A3B（Ollama tag `qwen3-coder:30b`）做仓库级 / Agent 式代码开发，显存要多少**，以及 10K token 的 prompt 在 prefill、decode 两个阶段分别吃多少内存。Mac 的统一内存和独显用同一本账。
+
+### 结论：24 GB 独显起，统一内存按约 2/3 折算
+
+| 目标 | 独显显存（Q4_K_M） | Mac 统一内存（Metal 预算约 2/3） | 说明 |
+| --- | --- | --- | --- |
+| 32K 上下文（复杂开发的最低档） | **24 GB** | 36 GB（32 GB 贴边，需实测） | 24 GB 上接近满载，再接显示器要留余量 |
+| 64K 上下文（推荐） | 32 GB | 48 GB | Agent 长会话、多文件任务 |
+| 128K / 轻量并发 | 48 GB | 64 GB | KV 用 q8_0；fp8 权重另算 |
+
+显存账就一条公式：
+
+```text
+显存 ≈ 权重 + T × 每 token KV + 1–2 GiB（运行时 / 激活）
+```
+
+24 GB 独显上：17.3 GiB 权重 + 3 GiB（32K fp16 KV）+ 1–2 GiB ≈ 21–22 GiB，**能跑但只剩 2–3 GiB**。Mac 16 GB 连权重都放不下（macOS 给 Metal 的预算约 10.7 GiB，见「常见问题」里的 `vram-based default context` 日志），24 GB 内存的 Mac 同样放不下，别硬试 30B 级模型。
+
+### 权重与 KV：每 token 96 KiB
+
+[Qwen3-Coder-30B-A3B-Instruct](https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct) 的结构：30.5B 总参 / 3.3B 激活、48 层、4 个 KV 头、head_dim=128、128 专家（每 token 激活 8 个）、原生 262144 上下文。KV 按 GQA 公式：
+
+```text
+每 token KV（fp16） = 2 × 48 × 4 × 128 × 2 B = 96 KiB
+```
+
+| 上下文 | 8K | 16K | 32K | 64K | 128K | 256K |
+| --- | --- | --- | --- | --- | --- | --- |
+| KV fp16 | 0.75 GiB | 1.5 GiB | 3 GiB | 6 GiB | 12 GiB | 24 GiB |
+| KV q8_0 | 0.38 GiB | 0.75 GiB | 1.5 GiB | 3 GiB | 6 GiB | 12 GiB |
+
+权重：Q4_K_M 约 17.3 GiB（Ollama 的 `qwen3-coder:30b` tag 显示 19 GB，是同一份 Q4 权重）、Q5_K_M 约 20 GiB、Q8_0 约 30 GiB、fp16 约 57 GiB。256K 是原生窗口，但光 fp16 KV 就要 24 GiB，单机实际只适合 32K–128K；更长要量化 KV，并接受 prefill 明显变慢。
+
+### Prefill：10K prompt 的额外占用
+
+Agent 一轮请求（system prompt + 工具定义 + 读几个文件）很容易到 10K token：
+
+| 组成 | 大小 |
+| --- | --- |
+| KV 写入（10,000 × 96 KiB） | 0.92 GiB |
+| 瞬态激活（hidden / QKV / MoE 中间张量） | 约 0.5 GiB（全量 10K） |
+| 全量 logits（10,000 × 151936） | fp16 2.83 GiB / fp32 5.66 GiB（通常不需要） |
+| eager attention 分数矩阵（不开 FlashAttention） | 约 6 GiB |
+
+实际引擎不会四样全吃满：
+
+- Ollama 底层 llama.cpp 默认**分块 prefill**（`-ub 512` / `-b 2048`），且只算最后一个 token 的 logits，所以 **10K prompt 的瞬态峰值约 0.8–1.5 GiB，不随 prompt 总长线性增长**；随 prompt 增长的是时间（prefill 是算力密集型）。
+- Ollama 按 `num_ctx` **预分配** KV：设 `OLLAMA_CONTEXT_LENGTH=32768` 启动就占 3 GiB（fp16），和这次 prompt 长短无关；`ollama ps` 的 `SIZE` 是权重 + KV + 运行时。
+- 用 HuggingFace Transformers 直接前向时要传 `logits_to_keep=1`，否则 10K prompt 多出 3–6 GiB logits；attention 要走 FlashAttention / SDPA，否则 24 GB 上容易 OOM。
+- vLLM 同理：KV 按 `--gpu-memory-utilization` 预分配，24 GB 上要 `--max-model-len 32768` + `--kv-cache-dtype fp8` 才留得下 32K 的池子。
+
+### Decode：每步只涨 96 KiB
+
+| 每步组成 | 大小 |
+| --- | --- |
+| 读权重（3.3B 激活参数，Q4） | 约 1.7 GiB（读取量，不是新增占用） |
+| 读 KV（10K prompt 后） | 0.92 GiB |
+| KV 增量 | **+96 KiB/token**（q8_0 为 48 KiB） |
+| 瞬态激活 + logits（1 token） | 0.2–0.5 GiB，基本固定 |
+
+prompt 10K + 生成 2K = 12K token，KV ≈ 1.13 GiB。decode 没有 prefill 那样的峰值，显存只随总长度线性涨；卡的是内存带宽——每步要读约 1.7 GiB 激活权重 + 全部 KV，24 GB 档位的卡上 Q4 大约 80–150 tok/s（4090 级别），上下文越长越慢。这就是 [`example/KV_CACHE_READING.md`](../../example/KV_CACHE_READING.md) 说的「decode 越来越像读显存」。
+
+### Ollama 上怎么配
+
+```bash
+# 24 GB：Q4 + 32K，KV 量化，单并发（接近满载）
+OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 \
+OLLAMA_CONTEXT_LENGTH=32768 OLLAMA_NUM_PARALLEL=1 ollama serve
+ollama run qwen3-coder:30b
+
+# 32 GB：64K + fp16 KV，Agent 长会话更稳
+OLLAMA_FLASH_ATTENTION=1 OLLAMA_CONTEXT_LENGTH=65536 ollama serve
+```
+
+验证：`ollama ps` 里 `PROCESSOR` 应为 `100% GPU`，24 GB 档位的 `SIZE` 约 21–23 GB，`CONTEXT` 是实际分配长度。出现 `xx%/yy% CPU/GPU` 说明放不下：先降 `num_ctx`，再开 `OLLAMA_KV_CACHE_TYPE=q8_0`，最后才考虑换更小的量化。
 
 ## 对接 OpenCode（编程 Agent）
 

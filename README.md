@@ -4,6 +4,28 @@
 
 没有模型权重：`kv_cache.py` 用一个 2 层玩具模型把「无 cache 重算」和「KV cache 增量」跑在同一份代码里（需要 PyTorch），`prefix_cache_demo.py` 用纯标准库模拟服务端的块级前缀共享。每个结论都有可执行的代码和断言。
 
+## 目录
+
+- [为什么需要 KV Cache](#为什么需要-kv-cache)
+- [目录结构](#目录结构)
+- [KV Cache 的三个视角](#kv-cache-的三个视角)
+  - [1. 单请求：从「每步重算」到「只算新 token」](#1-单请求从每步重算到只算新-token)
+  - [2. 多请求：prefill 不重算共同前缀](#2-多请求prefill-不重算共同前缀)
+  - [3. 显存管理：PagedAttention](#3-显存管理pagedattention)
+- [快速开始](#快速开始)
+- [Docker 示例：Ollama 与 vLLM](#docker-示例ollama-与-vllm)
+  - [vLLM（CPU / GPU，PagedAttention）](#vllmcpu--gpupagedattention)
+- [macOS 原生跑 Llama（Ollama / llama.cpp，Apple GPU）](#macos-原生跑-llamaollama--llamacppapple-gpu)
+  - [Ollama（模型库 + 菜单栏 App）](#ollama模型库--菜单栏-app)
+  - [llama.cpp（手动参数、Metal GPU）](#llamacpp手动参数metal-gpu)
+  - [怎么选：Ollama 还是 llama.cpp](#怎么选ollama-还是-llamacpp)
+  - [性能：谁更快](#性能谁更快)
+  - [写代码：Qwen 还是 Llama？](#写代码qwen-还是-llama)
+- [建议的阅读路线](#建议的阅读路线)
+- [文档索引](#文档索引)
+- [这个仓库是什么、不是什么](#这个仓库是什么不是什么)
+- [License](#license)
+
 ## 为什么需要 KV Cache
 
 自回归生成时，第 `t` 个 token 的 attention 需要前 `t-1` 个 token 的 K/V。不做缓存，每生成一个 token 都要把整个前缀的 K/V 重算一遍，总计算量随生成长度平方增长；缓存后每步只算新 token，总计算量线性增长。
@@ -292,7 +314,7 @@ llama bench -m model.gguf -p 512 -n 128
 | [`example/PREFIX_CACHE_READING.md`](example/PREFIX_CACHE_READING.md) | 块池、链式哈希、前缀匹配、引用计数、LRU + 叶子优先淘汰、与 vLLM / SGLang 的对应关系 |
 | [`example/PAGED_ATTENTION_READING.md`](example/PAGED_ATTENTION_READING.md) | PagedAttention：块池、block table、gather、内部碎片、与 vLLM 的对应关系 |
 | [`docker/ollama/README.md`](docker/ollama/README.md) | Docker 跑 Ollama/Llama：CPU/GPU、API、上下文与 KV cache 参数 |
-| [`macos/ollama/README.md`](macos/ollama/README.md) | macOS 原生跑 Ollama/Llama（Metal GPU）：安装、App/brew/serve 启动、Llama 选型与内存、OpenCode / Cline 对接、环境变量、卸载 |
+| [`macos/ollama/README.md`](macos/ollama/README.md) | macOS 原生跑 Ollama/Llama（Metal GPU）：安装、App/brew/serve 启动、Llama 选型与内存、Qwen3-Coder-30B 的显存与 prefill/decode 账、OpenCode / Cline 对接、环境变量、卸载 |
 | [`macos/llama-cpp/README.md`](macos/llama-cpp/README.md) | macOS 上用 llama.cpp 跑 Llama：安装、`-hf` 模型、编程模型选型、OpenCode 对接、参数表、API、KV cache 与调优 |
 | [`docker/vllm/README.md`](docker/vllm/README.md) | Docker 跑 vLLM：PagedAttention 参数、块池日志与指标 |
 

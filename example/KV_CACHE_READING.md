@@ -19,6 +19,24 @@ python3 example/kv_cache.py
 KVCACHE_DEVICE=cuda python3 example/kv_cache.py
 ```
 
+## 目录
+
+- [先建立整体图像](#先建立整体图像)
+- [第 1 部分：没有 cache 的流程](#第-1-部分没有-cache-的流程)
+- [第 2 部分：缓存的数据结构](#第-2-部分缓存的数据结构)
+  - [`LayerKVCache`：一层的历史状态](#layerkvcache一层的历史状态)
+  - [`append()`：Cache 的核心操作](#appendcache-的核心操作)
+  - [`KVCache`：把多层装在一起](#kvcache把多层装在一起)
+- [第 3 部分：`cached_attention`：缓存如何接上注意力](#第-3-部分cached_attention缓存如何接上注意力)
+  - [为什么不能只写 `is_causal=True`](#为什么不能只写-is_causaltrue)
+  - [`full_attention`：无 cache 的对照实现](#full_attention无-cache-的对照实现)
+- [第 4 部分：`TinyModel` 与两条生成循环](#第-4-部分tinymodel-与两条生成循环)
+- [第 5 部分：自测都检查了什么](#第-5-部分自测都检查了什么)
+- [第 6 部分：GPU 上具体发生了什么](#第-6-部分gpu-上具体发生了什么)
+- [代码阅读顺序](#代码阅读顺序)
+- [阅读时可以检查的七个问题](#阅读时可以检查的七个问题)
+- [这份示例刻意没有处理的生产问题](#这份示例刻意没有处理的生产问题)
+
 ## 先建立整体图像
 
 prompt `[A, B, C]`，要生成 `D, E, F`：

@@ -16,6 +16,25 @@ python3 example/paged_attention.py
 PAGED_DEVICE=cuda python3 example/paged_attention.py   # 有 CUDA 时也可以显式指定
 ```
 
+## 目录
+
+- [为什么需要 PagedAttention](#为什么需要-pagedattention)
+- [整体图像](#整体图像)
+- [数据结构](#数据结构)
+  - [`BlockPool`：物理显存](#blockpool物理显存)
+  - [`Sequence`：block table](#sequenceblock-table)
+  - [`PagedKVCache`：写入与读取](#pagedkvcache写入与读取)
+- [写入：`append()` 怎么落块](#写入append-怎么落块)
+- [读取：`gather()` 怎么还原逻辑顺序](#读取gather-怎么还原逻辑顺序)
+- [attention：和连续布局的公式完全一样](#attention和连续布局的公式完全一样)
+- [为什么结果一定正确](#为什么结果一定正确)
+- [释放与复用](#释放与复用)
+- [与前面两份示例的关系](#与前面两份示例的关系)
+- [和 vLLM 的对应关系](#和-vllm-的对应关系)
+- [代码阅读顺序](#代码阅读顺序)
+- [阅读时可以检查的七个问题](#阅读时可以检查的七个问题)
+- [这份示例刻意没有处理的生产问题](#这份示例刻意没有处理的生产问题)
+
 ## 为什么需要 PagedAttention
 
 如果按最大长度给每个请求预留连续显存：
