@@ -496,6 +496,378 @@ macOS 原生版和 Docker 版用的是同一套 Ollama，参数含义完全相�
 
 > 两种方式**不要同时跑**：都监听 `11434`，而且 Docker 版会把模型再下载一份进 volume，白占磁盘。想切换时先把一边停掉。
 
+## 怎么自己测模型
+
+不要只看榜单，用你自己机器 + 自己任务测。仓库里附了一个小脚本 [`eval_models.py`](eval_models.py)，做三件事：
+
+1. 6 道带隐藏断言的 Python 题，模型只看到题目，生成代码后在子进程里跑断言；
+2. 检查 `write_file` 工具调用是否返回 `tool_calls`；
+3. 记录每题耗时。
+
+```bash
+# 一次测一个模型（避免模型切换/卸载的额外等待）
+python3 macos/ollama/eval_models.py --models qwen3.5:4b --ctx 32768
+python3 macos/ollama/eval_models.py --models qwen3.5:9b --ctx 32768
+
+# 只跑前 3 题
+python3 macos/ollama/eval_models.py --models qwen3.5:4b-q8_0 --tasks 3
+```
+
+输出示例：
+
+```text
+=== qwen3.5:4b（num_ctx=32768, 3 题） ===
+  [PASS] is_palindrome      6.5s
+  [PASS] flatten            2.8s
+  [FAIL] top_k_frequent    12.6s AssertionError
+  pass@1 = 2/3  avg=7.3s
+  tool_calls = OK
+```
+
+注意：6 题只能看个大概，真正评估建议：
+
+- **20 题以上**，来自你真实项目（函数题 + 带断言的 bug 修复）；
+- 固定条件：同一 `num_ctx`、`temperature=0`、关闭 thinking、同一 prompt；
+- 记录 **pass@1、平均耗时、工具调用成功率、峰值内存/是否 swap**；
+- Agent 场景再加 5–10 个端到端任务：在临时 git 仓库里放一个失败测试，让 Cline/OpenCode 修，跑测试并统计“一次通过 / 需要人工改几次”；
+- 一次只加载一个模型；如果 Ollama 中途重启或 `ollama ps` 卡在 `Stopping...`，先清内存/重启 App 再测。
+
+## token 输出慢怎么定位
+
+先把“慢”拆成三段，用 Ollama API 自带的计时字段量，而不是靠体感：
+
+```bash
+python3 -c '
+import json, urllib.request, time
+prompt = "用一句话解释 KV cache。" * 100
+body = json.dumps({"model": "qwen3.5:4b", "prompt": prompt, "stream": False,
+                   "options": {"num_ctx": 32768, "num_predict": 128, "temperature": 0}}).encode()
+t0 = time.time()
+with urllib.request.urlopen(urllib.request.Request(
+        "http://127.0.0.1:11434/api/generate", data=body,
+        headers={"Content-Type": "application/json"}), timeout=600) as r:
+    d = json.load(r)
+rate = lambda ns, c: c / (ns / 1e9) if ns else 0
+print("wall=%.1fs load=%.1fs" % (time.time()-t0, d.get("load_duration",0)/1e9))
+print("prefill=%.1f tok/s (%s tok)" % (rate(d.get("prompt_eval_duration",0), d.get("prompt_eval_count",0)), d.get("prompt_eval_count")))
+print("decode =%.1f tok/s (%s tok)" % (rate(d.get("eval_duration",0), d.get("eval_count",0)), d.get("eval_count")))
+'
+```
+
+读法：
+
+- `load` 很大（几十秒到几分钟）→ 不是生成慢，是**模型加载/切换/卸载在等**；先看 `ollama ps` 里有没有模型卡在 `Stopping...`。
+- `prefill` 慢 → 提示词/上下文太长，或 `num_ctx` 太大；Agent 每轮都会重发很长的 system prompt + 文件内容。
+- `decode` 慢 → 先看 `ollama ps` 的 `PROCESSOR`：不是 `100% GPU` 就是被 offload 了（内存不够 / 上下文太大 / 模型太大）。
+
+然后按顺序查：
+
+1. **`ollama ps`**：`PROCESSOR`、`CONTEXT`、`SIZE`、`RUNNER`。出现 `xx%/yy% CPU/GPU` 或 `SIZE` 接近 10.7 GiB，就是装不下；`RUNNER=mlx` 和 `llamacpp` 不能直接横向比。
+2. **内存 / swap**：
+
+   ```bash
+   sysctl vm.swapusage
+   memory_pressure -Q | tail -2
+   ```
+
+   16 GB 的 Mac 上，如果 swap 已用好几 GB、空闲内存很低，模型切换/加载会非常慢，decode 也会被拖累。关掉不用的 Electron 应用、浏览器标签、其他 LLM 服务，只保留一个模型。
+3. **模型切换**：`OLLAMA_MAX_LOADED_MODELS=1` 时切模型要先卸载旧的；MLX runner 偶发卡在 `Stopping...`（`ollama stop` 后 `ollama ps` 一直显示 Stopping…）。这时重启 Ollama App 清状态，并在一次 Agent 会话里只用一个模型。
+4. **日志**：
+
+   ```bash
+   grep -E "llama-server started|offloaded|n_ctx|Flash Attention|loaded runners" ~/.ollama/logs/server.log | tail -30
+   ```
+
+   重点看加载耗时、是否 offload、实际 `n_ctx`、FlashAttention 是否启用。
+5. **热 / 电源**：MacBook Air 无风扇，长时间满负载会降频：
+
+   ```bash
+   pmset -g therm            # 有 thermal warning 就是过热降频
+   ```
+
+   接电源、改善散热、缩短单次任务都能缓解。
+6. **Agent 侧**：Cline / OpenCode 的 prompt 会随会话增长，prefill 越来越慢是正常的；开 `Use Compact Prompt`、及时新开 task、少塞大文件。测量时看 `prompt_eval_count`，不要拿第一轮和第十轮直接比。
+
+本机实测基线（M2 / 16 GB / 32K 上下文）：
+
+```text
+qwen3.5:4b：prefill ≈ 252 tok/s，decode ≈ 21 tok/s（100% GPU，mlx）
+qwen2.5-coder:7b 在 9b 仍驻留时切换过去：load ≈ 141s，prefill ≈ 110 tok/s，decode ≈ 12 tok/s
+```
+
+第二行说明“慢”很多时候是**模型切换 / 内存压力**，不是模型本身生成慢。
+
+### 看懂 MLX runner 的日志
+
+`RUNNER=mlx` 时 Ollama 用的是 `mlxrunner`，日志长这样：
+
+```text
+Prompt processing progress processed=10561 total=10562
+POST /v1/chat/completions ... took=1m40s
+speculative decode stats iterations=55 drafted=19 accepted=13 acceptance=0.68
+prefix_cache: "cache hit" total=11012 matched=10630 cached=10630 left=382
+pipeline: memory peak="9.35 GiB" held="7.62 GiB"
+```
+
+| 日志 | 含义 | 说明 |
+| --- | --- | --- |
+| `Prompt processing progress processed/total` | 正在 prefill（读 prompt） | 10.5K token 的 prompt 在 M2 上要几十秒到一两分钟，是首轮慢的主因 |
+| 请求 `took=1m40s` | 整个请求耗时 | 要减去 prefill 才能得到 decode 时间 |
+| `prefix_cache "cache hit" matched=10630/11012` | 前缀缓存命中 | 只重算 `left=382` 个 token，所以第二个请求从 1m40s 降到几秒；前缀（system prompt + tools）越稳定命中越高 |
+| `speculative decode stats acceptance=0.68 avg_accepted=0.24` | 投机解码接受率 | 接受率低时收益有限；由模型自带的 draft/MTP 决定，普通请求无法用环境变量关掉 |
+| `memory peak="9.35 GiB"` | 峰值内存 | 16 GB 机器的 Metal 预算约 10.7 GiB；9b 在 32K 已经接近上限，再涨上下文就会 swap/offload |
+
+对应到你的日志：第一次 1m40s 主要是 **10562 token 的 prefill**；第二次因为 prefix cache 命中 10630 token，只处理 382 token，所以只要 5.9s。这不是“时快时慢”，而是 **prefix cache 生效与否**。
+
+降低 prefill 成本的办法：用更小的模型（`qwen3.5:4b`）、压缩 system prompt/工具定义、少塞文件、保持前缀稳定让 cache 命中；如果 Agent 每轮都改前缀，cache 就失效，每轮都要重算 1 万 token。
+
+### 一组 API 数字怎么算
+
+```text
+load_duration        = 5,621,212,041 ns  ≈ 5.62 s
+prompt_eval_count    = 11
+prompt_eval_duration =   600,988,583 ns  ≈ 0.60 s  → prefill ≈ 18 tok/s（token 太少，不代表真实 prefill 能力）
+eval_count           = 124
+eval_duration        = 8,815,842,875 ns  ≈ 8.82 s  → decode  ≈ 14.1 tok/s
+```
+
+- 总耗时 ≈ `load + prompt_eval + eval`，这组大约是 **15 秒**。
+- prompt 只有 11 token，所以 prefill 可以忽略；慢在 **eval（生成 124 token）**。
+- `load 5.6s` 是冷加载；如果每次请求都重新加载，会额外多 5 秒，记得让模型保持加载（`OLLAMA_KEEP_ALIVE`）。
+- 9B 模型在 M2 上 decode 14 tok/s 属于正常范围（4B 约 21 tok/s）；如果 124 token 里有大量**思考 token**，体感会更慢。
+
+### 先关掉 thinking 再比速度
+
+同一个问题（“用一句话解释 KV cache”）在 `qwen3.5:9b` 上实测：
+
+```text
+think=true ：eval_count=128，9.39s，全部被思考占用，没有输出答案（撞到 num_predict 上限）
+think=false：eval_count=37，2.80s，直接给出完整答案
+```
+
+所以 Agent 场景如果不需要长思考，先把 thinking 关掉：
+
+- Ollama 原生 API：`"think": false`
+- OpenAI 兼容接口：`"reasoning_effort": "none"`（实测能关掉 qwen3.5 的思考）
+- OpenCode：在模型的 `settings.reasoningEffort` 或 reasoning variant 里关掉
+- Cline：如果 UI 没有 thinking 开关，就只能换 `qwen3.5:4b` 或接受思考开销
+
+### 让模型常驻（避免每次请求都等加载）
+
+Ollama 默认空闲 **5 分钟**就卸载模型。常驻有三种设置方式，优先级：请求 `keep_alive` > 服务级 `OLLAMA_KEEP_ALIVE` > 默认 5m。
+
+1. **服务级（影响所有模型，推荐给 Cline/OpenCode）**
+
+   ```bash
+   # CLI 前台启动
+   OLLAMA_KEEP_ALIVE=-1 ollama serve    # -1 = 永久；也可以 30m / 24h
+   ```
+
+   App 模式（菜单栏 Ollama）：
+
+   ```bash
+   launchctl setenv OLLAMA_KEEP_ALIVE 24h
+   osascript -e 'quit app "Ollama"'
+   open -a Ollama
+   ```
+
+   `launchctl setenv` 只在当前登录会话有效；要每次开机生效，写一个 LaunchAgent 在登录时执行它，或者改用 CLI/本仓库脚本启动。
+
+   用本仓库脚本时（先退出 App，让脚本自己起 serve）：
+
+   ```bash
+   OLLAMA_KEEP_ALIVE=30m ./macos/ollama/run.sh --no-pull --no-demo
+   ```
+
+2. **单次请求 `keep_alive`（覆盖服务级，适合 App 用户）**
+
+   不需要改环境变量，直接给已加载的模型续期：
+
+   ```bash
+   curl -s http://127.0.0.1:11434/api/generate      -d '{"model":"qwen3.5:9b","keep_alive":-1}'
+   ollama ps    # UNTIL 列应显示 Forever
+   ```
+
+   - `-1`：永久驻留
+   - `"30m"` / `3600`：指定时长
+   - `0`：请求结束后立刻卸载
+   - 也可以直接预热：`ollama run qwen3.5:9b ""`（配合 `--keepalive 30m`）
+
+3. **不要频繁切模型**：`OLLAMA_MAX_LOADED_MODELS=1` 时切模型会先卸载旧的，又回到 load 等待。一次 Agent 会话只用一个模型。
+
+验证：
+
+```bash
+ollama ps
+# UNTIL 列：Forever / 30 minutes from now ...
+```
+
+16 GB 机器上的取舍：
+
+- `qwen3.5:9b` 常驻 `SIZE` 约 8.2 GB，加上 IDE/浏览器已经很紧；建议 `30m`~`1h`，或只在使用期间 `-1`。
+- `qwen3.5:4b` 只占约 4 GB，常驻 `-1` 也比较安全。
+- 退出 App、重启服务、重启机器都会清掉；App 重启后重新发一次 `keep_alive:-1` 的预加载请求即可。
+
+### 怎么判断有没有触发 offload
+
+- **llama.cpp runner**（`RUNNER=llamacpp`）：日志里 `load_tensors: offloaded 29/29 layers to GPU` 表示**全部层都在 GPU**，不是 CPU offload；只有 `ollama ps` 的 `PROCESSOR` 出现 `xx%/yy% CPU/GPU`，或日志里 GPU 层数小于总层数，才是真的把层放到了 CPU。
+- **MLX runner**（`RUNNER=mlx`）：没有“按层 offload”这个概念，模型整体在统一内存里跑；`PROCESSOR` 通常一直显示 `100% GPU`，不能只看这一列判断是否吃紧。要看 `pipeline: memory peak/held` 和系统内存：
+
+  ```bash
+  ollama ps                 # SIZE / PROCESSOR / CONTEXT
+  sysctl vm.swapusage       # swap 用了多少
+  memory_pressure -Q | tail -2
+  ```
+
+  例如 `memory peak="9.85 GiB"`、`held="8.12 GiB"`，而 16 GB 机器的 Metal 预算约 10.7 GiB：**没有 offload，但已经到 92% 边缘**；如果 swap 同时用了 9 GB，系统在换页，生成会抖/变慢。
+
+### prefill 到底占多少内存、为什么慢
+
+先分清两件事：**KV cache 按 `num_ctx` 预留，不按这次 prompt 的长度预留**；prompt 再长，也只在预留的 KV 里占一段。
+
+以 `qwen3.5:9b`、`num_ctx=32768` 为例：
+
+- Qwen3.5 是混合注意力（32 层中 8 层 full attention），KV ≈ **32 KiB/token**。
+- `num_ctx=32768` → 预留 KV ≈ **1 GiB**（启动/加载时就占）。
+- 这次 prompt = 10,797 token → 实际用到约 **337 MiB** KV，其余仍是空闲容量。
+- prefill 的临时激活按 chunk 算（MLX runner 的 chunk 是 2048 token），峰值大约 **1–1.5 GiB**（包含计算缓冲/前缀缓存快照）。
+- 所以日志里 `memory peak 9.85 GiB` ≈ 权重 7.6 GiB + KV 1 GiB + prefill 临时缓冲 1 GiB 左右；`ollama ps SIZE 8.9 GB` 是常驻占用，不含瞬时峰值。
+
+不同模型的 KV 估算：
+
+| 模型 | KV/token | 32K 上下文 KV | 10.8K prompt 实际占用 |
+| --- | --- | --- | --- |
+| `qwen3.5:4b / 9b` | ~32 KiB | ~1 GiB | ~337 MiB |
+| `qwen2.5-coder:7b` | 56 KiB | ~1.75 GiB | ~590 MiB |
+| `llama3.2:3b` | 112 KiB | ~3.5 GiB | ~1.2 GiB |
+
+把 `num_ctx` 从 32768 降到 16384，KV 预留直接减半；升到 65536 则翻倍，16 GB 机器上 9b 会超预算。
+
+**为什么慢：** prefill 是计算密集型，不是内存带宽型。10.8K token、9B 参数，要把整个 prompt 过一遍所有层（每层 GEMM + 8 层 full attention 的 O(n²)），M2 的 GPU 算力大约只有数据中心卡的几十分之一。按 100 秒算就是 **~108 tok/s 的 prefill**，对 M2 + 9B 是正常量级；和 decode 的 14 tok/s 是两回事。
+
+再加上：
+- 前缀缓存没命中时，每轮都要重算这 1 万 token；
+- 9.85 GiB 峰值贴近 10.7 GiB 预算，swap 已用 9 GB，系统换页进一步拖慢；
+- speculative decode 只影响生成阶段，救不了 prefill。
+
+所以优化 prefill 的方向只有：**换小模型（4b）、缩短 prompt、保持前缀稳定让 prefix cache 命中、别开 64K**。
+
+## 日常开发要多大上下文
+
+按使用方式分，不是“越大越好”：
+
+| 场景 | 最小上下文 | 说明 |
+| --- | --- | --- |
+| 行内补全 / 单行代码 | 4K–8K | FIM 补全只需要光标附近 |
+| 单文件问答 / 解释报错 | 8K–16K | 一个文件 + 问题 |
+| Cline / OpenCode 日常 Agent | **16K 硬底线，32K 实用最小** | system prompt + 工具定义 + 读几个文件，很容易到 8K–12K；Cline 官方建议 ≥32K，Ollama 的 OpenCode 接入建议 64K |
+| 多文件重构 / 仓库级任务 | 64K–128K | 需要读多个文件、多轮工具调用 |
+| 长时间 Agent 会话 | 64K+ | 上下文会持续增长，压缩策略决定体验 |
+
+参考你之前的真实日志：一个普通 Agent 请求的 prompt 已经 **10,797 token**。所以：
+
+- `num_ctx=16K`：只剩约 5K 给输出和下一轮，很快就会触发压缩，**只能算硬底线**；
+- `num_ctx=32K`：约 21K 余量，**日常开发的实用最小值**；
+- `num_ctx=64K`：适合多文件任务，但这台 16 GB 上 9B 装不下，要用 4B 或云端。
+
+不同 `num_ctx` 的 KV 内存（只算 KV，不含权重）：
+
+| 模型 | KV/token | 8K | 16K | 32K | 64K |
+| --- | --- | --- | --- | --- | --- |
+| `qwen3.5:4b/9b` | 32 KiB | 0.25 GiB | 0.5 GiB | 1 GiB | 2 GiB |
+| `qwen2.5-coder:7b` | 56 KiB | 0.44 GiB | 0.88 GiB | 1.75 GiB | 原生上限 32K |
+| `llama3.2:3b` | 112 KiB | 0.88 GiB | 1.75 GiB | 3.5 GiB | 7 GiB |
+
+加上权重和 prefill 临时缓冲后的结论（Metal 预算约 10.7 GiB）：
+
+- `qwen3.5:4b`：4.0 GB 权重，32K/64K 都放得下，64K 还有余量；
+- `qwen3.5:9b`：7.6 GB 权重，32K 已到 9.8 GiB 峰值，64K 会超预算；
+- `qwen2.5-coder:7b`：32K 是原生上限，权重 + KV 约 7–8 GB，能跑但 Agent 工具调用不稳。
+
+**建议**：这台机器上日常开发设 `num_ctx=32768`，模型用 `qwen3.5:4b`（速度/内存都宽松）或 `qwen3.5:9b`（质量更好、余量小）；`16K` 只在单文件/短会话时用；`8K` 不要给 Agent。
+
+### 一次 7m45s 请求的拆解
+
+```text
+prefix_cache: total=26481 matched=11000 left=15483   # prompt 26.5K，命中 11K，还剩 15.5K 要 prefill
+Prompt processing progress: 2048 → 15482，每 2048 块约 23–28s
+speculative decode stats: iterations=2287 accepted=1108 acceptance=0.85
+POST /v1/chat/completions took=7m45s
+```
+
+拆开看：
+
+- **prefill**：从 10:46:53 到 10:49:53，约 **3 分钟** 处理 15,483 token → **约 86 tok/s**（每 2048 块 23–28s）。这部分是 9B 模型 + M2 的正常量级。
+- **decode**：10:49:53 到 10:54:38，约 **4 分 45 秒**。按 2287 次迭代 + 1108 个被接受的 draft 粗略估算约 3.4K 输出 token → **约 12 tok/s**。
+- 合计 ≈ 3 分钟 + 4 分 45 秒 = **7m45s**，和日志一致。
+
+为什么这么慢：
+
+- Agent 一次塞了 **26.5K prompt**，命中缓存后仍要重算 15.5K；
+- 上下文已到 26.5K/32K，decode 每个 token 都要看更长的历史，速度比短上下文更低；
+- 输出本身又很长（约 3.4K token），12 tok/s 下就是几分钟；
+- 9B 在 16 GB 上已接近 10.7 GiB 预算，swap/换页也会拖慢。
+
+优化方向：把 prompt 压到 10K–16K、保持前缀稳定提高缓存命中、让 Agent 输出小 patch、用 `qwen3.5:4b`；32K 已经接近上限，不要再加。
+
+## 能不能看算子级耗时（类似 Linux perf）
+
+macOS 没有 Linux `perf`，也没有现成的逐算子计时。可行的工具分三层：
+
+### 1. CPU 侧：`sample`（无需 Xcode）
+
+```bash
+PID=$(lsof -nP -iTCP:11434 -sTCP:LISTEN -t | head -1)
+sample "$PID" 10 -file /tmp/ollama.sample.txt
+open /tmp/ollama.sample.txt
+```
+
+能看到 Ollama/MLX runner 的 CPU 栈热点（tokenizer、Go 调度、Metal 提交、内存拷贝），但**看不到 GPU kernel 的耗时**。
+
+### 2. GPU 侧：`powermetrics`（需要 sudo）
+
+```bash
+sudo powermetrics --samplers gpu_power -i 500 -n 20
+```
+
+只能看 GPU 利用率/频率/功耗，不能定位到具体算子。
+
+### 3. 真正到 kernel：Xcode / Metal GPU Trace
+
+需要安装完整 **Xcode**（只装 Command Line Tools 没有 `xctrace`/Instruments）。两条路：
+
+**A. Instruments 的 Metal System Trace（适合 MLX runner / qwen3.5）**
+
+```bash
+xcrun xctrace list templates | grep -i metal
+PID=$(lsof -nP -iTCP:11434 -sTCP:LISTEN -t | head -1)
+xcrun xctrace record --template 'Metal System Trace' \
+  --attach "$PID" --time-limit 30s --output /tmp/ollama-metal.trace
+open /tmp/ollama-metal.trace
+```
+
+抓取时在另一个终端发一个固定 prompt 的请求；然后在 Instruments 里看 command buffer / shader 的耗时分布，找最热的 kernel（matmul、attention、dequant、copy 等）。
+
+**B. ggml Metal 的 GPU trace（适合 llama.cpp runner，如 llama3.2/qwen2.5-coder）**
+
+ggml 自带 capture 支持：
+
+```bash
+# 先退出 App，手动启动并打开 Metal capture
+METAL_CAPTURE_ENABLED=1 GGML_METAL_CAPTURE_COMPUTE=1 ollama serve
+# 然后发请求，日志会出现：capturing graph in /tmp/perf-metal-<pid>.gputrace
+```
+
+生成的 `.gputrace` 用 Xcode 打开，可以看到每个 Metal kernel 的 GPU 时间。
+
+注意：
+- capture 会显著拖慢执行，只适合单次基准；
+- `GGML_METAL_CAPTURE_COMPUTE=N` 表示跳过前 N 个 graph 再抓（先 warmup 再抓更有代表性）；
+- MLX runner（qwen3.5）不走 ggml Metal，用方案 A；
+- Ollama 不暴露逐算子计时，真要做 kernel 优化，直接用 llama.cpp 源码 + Xcode GPU trace 更顺。
+
+**实际建议**：先确认 `ollama ps` 是 `100% GPU`、上下文/内存没超预算、prefix cache 生效；这些对体验的影响通常比换某个 kernel 大得多。算子级 profiling 更适合改 llama.cpp/MLX 的场景。
+
 ## 常见问题
 
 **`Error: listen tcp 127.0.0.1:11434: bind: address already in use`**
