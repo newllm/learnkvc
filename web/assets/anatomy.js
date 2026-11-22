@@ -157,7 +157,7 @@
       })
       .join("");
     return (
-      '<div class="qprogress"><span>先想 4 个问题，再往下看</span><span class="q-hint">' +
+      '<div class="qprogress"><span>请回答 4 个问题，再往下看</span><span class="q-hint">' +
       Object.keys(state.quiz).length + " / " + data.length + " 已回答</span></div>" +
       '<div class="quiz">' + cards + "</div>"
     );

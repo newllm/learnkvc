@@ -835,7 +835,7 @@
           .join("");
         return (
           '<article class="qcard' + (done ? " answered" : "") + '">' +
-          '<div class="qhead"><span class="qtag">先想</span><span class="qnum">Q' + (i + 1) + "</span></div>" +
+          '<div class="qhead"><span class="qtag">请回答</span><span class="qnum">Q' + (i + 1) + "</span></div>" +
           '<p class="qtext">' + esc(q.q) + "</p>" +
           '<div class="qopts">' + opts + "</div>" +
           (done ? '<div class="qwhy"><b>' + (choice === q.answer ? "✓" : "✗") + "</b> " + esc(q.why) + "</div>" : "") +
@@ -845,11 +845,11 @@
       .join("");
 
     el.innerHTML =
-      '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 先想</div>" +
+      '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 请回答</div>" +
       '<h2>先猜，再进代码</h2>' +
-      '<p class="hint">不查资料，凭直觉选；选完才出现解释。先想阶段不计分，目的是带着假设去探索。</p>' +
+      '<p class="hint">不查资料，凭直觉选；选完才出现解释。请回答阶段不计分，目的是带着假设去探索。</p>' +
       '<div class="qprogress"><span>已想 ' + answered + " / " + n + "</span><span>" +
-      (answered === n ? "可以进入探索了" : "先想完再往下") + "</span></div>" +
+      (answered === n ? "可以进入探索了" : "答完再往下") + "</span></div>" +
       '<div class="quiz">' + cards + "</div>" +
       (answered === n
         ? '<div class="reuse-actions"><button class="btn primary" id="stage-explore">进入探索阅读 →</button></div>'

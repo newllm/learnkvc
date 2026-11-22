@@ -71,7 +71,7 @@
   function renderDoc(step, index) {
     const n = kv.steps.length;
     const think = step.think
-      ? '<details class="thinkbox step-think"><summary>先想一想：' + esc(step.think.q) +
+      ? '<details class="thinkbox step-think"><summary>请回答：' + esc(step.think.q) +
         "</summary><p>" + esc(step.think.a) + "</p></details>"
       : "";
     el.doc.innerHTML =
@@ -505,7 +505,7 @@
     const stageIdx = STAGE_NAMES.indexOf(stage);
 
     const stageDefs = [
-      ["think", "先想", lesson.think ? "✓" : ""],
+      ["think", "请回答", lesson.think ? "✓" : ""],
       ["explore", "探索阅读", (lesson.exploreMax || 0) + " / " + steps.length],
       ["reflect", "反思与归因", lesson.reflect && lesson.attributionSubmitted ? "✓" : lesson.reflect ? "待归因" : ""],
       ["summary", "总结归纳", lesson.summary ? "✓" : ""],
