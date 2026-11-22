@@ -1,0 +1,375 @@
+{
+  "quiz": [
+    {
+      "id": "a1",
+      "tag": "层与维度",
+      "q": "一个 48 层的模型，第 1 层和第 48 层的输出维度一样吗？",
+      "options": [
+        "不一样，逐层变小",
+        "一样，都是 hidden 维度",
+        "不知道，取决于层数"
+      ],
+      "answer": 1,
+      "why": "层数加深不改变残差流宽度：每层输入输出都是 [n, hidden]。变的是每层新增的参数和计算，不是维度。"
+    },
+    {
+      "id": "a2",
+      "tag": "参数",
+      "q": "生成一个 token 时，模型的参数被完整读了几遍？",
+      "options": [
+        "一遍，全部参数",
+        "只读这一步用到的部分（MoE 只读 top-k expert）",
+        "只读 embedding"
+      ],
+      "answer": 1,
+      "why": "dense 模型每步要把全部权重扫一遍；MoE 每步只读激活的 expert 和共享部分。参数量决定显存，激活参数量决定每步读多少。"
+    },
+    {
+      "id": "a3",
+      "tag": "GPU 加载",
+      "q": "权重从磁盘到 GPU 显存，中间经过哪些站？",
+      "options": [
+        "磁盘 → GPU 显存，一步到位",
+        "磁盘 → CPU 内存 → H2D 拷贝 → GPU 显存",
+        "磁盘 → 显存 → 内存"
+      ],
+      "answer": 1,
+      "why": "先读进 host 内存（或 mmap），再由框架用 cudaMemcpyAsync 送到显存；量化格式还会在加载时反量化，或在 kernel 里边算边反量化。"
+    },
+    {
+      "id": "a4",
+      "tag": "GPU kernel",
+      "q": "decode 生成一个 token，GPU 上最重的两类 kernel 是什么？",
+      "options": [
+        "embedding 查表 + softmax",
+        "GEMM/GEMV 读权重 + attention 读历史 KV",
+        "只跑 attention，不跑矩阵乘"
+      ],
+      "answer": 1,
+      "why": "decode 是带宽受限：每步读激活权重和全部历史 K/V；prefill 才是大 GEMM 的计算受限。"
+    }
+  ],
+  "presets": [
+    {
+      "id": "tiny",
+      "name": "TinyModel（本篇示例）",
+      "desc": "2 层、d_model=32、4/2 头 GQA、词表 64。数字小到可以手算。",
+      "layers": 2,
+      "hidden": 32,
+      "q_heads": 4,
+      "kv_heads": 2,
+      "head_dim": 8,
+      "ffn": 64,
+      "experts": 0,
+      "expert_inter": 0,
+      "top_k": 0,
+      "vocab": 64,
+      "max_pos": 256,
+      "pos_embed": true,
+      "tie": true
+    },
+    {
+      "id": "qwen7b",
+      "name": "Qwen2.5-Coder-7B",
+      "desc": "28 层 dense、hidden=3584、28/4 头、ffn=18944。",
+      "layers": 28,
+      "hidden": 3584,
+      "q_heads": 28,
+      "kv_heads": 4,
+      "head_dim": 128,
+      "ffn": 18944,
+      "experts": 0,
+      "expert_inter": 0,
+      "top_k": 0,
+      "vocab": 152064,
+      "max_pos": 32768,
+      "pos_embed": false,
+      "tie": false
+    },
+    {
+      "id": "qwen32b",
+      "name": "Qwen2.5-Coder-32B",
+      "desc": "64 层 dense、hidden=5120、40/8 头、ffn=27648。",
+      "layers": 64,
+      "hidden": 5120,
+      "q_heads": 40,
+      "kv_heads": 8,
+      "head_dim": 128,
+      "ffn": 27648,
+      "experts": 0,
+      "expert_inter": 0,
+      "top_k": 0,
+      "vocab": 152064,
+      "max_pos": 32768,
+      "pos_embed": false,
+      "tie": false
+    },
+    {
+      "id": "qwen30b",
+      "name": "Qwen3-Coder-30B-A3B",
+      "desc": "48 层 MoE、hidden=2048、32/4 头、128 expert（每 token 8 个）、expert 内宽 768。",
+      "layers": 48,
+      "hidden": 2048,
+      "q_heads": 32,
+      "kv_heads": 4,
+      "head_dim": 128,
+      "ffn": 6144,
+      "experts": 128,
+      "expert_inter": 768,
+      "top_k": 8,
+      "vocab": 151936,
+      "max_pos": 262144,
+      "pos_embed": false,
+      "tie": false
+    }
+  ],
+  "timeline": [
+    {
+      "id": "embed",
+      "title": "token id → 向量",
+      "op": "embedding 查表：从 [vocab, hidden] 里取一行",
+      "shape": "[1, {hidden}]",
+      "kernel": "gather / index_select",
+      "worker": "GPU",
+      "detail": "只读权重矩阵的一行（hidden 个数），不是读整张表；但整张表仍占显存。"
+    },
+    {
+      "id": "qkv",
+      "title": "QKV 投影（第一层）",
+      "op": "hidden 乘三个权重矩阵",
+      "shape": "Q [1, {q_dim}] · K/V [1, {kv_dim}]",
+      "kernel": "GEMM / GEMV（cuBLAS）",
+      "worker": "GPU",
+      "detail": "decode 时 batch=1，GEMM 退化成 GEMV：算得不多，但要读权重——这是 decode 慢的主因。"
+    },
+    {
+      "id": "rope",
+      "title": "q_norm / k_norm + RoPE",
+      "op": "按 head 做 RMSNorm，再按位置旋转 Q/K",
+      "shape": "Q/K 形状不变",
+      "kernel": "RMSNorm + elementwise（通常融合）",
+      "worker": "GPU",
+      "detail": "只改 Q/K 的数值，不产生新张量；模型定义公式，GPU 执行 kernel。"
+    },
+    {
+      "id": "kvwrite",
+      "title": "写入 KV cache",
+      "op": "把这一步的 K/V 追加到该层缓存",
+      "shape": "{kv_heads} × 1 × {head_dim}（每层）",
+      "kernel": "copy / paged write",
+      "worker": "引擎 + GPU",
+      "detail": "张量在 GPU 显存；块怎么分、写到哪个物理块由引擎决定（paged attention 的 block table）。"
+    },
+    {
+      "id": "attention",
+      "title": "attention：读全部历史",
+      "op": "当前 token 的 Q 对 T 个历史 K 做加权",
+      "shape": "输出 [1, {q_dim}]",
+      "kernel": "FlashAttention（融合 QKᵀ / softmax / PV）",
+      "worker": "GPU",
+      "detail": "decode 时 query 只有 1 个，但 key/value 有 T 个：计算量 O(T)，读取量 O(T)，是显存带宽问题。"
+    },
+    {
+      "id": "oproj",
+      "title": "o_proj + 残差",
+      "op": "attention 输出投回 hidden，再加回残差流",
+      "shape": "[1, {hidden}]",
+      "kernel": "GEMM + add（elementwise）",
+      "worker": "GPU",
+      "detail": "残差保证每层看到的宽度始终是 hidden——这就是层数与维度没有绑定关系的原因。"
+    },
+    {
+      "id": "moe",
+      "title": "FFN / MoE：逐 token 变换",
+      "op": "router 选 top-{top_k}，走 expert MLP",
+      "shape": "router [1, {experts}] · 每个 expert {hidden}→{expert_inter}→{hidden}",
+      "kernel": "GEMV/GEMM + topk + softmax + SiLU（grouped）",
+      "worker": "模型 + GPU",
+      "detail": "MoE 只读激活的 expert；dense 模型这一步读全部 FFN 权重。参数量在这里最大。"
+    },
+    {
+      "id": "head",
+      "title": "final norm + lm_head",
+      "op": "最后一个位置的 hidden 投到词表",
+      "shape": "[1, {vocab}]",
+      "kernel": "GEMM/GEMV + softmax/topk/argmax",
+      "worker": "GPU",
+      "detail": "只对最后一个位置算 logits；采样也在 GPU 上完成（top-k / top-p / argmax）。"
+    }
+  ],
+  "gpuLoad": [
+    {
+      "id": "disk",
+      "title": "① 磁盘 / 网络",
+      "detail": "safetensors（HF）或 GGUF（llama.cpp）文件。量化版本每个参数约 4–5 bit。",
+      "sizeKey": "disk"
+    },
+    {
+      "id": "ram",
+      "title": "② CPU 内存",
+      "detail": "读入或用 mmap 映射；容器/OS 的 page cache 也算在这里。这一站往往被忽略，但 30B 模型也要十几 GB 内存。",
+      "sizeKey": "ram"
+    },
+    {
+      "id": "h2d",
+      "title": "③ H2D 拷贝",
+      "detail": "cudaMemcpyAsync 经 PCIe/NVLink 送进显存，框架的加载器负责（不是模型）。PCIe 4.0 x16 约 25 GB/s。",
+      "sizeKey": "h2d"
+    },
+    {
+      "id": "vram",
+      "title": "④ GPU 显存",
+      "detail": "权重常驻显存，推理时只读；KV cache 和激活另外分配。量化格式决定显存占用。",
+      "sizeKey": "vram"
+    }
+  ],
+  "kernels": [
+    {
+      "stage": "embedding",
+      "op": "token → 一行向量",
+      "kernel": "gather / index_select",
+      "prefill": "O(n)",
+      "decode": "O(1)",
+      "worker": "GPU"
+    },
+    {
+      "stage": "QKV 投影",
+      "op": "hidden × Wq/Wk/Wv",
+      "kernel": "cuBLAS GEMM",
+      "prefill": "大矩阵乘，算力受限",
+      "decode": "GEMV，读权重受限",
+      "worker": "GPU"
+    },
+    {
+      "stage": "norm",
+      "op": "RMSNorm / q_norm / k_norm",
+      "kernel": "reduction kernel",
+      "prefill": "O(n·d)",
+      "decode": "O(d)",
+      "worker": "GPU"
+    },
+    {
+      "stage": "位置编码",
+      "op": "RoPE 旋转 Q/K",
+      "kernel": "elementwise kernel",
+      "prefill": "O(n·d)",
+      "decode": "O(d)",
+      "worker": "GPU"
+    },
+    {
+      "stage": "KV 写入",
+      "op": "K/V 追加/落块",
+      "kernel": "copy / paged write",
+      "prefill": "写 n 个位置",
+      "decode": "写 1 个位置",
+      "worker": "引擎分配 + GPU 执行"
+    },
+    {
+      "stage": "attention",
+      "op": "QKᵀ → softmax → PV",
+      "kernel": "FlashAttention（融合）",
+      "prefill": "O(n²)，计算受限",
+      "decode": "O(T)，带宽受限",
+      "worker": "GPU"
+    },
+    {
+      "stage": "输出投影",
+      "op": "attention out × Wo",
+      "kernel": "cuBLAS GEMM",
+      "prefill": "大 GEMM",
+      "decode": "GEMV",
+      "worker": "GPU"
+    },
+    {
+      "stage": "MoE 路由",
+      "op": "router → softmax → top-k",
+      "kernel": "GEMV + topk + softmax",
+      "prefill": "O(n·E)",
+      "decode": "O(E)",
+      "worker": "GPU"
+    },
+    {
+      "stage": "Expert MLP",
+      "op": "gate/up/down + SiLU",
+      "kernel": "grouped GEMM（fused MoE）",
+      "prefill": "计算受限",
+      "decode": "带宽受限（只读 top-k）",
+      "worker": "GPU"
+    },
+    {
+      "stage": "lm_head",
+      "op": "hidden × 词表矩阵",
+      "kernel": "cuBLAS GEMM",
+      "prefill": "只算最后一个位置",
+      "decode": "GEMV，读 [d, vocab]",
+      "worker": "GPU"
+    },
+    {
+      "stage": "采样",
+      "op": "softmax / top-k / top-p / argmax",
+      "kernel": "reduction kernel",
+      "prefill": "1 个位置",
+      "decode": "1 个位置",
+      "worker": "GPU"
+    }
+  ],
+  "notes": {
+    "layers": "层数不改变 hidden：每层是「看上下文（attention）→ 逐 token 变换（FFN/MoE）」的一次加工，输入输出同宽。加深 = 多次加工，不 = 变窄或变宽。",
+    "params": "参数就是训练出来的数字（权重矩阵里的每个元素）。参数量 ≈ 层数 × 每层参数 + embedding + 输出头；MoE 的参数量在 expert 里，但每 token 只激活一小部分。",
+    "kv": "KV cache 的大小由「层数 × KV 头数 × head_dim × 2（K/V）× 精度」决定，与 hidden 无关；所以 GQA（少 KV 头）能显著省 KV。",
+    "gpu": "GPU 负责执行：GEMM（cuBLAS）、norm、RoPE、FlashAttention、topk/softmax、拷贝。模型定义「算什么」，引擎决定「什么时候算、缓存怎么放」。"
+  },
+  "context": {
+    "modelId": "qwen30b",
+    "note": "本次学习以 Qwen3-Coder-30B-A3B 为锚点。KV cache 的公式与模型无关；换成 7B/32B 只是数字不同。",
+    "kvContext": 32768,
+    "gpus": [
+      {
+        "id": "rtx4090",
+        "name": "RTX 4090 24GB",
+        "vram": 24,
+        "bandwidth": 1008,
+        "bf16": 165,
+        "pcie": 32,
+        "note": "消费级；24GB 是复杂代码开发的现实下限"
+      },
+      {
+        "id": "rtx3090",
+        "name": "RTX 3090 24GB",
+        "vram": 24,
+        "bandwidth": 936,
+        "bf16": 71,
+        "pcie": 32,
+        "note": "更老的 24GB 卡，带宽/算力都低一档"
+      },
+      {
+        "id": "rtx5090",
+        "name": "RTX 5090 32GB",
+        "vram": 32,
+        "bandwidth": 1792,
+        "bf16": 210,
+        "pcie": 64,
+        "note": "32GB 起步更舒服，64K 上下文不用太抠"
+      },
+      {
+        "id": "a100",
+        "name": "A100 80GB",
+        "vram": 80,
+        "bandwidth": 2039,
+        "bf16": 312,
+        "pcie": 64,
+        "note": "数据中心卡，可以开始谈并发"
+      },
+      {
+        "id": "m2",
+        "name": "Apple M2 16GB（统一内存）",
+        "vram": 16,
+        "bandwidth": 100,
+        "bf16": 7.2,
+        "pcie": 0,
+        "unified": true,
+        "note": "Metal 预算约 10.7 GiB，30B Q4 放不下"
+      }
+    ]
+  }
+}

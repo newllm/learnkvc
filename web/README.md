@@ -1,0 +1,85 @@
+# learnkvc 思考式阅读器（v2.5）
+
+把第 1 章的阅读导图和源码放在同一个页面里，但主线不是「读文档」，而是**先想、再看证据、最后归因和总结**：
+
+```
+先想（6 个预测题） → ① KV cache 章 → ② Prefix cache 章 → ③ PagedAttention 章
+  （每章：先想 → 探索阅读 → 提问反思 → 总结归纳；多次提问在 Prefix 章第 11 步，三层归因在每章总结）
+→ 模型解剖 / 显存计算器 → 后测 → 学习反馈 → 课后作业
+```
+
+知识不是目标；目标是让你先形成假设，再用代码和 trace 修正它，最后能用自己的话解释「一次提问、多次提问、模型 / GPU / 引擎」。
+
+## 打开
+
+GitHub Pages（需在仓库 Settings → Pages 选择 GitHub Actions）：<https://newllm.github.io/learnKV/web/index.html>。
+
+
+直接双击 `web/index.html`（数据已内联在 `data/*.js`，`file://` 可用，无需服务器、无需联网）。
+
+也可以起一个本地静态服务：
+
+```bash
+python3 -m http.server 8000
+# http://127.0.0.1:8000/web/index.html
+```
+
+## 视图
+
+| 视图 | 做什么 |
+| --- | --- |
+| 先想（前测） | 先说明本次学习设定：锚点模型 Qwen3-Coder-30B-A3B + 可选 GPU（4090/3090/5090/A100/M2）的显存、带宽、算力；6 题前测**评分**（提交后才显示对错），每题带一句话概要和可展开的「背景 / 怎么想」详情 |
+| ① KV cache 章 | **四段式**（先想 → 探索 → 提问反思 → 总结归纳）：14 步代码高亮 + 双栏生成播放 + 缓存网格 + 掩码；先想 3 题预测、4 个反思问题、总结卡 |
+| ② Prefix cache 章 | **四段式**：16 步探索 + 三场景（共享前缀 / 池子不足 LRU / 相同 token 不同位置）请求时间线、块池、哈希链、引用计数与淘汰；第 11 步内嵌「多次提问」多轮/多请求模拟器 |
+| ③ PagedAttention 章 | **四段式**：15 步 + 逻辑 token → block table → 物理块池，可播放 append/free/reuse，块内 slot 与内部碎片；先想/反思/总结 |
+| 归因 | 不单独成页：每章「总结归纳」内嵌 3 张卡（模型 / GPU / 引擎）的归因练习；跨章综合在三章对照矩阵 |
+| 模型解剖 | 4 个预设（TinyModel / 7B / 32B / 30B-A3B）：组成与参数拆分、层数与维度计算器、参数如何参与 token 生成的 8 步流水线、磁盘→RAM→H2D→显存加载流程、token 生成用到的 11 类 GPU kernel |
+| 显存计算器 | 模型/量化/KV 精度/上下文/并发/GPU 六个输入，输出权重+KV+运行时、是否放得下、prefill 计算下限、decode 带宽上限 |
+| ⑤ 学习反馈 | 学完再做 6 题**后测**（同概念换问法，同样带概要 + 详情）：前测/后测分数、按概念对照（提升/维持/退步）、学习完成度（步骤/视图）、错题回看链接；总结给「概要 + 详细描述」两层 |
+| ⑥ 课后作业 | 三章总结归纳完成后解锁：三章对照矩阵 + 4 道迁移题（选一个其他领域系统 / KV 公式 / TTL 设计 / 自由类比）+ 参考答案 + 提交记录 |
+
+另有亮/暗主题切换（`localStorage` 记忆）、键盘导航（←/→/空格）和 `file://` 离线支持，设计见 [`DESIGN.md`](DESIGN.md)。
+
+## 改内容后重新生成
+
+页面里的代码、讲解、步骤、题目、trace 都从仓库文件生成，不要在 `data/*.js` 里手改：
+
+```bash
+python3 web/tools/build.py
+```
+
+- 代码：`example/kv_cache.py`（`ast` 解析符号区间）
+- 讲解：`example/KV_CACHE_READING.md`（按 `##` / `###` 切节）
+- 步骤：`web/tools/steps.json`
+- 思考层：`web/tools/pedagogy.json`（预测题、每步 question、归因卡片、反思提示）
+- 模型解剖：`web/tools/anatomy.json`（预设架构、8 步生成流水线、GPU 加载阶段、kernel 表）；参数量/KV 由 `build.py` 按公式计算并断言
+- 学习闭环：前测/后测分数、所选 GPU、访问过的视图/步骤都存 `localStorage`（key `learnkvc.progress.v1`），
+  学习反馈页据此生成前后对照；视图/步骤的访问由 `app.js` 在切换时通过 `LK.progress` 记录
+- 状态：`web/tools/collect_traces.py`
+  - 装了 PyTorch：跑真实 `generate()` 得到 tokens / logits / 计数
+  - 没装：用 README 记录的 token 序列 + `print_summary()` 的断言公式生成解析 trace（文件里会标注 `source: analytic`）
+  - 另外生成「多轮 / 多请求」的复用账本（`reuse` 字段），供 Prefix 章第 11 步「多次提问」使用
+
+## 文件
+
+```
+web/
+├── index.html          # 页面壳（无框架、无 CDN）
+├── DESIGN.md           # 设计稿（思考优先的教学逻辑、同步机制、P0–P5）
+├── assets/
+│   ├── style.css
+│   ├── app.js          # hash 路由、四个视图、步骤、生成播放
+│   ├── codeview.js     # Python 高亮 + 行号 + 代码区滚动
+│   ├── workshop.js     # 先想 / 多次提问 / 归因 / 总结 / 作业
+│   ├── anatomy.js      # 模型组成 / 层与维度 / 参数→token / GPU 加载 / kernel 表
+│   └── viz/kv.js       # 第 1 章的可视化组件
+├── data/               # 生成物（已生成，双击即用）
+│   ├── data.js         # 代码 + 讲解 HTML + steps + 思考层内容
+│   └── traces.js       # 生成状态快照 + reuse 账本
+└── tools/
+    ├── build.py
+    ├── collect_traces.py
+    ├── steps.json
+    ├── pedagogy.json
+    └── anatomy.json
+```

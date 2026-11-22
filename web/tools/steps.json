@@ -1,0 +1,120 @@
+{
+  "chapter": "kv",
+  "title": "单请求 KV cache",
+  "codeFile": "example/kv_cache.py",
+  "docFile": "example/KV_CACHE_READING.md",
+  "steps": [
+    {
+      "id": "overview",
+      "title": "先看全景：两条生成路径",
+      "section": "先建立整体图像",
+      "code": [],
+      "viz": "dual",
+      "hint": "同一段 prompt、同一组权重：左边每步重算整段前缀，右边 prefill 一次、之后每步只算 1 个新 token。"
+    },
+    {
+      "id": "no-cache",
+      "title": "无 cache：每步重喂整段前缀",
+      "section": "第 1 部分：没有 cache 的流程",
+      "code": ["function:generate", "class:TinyModel.forward"],
+      "viz": "dual",
+      "hint": "generate(..., use_cache=False) 的循环体：每步把 prompt + 已生成的全部 token 重新喂进模型，只取最后一个位置的 logits。"
+    },
+    {
+      "id": "layer-cache",
+      "title": "缓存长什么样：每层一组 K/V",
+      "section": "`LayerKVCache`：一层的历史状态",
+      "code": ["class:LayerKVCache"],
+      "viz": "cache",
+      "hint": "布局 (batch, kv_heads, sequence_length, head_dim)；length 读倒数第二维，决定 attention 能看多远。"
+    },
+    {
+      "id": "append",
+      "title": "append()：在 seq 维拼接 K/V",
+      "section": "`append()`：Cache 的核心操作",
+      "code": ["class:LayerKVCache.append"],
+      "viz": "cache",
+      "hint": "已有历史就沿 dim=-2 拼接；设了 max_length 就只保留最后 max_length 个位置（滑动窗口）。"
+    },
+    {
+      "id": "kv-cache",
+      "title": "KVCache：多层 + reorder + fork",
+      "section": "`KVCache`：把多层装在一起",
+      "code": ["class:KVCache"],
+      "viz": "experiments",
+      "hint": "多层同步推进；reorder 用于 beam search 的行重排，fork 用 clone 分出分支，append 不会互相污染。"
+    },
+    {
+      "id": "cached-attn",
+      "title": "cached_attention：缓存如何接上注意力",
+      "section": "第 3 部分：`cached_attention`：缓存如何接上注意力",
+      "code": ["function:cached_attention"],
+      "viz": "dual",
+      "hint": "先 append 新 K/V，再对整段缓存做 causal attention；mask 用绝对位置构造，因为窗口可能已经丢掉了最早的 key。"
+    },
+    {
+      "id": "mask",
+      "title": "为什么不能只写 is_causal=True",
+      "section": "为什么不能只写 `is_causal=True`",
+      "code": ["function:cached_attention"],
+      "viz": "mask",
+      "hint": "窗口把 key 0 截掉之后，key 0 不再是绝对位置 0；必须用 first_key_position + 绝对位置 而不是简单的下三角。"
+    },
+    {
+      "id": "full-attn",
+      "title": "full_attention：无 cache 的对照实现",
+      "section": "`full_attention`：无 cache 的对照实现",
+      "code": ["function:full_attention"],
+      "viz": "none",
+      "hint": "和 cached_attention 是同一套数学，只是 past=0、K/V 来自本次输入。两条路径能逐帧对照。"
+    },
+    {
+      "id": "tiny-model",
+      "title": "TinyModel 与两条生成循环",
+      "section": "第 4 部分：`TinyModel` 与两条生成循环",
+      "code": ["class:TinyModel", "function:generate"],
+      "viz": "shapes",
+      "hint": "2 层、4/2 头 GQA、d_model=32、绝对位置嵌入；forward 返回最后位置的 logits，generate 的 use_cache 只改变喂什么。"
+    },
+    {
+      "id": "checks",
+      "title": "自测：两条路径必须完全一致",
+      "section": "第 5 部分：自测都检查了什么",
+      "code": ["function:check_numerics", "function:check_cache_features"],
+      "viz": "numerics",
+      "hint": "token 序列一致、logits 最大差异 4.47e-08；另外验证 GQA、滑动窗口、reorder、fork 的行为。"
+    },
+    {
+      "id": "gpu",
+      "title": "GPU 上具体发生了什么",
+      "section": "第 6 部分：GPU 上具体发生了什么",
+      "code": ["docstring:module"],
+      "viz": "none",
+      "hint": "每个算子落到哪个 CUDA kernel：GEMM → cuBLAS，cat/masked_fill → ATen elementwise，softmax 在生产里由 FlashAttention 融合。"
+    },
+    {
+      "id": "reading-order",
+      "title": "代码阅读顺序",
+      "section": "代码阅读顺序",
+      "code": ["class:LayerKVCache", "function:cached_attention", "class:TinyModel", "function:generate"],
+      "viz": "none",
+      "hint": "缓存容器 → attention → 玩具模型 → 生成循环，最后看自测。"
+    },
+    {
+      "id": "questions",
+      "title": "读完可以自测的七个问题",
+      "section": "阅读时可以检查的七个问题",
+      "code": [],
+      "viz": "none",
+      "hint": "回答不了的问题，回到对应小节和代码里找答案。"
+    },
+    {
+      "id": "production",
+      "title": "这份示例刻意没有处理的生产问题",
+      "section": "这份示例刻意没有处理的生产问题",
+      "code": [],
+      "viz": "none",
+      "hint": "连续布局、GPU 显存分配、paged attention、batch 调度、KV 量化——这些是后面两章和真实引擎要解决的。"
+    }
+  ]
+}

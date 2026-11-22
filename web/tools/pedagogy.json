@@ -1,0 +1,701 @@
+{
+  "quiz": [
+    {
+      "id": "q1",
+      "tag": "计算量",
+      "q": "同一个 8-token prompt 生成 8 个 token，「token 穿过全部层」这件事一共发生多少次？",
+      "options": [
+        "64 次",
+        "92 次",
+        "128 次",
+        "15 次"
+      ],
+      "answer": 1,
+      "why": "无 cache 时每步都重喂整段前缀：8+9+…+15 = 92。有 cache 时只需要 8（prefill）+ 7×1 = 15。",
+      "summary": "考什么：无 cache 时重复计算的规模",
+      "detail": "演示是 8 个 prompt token 生成 8 个 token。「位置前向」指一个 token 穿过全部层；无 cache 每步重喂整段前缀，输入长度会从 8 一路涨到 15。先把总位置数数出来，再选。"
+    },
+    {
+      "id": "q2",
+      "tag": "一次提问",
+      "q": "有 cache 之后，decode 的每一步到底做了什么？",
+      "options": [
+        "重算整段前缀，只保留最后一个 token 的结果",
+        "只投影新 token，把 K/V 追加进缓存，attention 读全部历史",
+        "只重算 attention，QKV 投影继续复用",
+        "什么都不算，直接读缓存里的 logits"
+      ],
+      "answer": 1,
+      "why": "decode 的 query 只有 1 个 token；它的 Q/K/V 是新算的，历史 K/V 从缓存读。省掉的是「重复投影历史 token」，attention 仍然要读全部历史。",
+      "summary": "考什么：decode 每步到底重算什么",
+      "detail": "有 cache 后，prefill 已经把 prompt 的 K/V 写进缓存。decode 一个新 token 时，旧 token 的 K/V 还有没有必要重新投影？attention 真正需要读的是什么？"
+    },
+    {
+      "id": "q3",
+      "tag": "三层分工",
+      "q": "缓存里的 K/V 张量，主要由谁负责分配、复用、淘汰？",
+      "options": [
+        "模型的权重里自动包含",
+        "GPU 提供显存，推理引擎决定块怎么分、怎么复用",
+        "Python 的垃圾回收器",
+        "操作系统的 swap"
+      ],
+      "answer": 1,
+      "why": "模型只定义「K/V 怎么算」；GPU 是执行算子和存放张量的硬件；块分配、引用计数、LRU 淘汰、前缀匹配都是推理引擎（vLLM / llama.cpp / Ollama）的工作。",
+      "summary": "考什么：缓存的 K/V 由谁分配、复用、淘汰",
+      "detail": "模型定义张量怎么来，GPU 提供算力与显存，引擎负责请求与缓存策略。这里的「块分配、引用计数、淘汰」更像谁的职责？"
+    },
+    {
+      "id": "q4",
+      "tag": "多请求",
+      "q": "200-token 的 system prompt 被 3 个请求共享，prefix cache 能省什么？",
+      "options": [
+        "只省计算",
+        "只省显存",
+        "计算和显存都省",
+        "都省不了"
+      ],
+      "answer": 2,
+      "why": "后两个请求不用重新 prefill（省计算）；同一段 KV 块被引用计数共享、只存一份（省显存）。代价是引擎要维护 hash 匹配、引用计数和淘汰。",
+      "summary": "考什么：共享前缀能省哪两类资源",
+      "detail": "三个请求的 system prompt 完全相同。省计算很直观；但同一段 K/V 是否必须在显存里存三份？这取决于引擎能否按块共享、引用计数。"
+    },
+    {
+      "id": "q5",
+      "tag": "多轮对话",
+      "q": "多轮对话到第 3 次提问，最值钱的缓存是什么？",
+      "options": [
+        "模型权重",
+        "历史对话的 K/V",
+        "上一条回答的文本",
+        "当前问题的 embedding"
+      ],
+      "answer": 1,
+      "why": "历史 K/V 已经在缓存里，第 3 轮只需要 prefill 新的用户消息。文本还要重新 tokenize/embed，权重本来就在显存里、与对话无关。",
+      "summary": "考什么：多轮里哪部分缓存最值钱",
+      "detail": "第 1 轮回答完，第 2 轮的新问题只多了一段 user 消息。哪些内容已经在上一轮算过：文本、权重，还是 K/V？"
+    },
+    {
+      "id": "q6",
+      "tag": "多轮 vs 多请求",
+      "q": "多轮对话里，KV cache 省显存吗？",
+      "options": [
+        "省，历史被压缩了",
+        "不省：历史 K/V 一直占着，只省了重复计算",
+        "有时省，取决于模型"
+      ],
+      "answer": 1,
+      "why": "多轮对话的 KV 只会越积越多，cache 省的是「重复 prefill」；真正省显存的是多个请求共享同一段前缀（块引用计数）。",
+      "summary": "考什么：省计算不等于省显存",
+      "detail": "多轮对话的 KV 会随历史增长；多请求共享前缀的 KV 可以只存一份，靠引用计数复用。哪一种同时省计算和显存？"
+    }
+  ],
+  "stepThink": {
+    "overview": {
+      "q": "如果每一步都重新喂整段前缀，重复算出来的 K/V 和上一次一样吗？",
+      "a": "同模型、同精度、同位置时完全一样（差异只来自浮点累加顺序）。一样，意味着缓存不是近似，而是省掉纯浪费。"
+    },
+    "no-cache": {
+      "q": "8 个 prompt + 8 个生成，为什么是 92 次而不是 64 次？",
+      "a": "每步输入都是整段前缀：8,9,…,15，求和 92；其中 77 个位置的结果被直接丢弃。"
+    },
+    "layer-cache": {
+      "q": "缓存为什么按层分开存，而不是整个模型一个大张量？",
+      "a": "K/V 是每层自己的投影结果，层与层不共享；布局 (batch, kv_heads, T, head_dim) 让每层独立追加。"
+    },
+    "append": {
+      "q": "为什么沿 seq 维拼接？换到 head_dim 维会怎样？",
+      "a": "seq 维代表历史；head_dim 是每个头的特征维度，沿它拼接会把不同 token 的特征搅在一起。"
+    },
+    "kv-cache": {
+      "q": "reorder 和 fork 分别对应什么真实场景？没有它们会怎样？",
+      "a": "reorder 对应 beam search 的候选重排；fork 对应从同一前缀分叉出多条生成路径。没有 reorder 会串行、没有 fork 会复制整份缓存。"
+    },
+    "cached-attn": {
+      "q": "prefill 和 decode 的 attention，代码上到底差在哪？",
+      "a": "只差 query 的长度：prefill q_len=n、decode q_len=1；K/V 都从缓存读，mask 都用绝对位置。"
+    },
+    "mask": {
+      "q": "窗口丢掉最早的 key 之后，直接 is_causal=True 会错在哪？",
+      "a": "它假设 key 0 就是绝对位置 0；缓存的 key 0 可能是位置 100。必须用 first_key_position 还原绝对位置。"
+    },
+    "full-attn": {
+      "q": "两条路径必须给出相同 logits —— 如果不同，说明什么？",
+      "a": "说明缓存的 K/V、位置或掩码有 bug。缓存绝不能改变数学结果；这正是 check_numerics 要断言的性质。"
+    },
+    "tiny-model": {
+      "q": "这一层里，哪些是模型的数学、哪些是 GPU 的执行、哪些是引擎要管的？",
+      "a": "投影/attention/MoE 公式 = 模型；GEMM、显存带宽、kernel = GPU；缓存分配、调度、复用 = 引擎。"
+    },
+    "checks": {
+      "q": "4.47e-08 的差异说明缓存是近似吗？",
+      "a": "不是，只是浮点累加顺序不同；<1e-5 且 argmax 一致，就证明两条路径数学等价。"
+    },
+    "gpu": {
+      "q": "同一行 Python，在 CPU / GPU 上分别变成什么？K/V 存在哪？",
+      "a": "CPU 走 MKL/Accelerate；GPU 走 cuBLAS/ATen kernel；K/V 存在 GPU 显存（HBM），由框架的显存分配器管理。"
+    },
+    "reading-order": {
+      "q": "只看一个函数来理解缓存，你选哪个？为什么？",
+      "a": "cached_attention：append、读历史、mask 三件事都在这里，是缓存接入注意力的全部路径。"
+    },
+    "questions": {
+      "q": "七个问题里挑一个，先写下你的答案，再回原文对照。",
+      "a": "自测没有标准答案；能指出对应的代码位置（函数名/行号）就算过。"
+    },
+    "production": {
+      "q": "这份 demo 缺的三件事，分别属于模型、GPU 还是引擎？",
+      "a": "连续布局/PagedAttention 管理 = 引擎；显存分配与 kernel = GPU；KV 量化/精度 = 模型 + 引擎共同决定。"
+    }
+  },
+  "attribution": {
+    "buckets": [
+      {
+        "id": "model",
+        "label": "模型",
+        "desc": "数学公式、权重、精度：决定「算什么」"
+      },
+      {
+        "id": "gpu",
+        "label": "GPU",
+        "desc": "kernel、带宽、显存：决定「算多快、放哪」"
+      },
+      {
+        "id": "engine",
+        "label": "引擎",
+        "desc": "调度、缓存管理、复用：决定「什么时候算、给谁用」"
+      }
+    ],
+    "cards": [
+      {
+        "id": "c1",
+        "label": "QKV 投影公式",
+        "bucket": "model",
+        "why": "模型结构定义，权重来自训练。"
+      },
+      {
+        "id": "c2",
+        "label": "RoPE 位置编码",
+        "bucket": "model",
+        "why": "位置怎么进入 attention 由模型设计决定。"
+      },
+      {
+        "id": "c3",
+        "label": "softmax + causal mask",
+        "bucket": "model",
+        "why": "attention 的数学定义，决定哪些位置可见。"
+      },
+      {
+        "id": "c4",
+        "label": "MoE top-8 路由",
+        "bucket": "model",
+        "why": "路由网络是模型权重的一部分。"
+      },
+      {
+        "id": "c5",
+        "label": "GEMM → cuBLAS kernel",
+        "bucket": "gpu",
+        "why": "同一行矩阵乘，在 GPU 上落到 cuBLAS/CUDA kernel。"
+      },
+      {
+        "id": "c6",
+        "label": "HBM 读写与带宽",
+        "bucket": "gpu",
+        "why": "decode 慢不慢主要看显存带宽，这是硬件属性。"
+      },
+      {
+        "id": "c7",
+        "label": "kernel 融合（FlashAttention）",
+        "bucket": "gpu",
+        "why": "把多个算子合成一个 kernel，是 GPU 执行层面的优化；用不用它由引擎参数决定。"
+      },
+      {
+        "id": "c8",
+        "label": "显存分配（cudaMalloc / allocator）",
+        "bucket": "gpu",
+        "why": "物理显存由驱动/分配器管理；引擎在它之上切块。"
+      },
+      {
+        "id": "c9",
+        "label": "KV 块分配与 LRU 淘汰",
+        "bucket": "engine",
+        "why": "缓存块怎么分、什么时候淘汰，是推理引擎的策略。"
+      },
+      {
+        "id": "c10",
+        "label": "prefix hash 匹配 + 引用计数",
+        "bucket": "engine",
+        "why": "跨请求复用前缀的记账逻辑，纯引擎实现。"
+      },
+      {
+        "id": "c11",
+        "label": "连续批处理 / 请求调度",
+        "bucket": "engine",
+        "why": "把多个请求拼进同一个 batch，是引擎的调度决策。"
+      },
+      {
+        "id": "c12",
+        "label": "block table 逻辑→物理映射",
+        "bucket": "engine",
+        "why": "PagedAttention 的块表由引擎维护，kernel 按表取数。"
+      }
+    ],
+    "afterword": "边界不是绝对的：一个「attention kernel」既是模型的数学，也由 GPU 执行、由引擎选择。判断标准是「谁定义规则、谁执行、谁决定策略」。"
+  },
+  "reflect": {
+    "prompts": [
+      {
+        "id": "r1",
+        "q": "一次提问：KV cache 省了什么？为什么它不改变计算结果？"
+      },
+      {
+        "id": "r2",
+        "q": "多次提问：多轮对话和多请求共享前缀，各复用了什么？为什么一个只省计算，另一个还省显存？"
+      },
+      {
+        "id": "r3",
+        "q": "模型、GPU、引擎各负责哪一段？举一个你原来容易混淆的点。"
+      }
+    ],
+    "reference": [
+      {
+        "title": "一次提问",
+        "points": [
+          "decode 每步只投影新 token，历史 K/V 直接读缓存。",
+          "省的是重复计算，不改变数学结果（差异只有浮点累加顺序）。",
+          "代价：显存里多留一份随上下文增长的 KV。"
+        ]
+      },
+      {
+        "title": "多轮对话",
+        "points": [
+          "复用历史对话的 K/V，第 N 轮只 prefill 新的用户消息。",
+          "省计算，但不省显存：历史 K/V 一直占着。"
+        ]
+      },
+      {
+        "title": "多请求共享前缀",
+        "points": [
+          "相同前缀的 KV 块只算一次、只存一份，用引用计数共享。",
+          "计算和显存都省；代价是引擎要维护 hash、引用计数、淘汰。"
+        ]
+      },
+      {
+        "title": "三层分工",
+        "points": [
+          "模型：定义算什么（公式、权重、精度）。",
+          "GPU：执行算子、读写显存、决定算多快。",
+          "引擎：调度请求、管理缓存块、决定复用与淘汰。"
+        ]
+      }
+    ],
+    "takeaway": "KV cache 把「算过的 K/V」从计算问题变成存储与复用问题：谁算（模型）、谁执行（GPU）、谁决定留不留/给谁用（引擎）。",
+    "feedbackSummary": {
+      "brief": "KV cache 把「算过的 K/V」从计算问题变成存储 + 复用问题：模型定义算什么，GPU 执行，引擎决定留什么、给谁用。",
+      "detail": "一次提问：decode 只投影新 token，省的是重复计算，但 KV 仍随上下文占显存。多轮对话：复用历史 K/V，省 prefill 计算，不省显存。多个请求共享前缀：块按引用计数共享，计算和显存都省。三层分工：模型 = 公式/权重；GPU = kernel/带宽/显存；引擎 = 调度/块表/复用与淘汰。"
+    }
+  },
+  "postTest": {
+    "title": "后测 · 学完再答一遍",
+    "note": "同样是 6 个概念，换了问法。提交后和前测分数对照，看看哪里真的学会了。",
+    "questions": [
+      {
+        "id": "b1",
+        "tag": "计算量",
+        "q": "8 token 的 prompt 生成 8 个 token，有 cache 时「token 穿过全部层」一共多少次？",
+        "options": [
+          "15 次",
+          "92 次",
+          "64 次",
+          "128 次"
+        ],
+        "answer": 0,
+        "why": "prefill 8 次 + 之后 7 步各 1 次 = 15；无 cache 才是 8+…+15 = 92。",
+        "suggest": {
+          "view": "kv",
+          "step": 2
+        },
+        "summary": "考什么：有 cache 时的位置前向次数",
+        "detail": "prefill 一次处理 8 个 token；之后 7 步各处理 1 个新 token。把这两段加起来，而不是把前缀重算 8 遍。"
+      },
+      {
+        "id": "b2",
+        "tag": "一次提问",
+        "q": "有 cache 之后，decode 的每一步还会重新投影历史 token 的 Q/K/V 吗？",
+        "options": [
+          "会，attention 需要重新算",
+          "不会，只投影新 token，历史 K/V 从缓存读",
+          "只重新做 softmax"
+        ],
+        "answer": 1,
+        "why": "历史 token 的 K/V 已经在缓存里；每步只投影新 token，再拿它的 Q 去读全部历史 K/V。",
+        "suggest": {
+          "view": "kv",
+          "step": 5
+        },
+        "summary": "考什么：decode 是否重新投影历史 token",
+        "detail": "历史 token 的 K/V 已在缓存里；新 token 需要自己的 Q/K/V。注意区分「读历史 K/V」和「重新投影历史 token」。"
+      },
+      {
+        "id": "b3",
+        "tag": "三层分工",
+        "q": "KV 块的分配、引用计数、LRU 淘汰，属于哪一层的工作？",
+        "options": [
+          "模型（数学定义）",
+          "GPU（驱动/显存）",
+          "推理引擎（缓存管理）"
+        ],
+        "answer": 2,
+        "why": "块表、引用计数、淘汰策略都是引擎的缓存管理；GPU 提供显存，模型只定义 K/V 怎么算。",
+        "suggest": {
+          "view": "kv",
+          "stage": "summary"
+        },
+        "summary": "考什么：块管理属于哪一层",
+        "detail": "块表、引用计数、LRU 都是推理引擎的缓存管理；GPU 提供显存，模型只定义 K/V 的计算。"
+      },
+      {
+        "id": "b4",
+        "tag": "多请求",
+        "q": "3 个请求共享同一段 200-token system prompt，prefix cache 不能省哪一项？",
+        "options": [
+          "重复的 prefill 计算",
+          "这段前缀的 KV 显存",
+          "模型权重的读取"
+        ],
+        "answer": 2,
+        "why": "权重每步都要读，和请求是否共享前缀无关；省的是重复 prefill 和重复的 KV 存储。",
+        "suggest": {
+          "view": "prefix",
+          "step": 11
+        },
+        "summary": "考什么：prefix cache 省不了什么",
+        "detail": "权重每步都要读，和请求是否共享前缀无关；共享前缀主要影响 prefill 计算和 KV 存储。"
+      },
+      {
+        "id": "b5",
+        "tag": "多轮对话",
+        "q": "多轮对话里，KV cache 省显存吗？",
+        "options": [
+          "省，历史被压缩了",
+          "不省：历史 K/V 一直占着，只省重复计算",
+          "取决于模型大小"
+        ],
+        "answer": 1,
+        "why": "多轮只会让 KV 越积越多；省的是每轮重算历史的 prefill 计算。省显存的是多请求共享前缀。",
+        "suggest": {
+          "view": "prefix",
+          "step": 11
+        },
+        "summary": "考什么：多轮对话是否省显存",
+        "detail": "多轮会让历史 K/V 越积越多；cache 省的是每轮重新 prefill 历史的那部分计算。"
+      },
+      {
+        "id": "b6",
+        "tag": "多轮 vs 多请求",
+        "q": "下面哪种情况，KV cache 同时省计算和显存？",
+        "options": [
+          "单请求的 decode",
+          "同一会话的多轮对话",
+          "多个请求共享同一段前缀"
+        ],
+        "answer": 2,
+        "why": "共享前缀的块被引用计数共享，只算一次、只存一份；多轮和单请求 decode 都只省计算。",
+        "suggest": {
+          "view": "prefix",
+          "step": 11
+        },
+        "summary": "考什么：哪种复用同时省计算和显存",
+        "detail": "单请求 decode 和多轮对话都只省计算；共享前缀的块还能被多个请求引用，所以显存也只存一份。"
+      }
+    ]
+  },
+  "lessons": {
+    "kv": {
+      "think": [
+        {
+          "q": "同一个 prompt 生成两次，第二次 decode 的 K/V 和第一次完全一样吗？",
+          "options": [
+            "一样，同模型同位置",
+            "不一样，采样随机",
+            "只有第一层一样"
+          ],
+          "answer": 0,
+          "why": "K/V 是输入 token 和位置的确定性函数；采样只影响选哪个 token，不影响已算出的 K/V。这就是缓存能复用的前提。"
+        },
+        {
+          "q": "缓存里存的「K/V」是 attention 的什么？",
+          "options": [
+            "每层的 K 和 V 投影结果",
+            "每层的 Q 投影结果",
+            "attention 的输出"
+          ],
+          "answer": 0,
+          "why": "每层把 hidden 投影成 Q/K/V；Q 只属于当前 token，K/V 属于历史，所以要缓存 K/V，而不是 Q 或 attention 输出。"
+        },
+        {
+          "q": "8 个生成 token 从 92 次位置前向降到 15 次，省下的 77 次里有哪次是必须的吗？",
+          "options": [
+            "没有，全是重复计算",
+            "每次都必须，只是省了显存",
+            "只有第一次必须"
+          ],
+          "answer": 0,
+          "why": "被省掉的都是前缀 token 的重复位置前向；真正必须的是 prefill 的 8 个位置 + 之后 7 个新 token。"
+        }
+      ],
+      "reflect": [
+        {
+          "q": "用一句话解释：一次提问里 KV cache 到底省了什么？",
+          "ref": "省掉了 decode 每步对历史 token 的重复投影与重算；历史 K/V 直接读缓存。"
+        },
+        {
+          "q": "如果没有 cache，生成第 8 个 token 时要算什么？和 prefill 比呢？",
+          "ref": "要把 prompt + 前 7 个生成 token 全部重新过一遍所有层（15 个位置），而 prefill 只算过 8 个；计算量随生成长度平方增长。"
+        },
+        {
+          "q": "第 1 章里最容易混淆的一步是什么？用代码里的函数名指出来。",
+          "ref": "例如 cached_attention 里的 append 与 mask：past 要在 append 之前读，mask 要用绝对位置而不是简单下三角。"
+        },
+        {
+          "q": "如果不用 cache，显存会更省吗？为什么？",
+          "ref": "会少一份 KV 占用，但时间大幅变差；KV cache 是用显存换计算，不是纯优化。"
+        }
+      ],
+      "summary": {
+        "brief": "单请求 KV cache：prefill 一次写满历史 K/V，decode 每步只算 1 个新 token、读全部历史，省的是重复计算，代价是显存随上下文增长。",
+        "detail": "prefill 把 prompt 的 K/V 写入每层缓存；decode 的 query 只有 1 个 token，Q 新算、K/V 从缓存读；mask 要用绝对位置。缓存不改变数学结果（logits 差异仅来自浮点累加顺序）。"
+      },
+      "attribution": [
+        {
+          "id": "kv-m1",
+          "label": "QKV 投影与 attention 公式",
+          "bucket": "model",
+          "why": "模型定义 token 怎么变成 Q/K/V、怎么做 softmax；公式和权重来自模型。"
+        },
+        {
+          "id": "kv-g1",
+          "label": "GEMM → cuBLAS / FlashAttention kernel",
+          "bucket": "gpu",
+          "why": "同一行矩阵乘/attention 在 GPU 上落到 cuBLAS、FlashAttention 等 kernel。"
+        },
+        {
+          "id": "kv-e1",
+          "label": "KV cache 的分配与保留",
+          "bucket": "engine",
+          "why": "缓存多大、什么时候释放、是否量化，都是引擎/部署层的策略。"
+        }
+      ]
+    },
+    "prefix": {
+      "think": [
+        {
+          "q": "两个请求共享同一段 system prompt，第二个请求还需要重新 prefill 这段前缀吗？",
+          "options": [
+            "需要，每个请求必须重算",
+            "不需要，命中块就直接复用",
+            "只有完全相同的请求才能复用"
+          ],
+          "answer": 1,
+          "why": "前缀缓存按块哈希匹配；只要这段前缀的块还在池里，就能直接复用已算好的 K/V，只 prefill 自己的尾巴。"
+        },
+        {
+          "q": "块能被多个请求共享，靠的是什么？",
+          "options": [
+            "复制三份",
+            "引用计数",
+            "把块改成只读"
+          ],
+          "answer": 1,
+          "why": "块用 ref_count 记录多少请求持有；释放请求只减计数，块仍留在池里等复用，淘汰时只动 ref=0 的叶子。"
+        },
+        {
+          "q": "池子满了，应该淘汰哪个块？",
+          "options": [
+            "最久没用的任意块",
+            "没有引用且没有孩子的叶子块里最久没用的",
+            "编号最大的块"
+          ],
+          "answer": 1,
+          "why": "有引用的块被请求占着；有孩子的块被淘汰会把孩子的链断掉。所以只在「空闲叶子」里按 last_used 选 LRU。"
+        }
+      ],
+      "reflect": [
+        {
+          "q": "为什么块的身份要带父块的哈希，而不是只哈希这 4 个 token？",
+          "ref": "相同 4 token 在不同上下文里的 K/V 完全不同；带父哈希把「前缀路径」编码进身份，避免误共享。"
+        },
+        {
+          "q": "为什么淘汰只能淘汰叶子块？",
+          "ref": "子块只能通过父块的哈希链找到；淘汰父块会让子块变成不可达的孤儿，浪费且不可复用。"
+        },
+        {
+          "q": "你的场景里，什么情况下 prefix cache 反而可能不划算？",
+          "ref": "前缀很少重复、块池太小导致频繁淘汰、请求长度差异大造成碎片，或 hash/记账开销超过省下的计算。"
+        }
+      ],
+      "summary": {
+        "brief": "Prefix cache：把 KV 切成固定块，用 (父哈希, token) 做身份；命中就复用、引用计数共享、LRU 淘汰空闲叶子，省重复 prefill。",
+        "detail": "块池 + 哈希链 + 引用计数 + LRU。acquire 沿链匹配并预留块；release 只减引用；淘汰只在 ref=0 且无孩子的叶子里选最久未用。复用结果与全量重算逐位一致。"
+      },
+      "attribution": [
+        {
+          "id": "p-m1",
+          "label": "每 4 个 token 的 K/V 计算",
+          "bucket": "model",
+          "why": "块里装的是模型算出的 K/V；哈希只决定「用哪一份」，不改变数值。"
+        },
+        {
+          "id": "p-g1",
+          "label": "按哈希/块表读取的 gather kernel",
+          "bucket": "gpu",
+          "why": "从块池按索引取 K/V 是 GPU 上的 gather/copy；带宽决定开销。"
+        },
+        {
+          "id": "p-e1",
+          "label": "块哈希、引用计数、LRU 淘汰",
+          "bucket": "engine",
+          "why": "前缀匹配、共享记账、淘汰策略全是引擎的缓存管理。"
+        }
+      ]
+    },
+    "paged": {
+      "think": [
+        {
+          "q": "连续布局的 KV cache 为什么既容易碎片化、又难以共享？",
+          "options": [
+            "因为必须按最大长度预留、块之间不能交叉引用",
+            "因为 GPU 不支持连续内存",
+            "因为 token 太长"
+          ],
+          "answer": 0,
+          "why": "连续布局要一次性预留 max_len，长度不一时内部浪费；前缀共享需要不同请求指向同一段物理内存，连续布局做不到。"
+        },
+        {
+          "q": "block table 存的是什么？",
+          "options": [
+            "每个 token 的 K/V 值",
+            "逻辑块 → 物理块号的映射",
+            "模型权重"
+          ],
+          "answer": 1,
+          "why": "block table 是 per-sequence 的索引：第 i 个逻辑块放在哪个物理块。K/V 本身在物理块池里。"
+        },
+        {
+          "q": "同一个 block table 里的物理块号一定是连续的吗？",
+          "options": [
+            "一定连续",
+            "不一定，分配顺序决定，可以乱序",
+            "只在 GPU 上连续"
+          ],
+          "answer": 1,
+          "why": "分配就是 pop 空闲块，物理块号由空闲列表顺序决定；逻辑连续、物理不连续是常态。"
+        }
+      ],
+      "reflect": [
+        {
+          "q": "append 时如何决定写到哪个物理块的哪个 slot？",
+          "ref": "slot = length % block_size；slot=0 表示新逻辑块，分配一个物理块并追加到 block_table；然后写该块第 slot 个位置。"
+        },
+        {
+          "q": "gather 为什么能还原逻辑顺序？",
+          "ref": "按 block_table 的顺序取物理块，reshape 成 token 序列；块内按 offset 保证顺序，所以物理乱序也能拼回逻辑顺序。"
+        },
+        {
+          "q": "内部碎片从哪里来？怎么减少？",
+          "ref": "最后一块常常用不满（length % block_size 个空 slot）；换更小的 block_size 能减少浪费，但块表/管理开销变大。"
+        }
+      ],
+      "summary": {
+        "brief": "PagedAttention：物理块池 + 每请求 block table。逻辑连续、物理乱序；append 按 length 落块，gather 按块表收集，释放回池复用。",
+        "detail": "BlockPool 用空闲列表分配；Sequence 维护 block_table 和 length；append 写块内 slot，gather 按表取块拼回 token 顺序；碎片来自最后一块的未用 slot。"
+      },
+      "attribution": [
+        {
+          "id": "g-m1",
+          "label": "paged attention 的 causal mask 与注意力公式",
+          "bucket": "model",
+          "why": "分页只改变 K/V 的物理位置；attention 数学不变，mask 仍按绝对位置。"
+        },
+        {
+          "id": "g-g1",
+          "label": "按 block table gather 的 kernel",
+          "bucket": "gpu",
+          "why": "block table 是索引，真正取数/拼接是 GPU kernel 的 gather。"
+        },
+        {
+          "id": "g-e1",
+          "label": "free list 与 block table 的维护",
+          "bucket": "engine",
+          "why": "分配/释放/映射由引擎的 block manager 维护。"
+        }
+      ]
+    }
+  },
+  "homework": {
+    "intro": "三章都完成后，把 KV cache 的「缓存—共享—分页—淘汰」抽象出来，迁移到一个你熟悉的系统或领域。作业不计分，但要求写下来，写完再对照参考答案。",
+    "matrix": {
+      "columns": [
+        "章节",
+        "复用单位",
+        "共享方式",
+        "淘汰/失效",
+        "物理映射",
+        "主要责任层"
+      ],
+      "rows": [
+        [
+          "单请求 KV cache",
+          "每个请求的 K/V 张量",
+          "请求内复用（历史）",
+          "无（随请求结束释放）",
+          "连续张量",
+          "模型 + GPU + 引擎"
+        ],
+        [
+          "Prefix cache",
+          "固定 token 块（4）",
+          "块哈希 + 引用计数共享",
+          "LRU，只淘汰空闲叶子",
+          "块池（逻辑连续）",
+          "引擎（哈希/引用/淘汰）"
+        ],
+        [
+          "PagedAttention",
+          "固定 token 块",
+          "块可被不同序列引用",
+          "free 回空闲池",
+          "block_table 逻辑→物理",
+          "引擎 + GPU kernel"
+        ]
+      ]
+    },
+    "tasks": [
+      {
+        "id": "h1",
+        "title": "1 · 迁移：选一个你熟悉的系统",
+        "prompt": "从 CPU cache、数据库 buffer pool、CDN/HTTP 缓存、Git packfile、浏览器缓存里选一个，回答四问：缓存单位是什么？哪些可以共享？淘汰/失效策略是什么？谁负责管理？",
+        "ref": "例如数据库 buffer pool：单位是页，页可被多个查询共享，LRU/clock 淘汰，引擎负责；K/V 类比页，block table 类比页表，prefix cache 类比共享页。言之成理即可。"
+      },
+      {
+        "id": "h2",
+        "title": "2 · 算一算：KV 显存",
+        "prompt": "Qwen3-Coder-30B-A3B 的 KV 是 96 KiB/token。128K 上下文、4 个并发请求（不共享前缀），KV 一共多少 GiB？写出计算式。",
+        "ref": "128K × 96 KiB = 12 GiB / 请求；4 并发 = 48 GiB。若共享前缀，共享部分只存一份。"
+      },
+      {
+        "id": "h3",
+        "title": "3 · 设计：给 prefix cache 加 TTL",
+        "prompt": "如果要给 prefix cache 加「块级 TTL」，应该放在模型、GPU 还是引擎？说明理由，并说出一个副作用。",
+        "ref": "放引擎：块的生命周期、引用计数、淘汰都是引擎的缓存管理；模型只定义 K/V 数学，GPU 只执行。副作用：过期后命中率下降、需要额外的过期扫描/时钟。"
+      },
+      {
+        "id": "h4",
+        "title": "4 · 自由探索：写一段类比",
+        "prompt": "用 150–300 字，把你选的系统类比成 KV cache：谁是 K/V、谁是 block table、什么时候淘汰、哪个环节最像 prefix cache。",
+        "ref": "没有标准答案，要求出现「缓存单位、共享、淘汰、索引」四个要素，并指出一个真实系统做不到的地方。"
+      }
+    ],
+    "closing": "完成作业后，回到「归因与总结」写三句话：这个领域里谁定义规则、谁执行、谁决定缓存策略。"
+  }
+}

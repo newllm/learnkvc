@@ -1,0 +1,171 @@
+{
+  "chapter": "prefix",
+  "title": "多请求 Prefix cache",
+  "codeFile": "example/prefix_cache_demo.py",
+  "docFile": "example/PREFIX_CACHE_READING.md",
+  "steps": [
+    {
+      "id": "overview",
+      "title": "多个请求，共享同一段前缀",
+      "section": "先建立整体图像",
+      "code": [
+        "class:Simulator"
+      ],
+      "viz": "prefix",
+      "hint": "KV cache 从「一个请求内部」升到「请求之间」：相同前缀的块只算一次、只存一份。"
+    },
+    {
+      "id": "block",
+      "title": "Block：物理块与它的身份",
+      "section": "1. `Block`：一块物理 KV 显存",
+      "code": [
+        "class:Block"
+      ],
+      "viz": "prefix",
+      "hint": "块里装 4 个 token 的 K/V；身份由 (父块哈希, 本块 token) 决定，内容相同就落到同一个块。"
+    },
+    {
+      "id": "cache",
+      "title": "PrefixCache：块池 + 匹配 + 淘汰",
+      "section": "2. `PrefixCache`：块池 + 匹配 + 淘汰",
+      "code": [
+        "class:PrefixCache"
+      ],
+      "viz": "prefix",
+      "hint": "池子有容量上限；命中靠哈希链，淘汰靠引用计数 + LRU，且只能淘汰没有孩子的叶子块。"
+    },
+    {
+      "id": "sim",
+      "title": "Simulator：请求的时间线",
+      "section": "3. `Simulator`：把请求放进时间线",
+      "code": [
+        "class:Simulator",
+        "class:Simulator._admit"
+      ],
+      "viz": "prefix",
+      "hint": "每个 tick：到达的请求做 acquire，活跃请求 decode 一个 token，生成完就 release（块仍留在池里）。"
+    },
+    {
+      "id": "hash",
+      "title": "块的身份：hash(parent, tokens)",
+      "section": "最关键的一行：块的身份",
+      "code": [
+        "function:block_hash"
+      ],
+      "viz": "prefix",
+      "hint": "只哈希这 4 个 token 会把不同上下文里的相同片段混成一块；带上父块哈希，前缀匹配就是沿哈希链走。"
+    },
+    {
+      "id": "acquire",
+      "title": "acquire：一次请求如何命中",
+      "section": "`acquire()`：一次请求如何命中",
+      "code": [
+        "class:PrefixCache.acquire"
+      ],
+      "viz": "prefix",
+      "hint": "按块沿链匹配；命中的块 ref_count +1；剩下的 token 重新分配块；尾部不满 4 个 token 的块要重算。"
+    },
+    {
+      "id": "lru",
+      "title": "ref_count 与 LRU：什么时候能淘汰",
+      "section": "`ref_count` 与 LRU：什么时候能淘汰",
+      "code": [
+        "class:PrefixCache._pick_victim",
+        "class:PrefixCache._evict"
+      ],
+      "viz": "prefix",
+      "hint": "ref_count > 0 的块被请求占着，不能淘汰；空闲块按 last_used 最旧优先，且必须是叶子。"
+    },
+    {
+      "id": "verify",
+      "title": "为什么复用一定是对的",
+      "section": "为什么复用一定是对的",
+      "code": [
+        "function:verify_reuse_exact"
+      ],
+      "viz": "prefix",
+      "hint": "复用得到的隐藏状态必须和全量重算逐位一致；不一致就说明块的身份或链断了。"
+    },
+    {
+      "id": "scene1",
+      "title": "场景 1：共享 system prompt",
+      "section": "场景 1 的时间线怎么读",
+      "code": [
+        "function:scenario_shared_prefix"
+      ],
+      "viz": "prefix",
+      "scenario": "shared",
+      "hint": "先冷的请求建块；后面的请求只 prefill 自己的尾巴。命中长度取决于已经存在的块，而不是「应该能省多少」。"
+    },
+    {
+      "id": "scene2",
+      "title": "场景 2：池子小，LRU 开始淘汰",
+      "section": "场景 2：池子小的时候会发生什么",
+      "code": [
+        "function:scenario_eviction"
+      ],
+      "viz": "prefix",
+      "scenario": "eviction",
+      "hint": "容量 10 块，请求 C 要 10 块 → 把 A/B 的空闲块全部淘汰；请求 D 再回来时只能全量重算。"
+    },
+    {
+      "id": "multi-ask",
+      "title": "多次提问：多轮 vs 多请求",
+      "section": "多次提问：多轮 vs 多请求",
+      "code": [
+        "class:Simulator",
+        "class:PrefixCache"
+      ],
+      "viz": "reuse",
+      "hint": "多轮对话省重复 prefill 但不省显存；多请求共享前缀计算和显存都省。用模拟器切换两种场景对照。"
+    },
+    {
+      "id": "scene3",
+      "title": "场景 3：相同 token，不同位置",
+      "section": "场景 3：相同的 4 个 token，不同的位置",
+      "code": [
+        "function:scenario_repeated_phrase"
+      ],
+      "viz": "prefix",
+      "scenario": "repeated",
+      "hint": "同一段 4 token 出现在两个上下文里，链不同、块身份就不同；只有真正的前缀才能复用。"
+    },
+    {
+      "id": "order",
+      "title": "代码阅读顺序",
+      "section": "代码阅读顺序",
+      "code": [
+        "class:Block",
+        "class:PrefixCache",
+        "class:PrefixCache.acquire",
+        "class:Simulator"
+      ],
+      "viz": "prefix",
+      "hint": "先看块和哈希，再看 acquire 的匹配/分配，最后看 Simulator 怎么把请求排成时间线。"
+    },
+    {
+      "id": "real",
+      "title": "和真实引擎的对应关系",
+      "section": "和真实引擎的对应关系",
+      "code": [],
+      "viz": "prefix",
+      "hint": "vLLM 的 automatic prefix caching、SGLang 的 RadixAttention 都是这套记账；真实引擎还要处理并发、抢占和显存池。"
+    },
+    {
+      "id": "production",
+      "title": "这份示例没有处理的生产问题",
+      "section": "这份示例刻意没有处理的生产问题",
+      "code": [],
+      "viz": "prefix",
+      "hint": "只缓存了 prompt 块、没有 decode 块；没有真实张量、并发竞争和淘汰抖动。"
+    },
+    {
+      "id": "questions",
+      "title": "读完可以检查的八个问题",
+      "section": "阅读时可以检查的八个问题",
+      "code": [],
+      "viz": "prefix",
+      "hint": "回答不了的问题，回到对应小节和代码里找答案。"
+    }
+  ]
+}

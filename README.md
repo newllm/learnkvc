@@ -22,6 +22,7 @@
   - [性能：谁更快](#性能谁更快)
   - [写代码：Qwen 还是 Llama？](#写代码qwen-还是-llama)
 - [建议的阅读路线](#建议的阅读路线)
+- [交互式阅读器（web/）](#交互式阅读器web)
 - [文档索引](#文档索引)
 - [这个仓库是什么、不是什么](#这个仓库是什么不是什么)
 - [License](#license)
@@ -43,6 +44,11 @@
 │   └── vllm/                       # 用 Docker 跑 vLLM（CPU / GPU）的示例
 │       ├── run.sh                  # GPU 启动 + 等待就绪 + 调用 OpenAI 接口
 │       └── README.md               # 镜像/模型来源、参数、块池指标
+├── web/                           # 交互式学习页（前测/后测 + 三个章节 + 模型解剖/计算器）
+│   ├── index.html
+│   ├── assets/
+│   ├── data/
+│   └── tools/
 ├── example/
 │   ├── kv_cache.py                 # 单请求：无 cache 重算 vs KV cache 增量 + 完整缓存实现
 │   ├── KV_CACHE_READING.md         # 逐段阅读导图：两条流程 + 缓存实现
@@ -306,6 +312,26 @@ llama bench -m model.gguf -p 512 -n 128
 3. 然后读 [`example/PREFIX_CACHE_READING.md`](example/PREFIX_CACHE_READING.md)，对着 `prefix_cache_demo.py` 理解「块哈希为什么带父块、引用计数和 LRU 怎么配合、为什么只能淘汰叶子块」。
 4. 用文档末尾的问题自测，再动手改参数（生成长度、模型层数、`block_size`、块池容量、请求到达顺序），观察计算量和命中率变化。
 
+## 交互式阅读器（web/）
+
+除了 Markdown 阅读，仓库里还有一个零依赖的交互式学习页：`web/index.html`。
+
+- 先做 6 题**评分前测**（同时说明本次学习锚定的模型 Qwen3-Coder-30B-A3B 和可切换的 GPU 硬件）；
+- 三个章节都按「**先想 → 探索阅读 → 提问反思 → 总结归纳**」四段式进行：先猜再读，读完写反思和自己的总结；
+- 在 Prefix 章内用「多次提问」模拟多轮对话与多请求共享前缀；每章总结内嵌「模型 / GPU / 引擎」归因练习；用「模型解剖」认识层数/参数/维度/GPU kernel；
+- 学完做**后测**，得到前测/后测对照、按概念的学习反馈和回看建议；
+- 三章总结完成后解锁**课后作业**：把 KV cache 的复用/共享/淘汰迁移到其他领域（CPU cache、DB buffer pool、CDN 等）。
+
+打开方式：直接双击 `web/index.html`（离线可用），或：
+
+```bash
+python3 -m http.server 8000
+# http://127.0.0.1:8000/web/index.html
+```
+
+如果仓库开启了 GitHub Pages，入口是 <https://newllm.github.io/learnKV/web/index.html>。
+生成/更新页面数据：`python3 web/tools/build.py`（详见 [`web/README.md`](web/README.md) 与 [`web/DESIGN.md`](web/DESIGN.md)）。
+
 ## 文档索引
 
 | 文档 | 内容 |
@@ -317,6 +343,7 @@ llama bench -m model.gguf -p 512 -n 128
 | [`macos/ollama/README.md`](macos/ollama/README.md) | macOS 原生跑 Ollama/Llama（Metal GPU）：安装、App/brew/serve 启动、Llama 选型与内存、Qwen3-Coder-30B 的显存与 prefill/decode 账、OpenCode / Cline 对接、环境变量、卸载 |
 | [`macos/llama-cpp/README.md`](macos/llama-cpp/README.md) | macOS 上用 llama.cpp 跑 Llama：安装、`-hf` 模型、编程模型选型、OpenCode 对接、参数表、API、KV cache 与调优 |
 | [`docker/vllm/README.md`](docker/vllm/README.md) | Docker 跑 vLLM：PagedAttention 参数、块池日志与指标 |
+| [`web/README.md`](web/README.md) | 交互式学习页：前测/后测、三个四段式章节（含多次提问与三层归因）、模型解剖、显存计算器、课后作业 |
 
 ## 这个仓库是什么、不是什么
 

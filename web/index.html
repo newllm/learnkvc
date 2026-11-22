@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>learnkvc · 思考式阅读器</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-view="think">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">λ</span>
+    <span class="name">learnkvc</span>
+    <span class="sub">思考式阅读器</span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-view="think">先想 · 前测</button>
+    <button data-view="kv">① KV cache 章</button>
+    <button data-view="prefix">② Prefix cache 章</button>
+    <button data-view="paged">③ PagedAttention 章</button>
+    <button data-view="anatomy">模型解剖</button>
+    <button data-view="calc">显存计算器</button>
+    <button data-view="feedback">学习反馈</button>
+    <button data-view="homework">课后作业</button>
+  </nav>
+  <button class="theme-btn" id="theme-toggle" aria-pressed="false" title="切换亮/暗主题">☀ 亮色</button>
+  <div class="badge">v2.2 · 学习闭环</div>
+</header>
+
+<main id="main">
+  <!-- 0. 先想 -->
+  <section class="view scrollable active" id="view-think">
+    <div class="workshop">
+      <p class="kicker">开始之前 · 先做前测</p>
+      <h1 class="page-title">先做 6 题前测，带着问题去学</h1>
+      <p class="page-lead">
+        先凭直觉选完 6 题并提交，得到基线分数；学完后回到「学习反馈」做后测，对照前后变化。
+        分数不是考核——它帮你看见自己哪里真的懂了、哪里还要回去看。上方「本次学习设定」说明了锚点模型和 GPU 硬件；
+        计算器里的显存/带宽数字都会随你选的 GPU 变化。
+      </p>
+      <div id="quiz" class="quiz"></div>
+      <div class="cta-row">
+        <button class="btn primary" id="go-kv">带着假设去第 1 章 →</button>
+        <button class="btn ghost" id="go-reuse">先看「多次提问」（Prefix 章内）</button>
+      </div>
+      <details class="evidence">
+        <summary>忍不住想看结论？（README 原文「为什么需要 KV Cache」）</summary>
+        <div id="ov-why" class="doc-body"></div>
+      </details>
+    </div>
+  </section>
+
+  <!-- 1. 第 1 章 -->
+  <section class="view" id="view-kv">
+    <div class="chapter">
+      <aside class="code-pane">
+        <div class="pane-head">
+          <span class="file">example/kv_cache.py</span>
+          <span class="pane-meta" id="code-meta"></span>
+        </div>
+        <div class="code-scroll" id="code"></div>
+      </aside>
+      <div class="right-pane" id="right-pane">
+        <div class="stagebar" id="stage-kv"></div>
+        <article class="doc-card" id="doc-card"></article>
+        <div class="viz" id="viz"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 1b. Prefix cache 章 -->
+  <section class="view" id="view-prefix">
+    <div class="chapter">
+      <aside class="code-pane">
+        <div class="pane-head">
+          <span class="file">example/prefix_cache_demo.py</span>
+          <span class="pane-meta" id="prefix-code-meta"></span>
+        </div>
+        <div class="code-scroll" id="prefix-code"></div>
+      </aside>
+      <div class="right-pane" id="prefix-right">
+        <div class="stagebar" id="stage-prefix"></div>
+        <article class="doc-card" id="prefix-doc"></article>
+        <div class="viz" id="prefix-viz"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 1c. PagedAttention 章 -->
+  <section class="view" id="view-paged">
+    <div class="chapter">
+      <aside class="code-pane">
+        <div class="pane-head">
+          <span class="file">example/paged_attention.py</span>
+          <span class="pane-meta" id="paged-code-meta"></span>
+        </div>
+        <div class="code-scroll" id="paged-code"></div>
+      </aside>
+      <div class="right-pane" id="paged-right">
+        <div class="stagebar" id="stage-paged"></div>
+        <article class="doc-card" id="paged-doc"></article>
+        <div class="viz" id="paged-viz"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. 模型解剖 -->
+  <section class="view scrollable" id="view-anatomy">
+    <div class="workshop" id="anatomy"></div>
+  </section>
+
+  <!-- 4b. 显存计算器 -->
+  <section class="view scrollable" id="view-calc">
+    <div class="workshop" id="calc"></div>
+  </section>
+
+  <!-- 5. 学习反馈 -->
+  <section class="view scrollable" id="view-feedback">
+    <div class="workshop" id="feedback"></div>
+  </section>
+
+  <!-- 6. 课后作业 -->
+  <section class="view scrollable" id="view-homework">
+    <div class="workshop" id="homework"></div>
+  </section>
+</main>
+
+<footer class="timeline">
+  <button class="nav-btn" id="prev" title="上一步（←）">←</button>
+  <div class="dots" id="dots"></div>
+  <button class="nav-btn" id="next" title="下一步（→）">→</button>
+  <div class="counters" id="counters" aria-live="polite"></div>
+</footer>
+
+<noscript>
+  <p style="padding:2rem;color:#d7e2ee">交互式阅读器需要 JavaScript；纯文字讲解见
+  <a href="../example/KV_CACHE_READING.md">example/KV_CACHE_READING.md</a>。</p>
+</noscript>
+
+<script src="data/data.js"></script>
+<script src="data/traces.js"></script>
+<script src="assets/codeview.js"></script>
+<script src="assets/viz/kv.js"></script>
+<script src="assets/viz/prefix.js"></script>
+<script src="assets/viz/paged.js"></script>
+<script src="assets/workshop.js"></script>
+<script src="assets/anatomy.js"></script>
+<script src="assets/calc.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

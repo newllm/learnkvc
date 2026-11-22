@@ -1,0 +1,128 @@
+{
+  "chapter": "paged",
+  "title": "PagedAttention",
+  "codeFile": "example/paged_attention.py",
+  "docFile": "example/PAGED_ATTENTION_READING.md",
+  "steps": [
+    {
+      "id": "why",
+      "title": "为什么需要 PagedAttention",
+      "section": "为什么需要 PagedAttention",
+      "code": ["class:BlockPool"],
+      "viz": "paged",
+      "hint": "连续布局要预留 max_len、无法共享、会碎片化；分页把 KV 切成固定块，用一张表把逻辑位置映射到物理块。"
+    },
+    {
+      "id": "image",
+      "title": "整体图像：逻辑连续，物理不连续",
+      "section": "整体图像",
+      "code": ["class:Sequence"],
+      "viz": "paged",
+      "hint": "token 位置 → 逻辑块 + 块内偏移 → block_table → 物理块。物理块号可以乱序。"
+    },
+    {
+      "id": "pool",
+      "title": "BlockPool：物理显存",
+      "section": "`BlockPool`：物理显存",
+      "code": ["class:BlockPool"],
+      "viz": "paged",
+      "hint": "一块装 block_size 个 token 的 K/V；分配就是 pop 空闲块，所以物理块号天然乱序。"
+    },
+    {
+      "id": "seq",
+      "title": "Sequence：每个请求一张 block table",
+      "section": "`Sequence`：block table",
+      "code": ["class:Sequence"],
+      "viz": "paged",
+      "hint": "block_table 记录「我的第 i 个逻辑块放在哪个物理块」；length 决定用到哪个槽位。"
+    },
+    {
+      "id": "cache",
+      "title": "PagedKVCache：写入与读取",
+      "section": "`PagedKVCache`：写入与读取",
+      "code": ["class:PagedKVCache"],
+      "viz": "paged",
+      "hint": "append 按 length 找槽位、必要时分配新块；gather 按 block_table 收集，拼回逻辑顺序。"
+    },
+    {
+      "id": "append",
+      "title": "写入：append() 怎么落块",
+      "section": "写入：`append()` 怎么落块",
+      "code": ["class:PagedKVCache.append"],
+      "viz": "paged",
+      "hint": "slot = length % block_size；slot=0 时分配新物理块，然后写进该块的第 slot 个位置。"
+    },
+    {
+      "id": "gather",
+      "title": "读取：gather() 怎么还原逻辑顺序",
+      "section": "读取：`gather()` 怎么还原逻辑顺序",
+      "code": ["class:PagedKVCache.gather"],
+      "viz": "paged",
+      "hint": "按 block_table 取出物理块、reshape 成 token 序列；kernel 里就是一次按块索引的 gather。"
+    },
+    {
+      "id": "attention",
+      "title": "attention：公式完全一样",
+      "section": "attention：和连续布局的公式完全一样",
+      "code": ["function:_attention"],
+      "viz": "paged",
+      "hint": "QKᵀ → softmax → PV 不变，只是 K/V 来自 gather 后的块；mask 用绝对位置。"
+    },
+    {
+      "id": "correct",
+      "title": "为什么结果一定正确",
+      "section": "为什么结果一定正确",
+      "code": ["function:feed"],
+      "viz": "paged",
+      "hint": "每一步 feed 都断言 paged attention == 连续缓存 attention（差异 0）；块表只是搬运方式。"
+    },
+    {
+      "id": "free",
+      "title": "释放与复用：块回到池里",
+      "section": "释放与复用",
+      "code": ["class:PagedKVCache.free"],
+      "viz": "paged",
+      "hint": "free 只把 block_table 里的物理块还回 free list；后续请求按同样的 pop 顺序复用它们。"
+    },
+    {
+      "id": "relation",
+      "title": "与前面两份示例的关系",
+      "section": "与前面两份示例的关系",
+      "code": [],
+      "viz": "paged",
+      "hint": "kv_cache 管一个请求内部的复用；prefix cache 管请求间的共享；paged 管物理显存怎么切块和索引。"
+    },
+    {
+      "id": "vllm",
+      "title": "和 vLLM 的对应关系",
+      "section": "和 vLLM 的对应关系",
+      "code": [],
+      "viz": "paged",
+      "hint": "vLLM 的 block manager 就是 BlockPool + block table；kernel 按块表读取，block_size 与碎片/吞吐有关。"
+    },
+    {
+      "id": "order",
+      "title": "代码阅读顺序",
+      "section": "代码阅读顺序",
+      "code": ["class:BlockPool", "class:Sequence", "class:PagedKVCache", "function:paged_attention"],
+      "viz": "paged",
+      "hint": "先物理池、再 block table、再 append/gather，最后看 attention 怎么用 gather 的结果。"
+    },
+    {
+      "id": "questions",
+      "title": "读完可以检查的七个问题",
+      "section": "阅读时可以检查的七个问题",
+      "code": [],
+      "viz": "paged",
+      "hint": "回答不了的问题，回到对应小节和代码里找答案。"
+    },
+    {
+      "id": "production",
+      "title": "这份示例没有处理的生产问题",
+      "section": "这份示例刻意没有处理的生产问题",
+      "code": [],
+      "viz": "paged",
+      "hint": "没有真实 kernel、并发、抢占、copy-on-write 和跨请求共享；这些都是真实引擎要补的。"
+    }
+  ]
+}
