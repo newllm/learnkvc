@@ -329,7 +329,7 @@ python3 -m http.server 8000
 # http://127.0.0.1:8000/web/index.html
 ```
 
-如果仓库开启了 GitHub Pages，入口是 <https://newllm.github.io/learnKV/web/index.html>。
+如果仓库开启了 GitHub Pages，入口是 <https://newllm.github.io/learnkvc/web/index.html>。
 生成/更新页面数据：`python3 web/tools/build.py`（详见 [`web/README.md`](web/README.md) 与 [`web/DESIGN.md`](web/DESIGN.md)）。
 
 ## 文档索引

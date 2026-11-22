@@ -12,7 +12,7 @@
 
 ## 打开
 
-GitHub Pages（需在仓库 Settings → Pages 选择 GitHub Actions）：<https://newllm.github.io/learnKV/web/index.html>。
+GitHub Pages（需在仓库 Settings → Pages 选择 GitHub Actions）：<https://newllm.github.io/learnkvc/web/index.html>。
 
 
 直接双击 `web/index.html`（数据已内联在 `data/*.js`，`file://` 可用，无需服务器、无需联网）。
