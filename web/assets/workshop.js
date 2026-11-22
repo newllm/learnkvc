@@ -95,6 +95,9 @@
       '<div class="learnctx">' +
       '<div class="ctx-title"><span>本次学习设定</span><b>' + esc(preset.name) + "</b></div>" +
       '<p class="note">' + esc(context.note) + "</p>" +
+      '<div class="ctx-chips"><span>① KV cache 章</span><span>② Prefix 章（含多次提问）</span>' +
+      "<span>③ PagedAttention 章</span><span>模型解剖（参数/结构/运行时）</span>" +
+      "<span>显存计算器</span><span>课后作业</span></div>" +
       '<div class="ctx-grid">' +
       '<div class="ctx-model"><h4>模型信息</h4>' +
       row("总参数 / 激活", calcP(m.total) + " / " + calcP(m.active)) +
@@ -1032,7 +1035,7 @@
       el.innerHTML =
         '<p class="kicker">课后作业</p>' +
         '<h1 class="page-title">先把三章学完，再来做迁移</h1>' +
-        '<p class="page-lead">课后作业会把 KV cache 的「复用、共享、分页、淘汰」迁移到其他领域。' +
+        '<p class="page-lead">课后作业会把 KV cache 的「复用、共享、分页、淘汰」和模型解剖的「参数/结构/运行时」迁移到其他领域。' +
         "完成下面三章的总结归纳后解锁。</p>" +
         '<div class="completion">' +
         chapters
@@ -1053,7 +1056,7 @@
 
     el.innerHTML =
       '<p class="kicker">课后作业 · 迁移</p>' +
-      '<h1 class="page-title">把这三章搬到另一个领域</h1>' +
+      '<h1 class="page-title">把三章 + 模型解剖落到另一个领域</h1>' +
       '<p class="page-lead">' + esc(data.intro) + "</p>" +
       '<h3 class="sec-title">三章对照</h3>' +
       '<div class="table-wrap"><table class="tagtable"><thead><tr>' +
@@ -1063,6 +1066,16 @@
         .map((r) => "<tr>" + r.map((v) => "<td>" + esc(v) + "</td>").join("") + "</tr>")
         .join("") +
       "</tbody></table></div>" +
+      (data.anatomyMatrix
+        ? '<h3 class="sec-title">模型解剖对照</h3>' +
+          '<div class="table-wrap"><table class="tagtable"><thead><tr>' +
+          data.anatomyMatrix.columns.map((c) => "<th>" + esc(c) + "</th>").join("") +
+          "</tr></thead><tbody>" +
+          data.anatomyMatrix.rows
+            .map((r) => "<tr>" + r.map((v) => "<td>" + esc(v) + "</td>").join("") + "</tr>")
+            .join("") +
+          "</tbody></table></div>"
+        : "") +
       '<h3 class="sec-title">作业</h3>' +
       data.tasks
         .map(

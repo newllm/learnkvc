@@ -321,7 +321,7 @@
   },
   "context": {
     "modelId": "qwen30b",
-    "note": "本次学习以 Qwen3-Coder-30B-A3B 为锚点。KV cache 的公式与模型无关；换成 7B/32B 只是数字不同。",
+    "note": "本次学习以 Qwen3-Coder-30B-A3B 为锚点。除了参数，还会拆开结构（层数/hidden/头数/专家）、模型包（tokenizer/chat template/generation_config）和运行时状态（KV/激活/workspace）；KV cache 的公式与模型无关，换成 7B/32B 只是数字不同。",
     "kvContext": 32768,
     "gpus": [
       {
@@ -371,5 +371,121 @@
         "note": "Metal 预算约 10.7 GiB，30B Q4 放不下"
       }
     ]
+  },
+  "files": [
+    {
+      "name": "config.json",
+      "contains": "层数、hidden、Q/KV 头、专家数、词表、上下文",
+      "param": false,
+      "owner": "模型"
+    },
+    {
+      "name": "*.safetensors + index.json",
+      "contains": "权重张量 + 分片索引",
+      "param": true,
+      "owner": "模型"
+    },
+    {
+      "name": "tokenizer.json / vocab / merges",
+      "contains": "词表、合并规则、special tokens",
+      "param": false,
+      "owner": "模型"
+    },
+    {
+      "name": "chat_template.jinja",
+      "contains": "system/user/assistant 拼接、BOS/EOS",
+      "param": false,
+      "owner": "模型 + 引擎"
+    },
+    {
+      "name": "generation_config.json",
+      "contains": "temperature / top_p / top_k / eos / stop",
+      "param": false,
+      "owner": "模型 + 引擎"
+    },
+    {
+      "name": "modeling_*.py",
+      "contains": "attention / MoE 的前向实现",
+      "param": false,
+      "owner": "模型 / 框架"
+    },
+    {
+      "name": "量化 metadata",
+      "contains": "scale / zero-point / group size",
+      "param": false,
+      "owner": "模型 + GPU"
+    }
+  ],
+  "runtime": {
+    "intro": "运行时状态是「参数之外、模型文件里没有、但推理时必须存在」的现场。",
+    "groups": [
+      {
+        "key": "resident",
+        "label": "常驻（启动后不动）",
+        "items": [
+          "参数 / 权重",
+          "KV block pool",
+          "workspace",
+          "CUDA context / Graph"
+        ]
+      },
+      {
+        "key": "request",
+        "label": "每请求",
+        "items": [
+          "input_ids / position_ids / mask",
+          "block table",
+          "KV blocks",
+          "seq 状态 / 采样参数 / RNG"
+        ]
+      },
+      {
+        "key": "step",
+        "label": "每步",
+        "items": [
+          "hidden / Q / K / V",
+          "attention / MLP 中间值",
+          "logits / probs",
+          "临时 workspace"
+        ]
+      },
+      {
+        "key": "survive",
+        "label": "请求结束后仍存活",
+        "items": [
+          "prefix cache 空闲块",
+          "free list / block pool",
+          "CUDA Graph / workspace"
+        ]
+      }
+    ],
+    "lifecycle": [
+      {
+        "phase": "启动",
+        "alloc": "权重、KV block pool、workspace、CUDA Graph",
+        "free": "—"
+      },
+      {
+        "phase": "prefill",
+        "alloc": "KV blocks + 与 chunk 成正比的激活",
+        "free": "激活（step 结束释放）"
+      },
+      {
+        "phase": "decode",
+        "alloc": "每步 1 个 KV slot + 很小的激活",
+        "free": "workspace 原地复用"
+      },
+      {
+        "phase": "结束",
+        "alloc": "—",
+        "free": "KV 块 ref--，归零回 free list；请求状态释放"
+      },
+      {
+        "phase": "淘汰/换出",
+        "alloc": "swap 到 CPU（可选）",
+        "free": "prefix 空闲块按 LRU 淘汰"
+      }
+    ],
+    "notes": "参数固定；KV 随上下文 × 并发线性增长；prefill 激活随本次 chunk 的 token 数；workspace / CUDA Graph 是近固定的常驻成本。"
   }
 }

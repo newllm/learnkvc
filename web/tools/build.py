@@ -296,6 +296,8 @@ def build_anatomy() -> dict:
         "kernels": spec["kernels"],
         "notes": spec["notes"],
         "context": spec["context"],
+        "files": spec["files"],
+        "runtime": spec["runtime"],
     }
 
 

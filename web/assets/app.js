@@ -37,6 +37,7 @@
     pagedDoc: $("#paged-doc"),
     pagedViz: $("#paged-viz"),
     stageBars: { kv: $("#stage-kv"), prefix: $("#stage-prefix"), paged: $("#stage-paged") },
+    stepNavs: { kv: $("#stepnav-kv"), prefix: $("#stepnav-prefix"), paged: $("#stepnav-paged") },
     homeworkBody: $("#homework"),
     doc: $("#doc-card"),
     viz: $("#viz"),
@@ -60,6 +61,7 @@
   const CHAPTERS = ["kv", "prefix", "paged"];
   const STAGE_NAMES = ["think", "explore", "reflect", "summary"];
   state.stages = {};
+  state.navCollapsed = { kv: false, prefix: false, paged: false };
 
   const esc = (s) =>
     String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -125,6 +127,7 @@
     renderViz();
     renderCounters();
     updateDots();
+    renderStepNav("kv");
     if (window.LK && LK.progress) {
       const l = LK.progress.lesson("kv");
       if ((l.exploreMax || 0) < state.step + 1) LK.progress.saveLesson("kv", { exploreMax: state.step + 1 });
@@ -279,6 +282,7 @@
     renderPrefixViz();
     renderPrefixCounters();
     updatePrefixDots();
+    renderStepNav("prefix");
     if (window.LK && LK.progress) {
       const l = LK.progress.lesson("prefix");
       if ((l.exploreMax || 0) < state.prefix.step + 1) {
@@ -410,6 +414,7 @@
     renderPagedViz();
     renderPagedCounters();
     updatePagedDots();
+    renderStepNav("paged");
     if (window.LK && LK.progress) {
       const l = LK.progress.lesson("paged");
       if ((l.exploreMax || 0) < state.paged.step + 1) {
@@ -443,6 +448,89 @@
       dot.classList.toggle("active", i === state.paged.step);
       dot.classList.toggle("done", i < state.paged.step);
     });
+  }
+
+  /* ---------------------------------------------------------- step nav */
+
+  function navStore() {
+    try {
+      return JSON.parse(localStorage.getItem("learnkvc.stepnav") || "{}") || {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveNavStore() {
+    try {
+      localStorage.setItem("learnkvc.stepnav", JSON.stringify(state.navCollapsed));
+    } catch (e) {
+      /* localStorage unavailable */
+    }
+  }
+
+  function initNav() {
+    const saved = navStore();
+    CHAPTERS.forEach((ch) => {
+      state.navCollapsed[ch] =
+        typeof saved[ch] === "boolean" ? saved[ch] : window.innerWidth <= 980;
+    });
+  }
+
+  function applyNavCollapsed(ch) {
+    const view = el[ch];
+    if (!view) return;
+    const chapter = view.querySelector(".chapter");
+    if (chapter) chapter.classList.toggle("nav-collapsed", !!state.navCollapsed[ch]);
+    const nav = el.stepNavs[ch];
+    const btn = nav && nav.querySelector(".stepnav-toggle");
+    if (btn) {
+      btn.textContent = state.navCollapsed[ch] ? "›" : "‹";
+      btn.setAttribute("aria-expanded", String(!state.navCollapsed[ch]));
+      btn.setAttribute("aria-label", state.navCollapsed[ch] ? "展开章节导航" : "收起章节导航");
+    }
+  }
+
+  function toggleNav(ch) {
+    state.navCollapsed[ch] = !state.navCollapsed[ch];
+    applyNavCollapsed(ch);
+    saveNavStore();
+  }
+
+  function renderStepNav(ch) {
+    const nav = el.stepNavs[ch];
+    if (!nav) return;
+    const steps = chapterSteps(ch);
+    const idx = chapterStepIndex(ch);
+    nav.innerHTML =
+      '<div class="stepnav-head"><span>章节导航</span><b>' + (idx + 1) + " / " + steps.length + "</b>" +
+      '<button class="stepnav-toggle" type="button" aria-expanded="true" aria-label="收起章节导航">‹</button></div>' +
+      '<ol class="stepnav-list">' +
+      steps
+        .map(
+          (st, i) =>
+            '<li><button class="stepnav-item' + (i === idx ? " active" : "") +
+            (i < idx ? " done" : "") + '" data-nav-i="' + i + '" title="' + i + 1 + ". " +
+            String(st.title).replace(/"/g, "&quot;") + '">' +
+            '<span class="no">' + (i < idx ? "✓" : i + 1) + "</span>" +
+            '<span class="tt">' + esc(st.title) + "</span></button></li>"
+        )
+        .join("") +
+      "</ol>";
+    nav.querySelector(".stepnav-toggle").addEventListener("click", () => toggleNav(ch));
+    nav.querySelectorAll("[data-nav-i]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const i = +b.dataset.navI;
+        if (ch === "kv") setStep(i);
+        else if (ch === "prefix") setPrefixStep(i);
+        else setPagedStep(i);
+      })
+    );
+    applyNavCollapsed(ch);
+    const list = nav.querySelector(".stepnav-list");
+    const active = list && list.querySelector(".active");
+    if (list && active) {
+      list.scrollTop = Math.max(0, active.offsetTop - list.clientHeight / 2);
+    }
   }
 
   /* ------------------------------------------------------- lesson stages */
@@ -514,6 +602,7 @@
     if (!view) return;
     STAGE_NAMES.forEach((s) => view.classList.toggle("stage-" + s, stageOf(ch) === s));
     renderStageBar(ch);
+    renderStepNav(ch);
     const timeline = document.querySelector(".timeline");
     const docEl = ch === "kv" ? el.doc : ch === "prefix" ? el.prefixDoc : el.pagedDoc;
     const vizEl = ch === "kv" ? el.viz : ch === "prefix" ? el.prefixViz : el.pagedViz;
@@ -626,7 +715,7 @@
         postTest: D.think.postTest,
         takeaway: D.reflect.takeaway,
         summary: D.reflect.feedbackSummary,
-        totalSteps: kv.steps.length,
+        totalSteps: kv.steps.length + D.prefix.steps.length + D.paged.steps.length,
       });
     }
   }
@@ -770,6 +859,7 @@
   }
   initTheme();
   initStages();
+  initNav();
   buildDots();
   codeView = LK.codeview.mount(el.code, kv.lines);
   prefixCode = LK.codeview.mount(el.prefixCode, LK_DATA.prefix.lines);

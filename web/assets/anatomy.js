@@ -6,7 +6,8 @@
   const fmt = (n) => Number(n).toLocaleString("en-US");
   const esc = (s) =>
     String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const go = (view) => document.dispatchEvent(new CustomEvent("lk:navigate", { detail: { view } }));
+  const go = (view, extra) =>
+    document.dispatchEvent(new CustomEvent("lk:navigate", { detail: Object.assign({ view }, extra || {}) }));
 
   const state = {
     presetId: "qwen30b",
@@ -14,6 +15,8 @@
     step: 0,
     mode: "decode",
     ctx: 32768,
+    rtCtx: 32768,
+    rtBatch: 1,
     quant: "q4",
     quiz: {},
     overrides: {}, // {presetId, layers, kv_heads, ctx} from the sliders
@@ -85,10 +88,12 @@
       head(preset) +
       quiz(data.quiz) +
       composition(preset, c, m) +
+      packageSection(data.files) +
       layersSection(preset, c, m) +
       pipeline(data.timeline, preset, c) +
       gpuLoad(data.gpuLoad, weightsGb, kvGib, h2dSec, state.quant, ctx) +
       kernelsTable(data.kernels) +
+      runtimeSection(data.runtime, preset, c, m) +
       thinkBoxes(data.notes) +
       '<div class="reuse-actions"><button class="btn primary" id="anatomy-reflect">把「模型/GPU/引擎」写进我的总结 →</button></div>';
 
@@ -164,9 +169,10 @@
     const perLayer = m.per_layer;
     return (
       '<h2 class="sec-title">1 · 模型由什么组成</h2>' +
-      '<p class="page-lead">自回归 LM 只有四块：<b>embedding</b>（token id → 向量）、' +
+      '<p class="page-lead">自回归 LM 的计算图只有四块：<b>embedding</b>（token id → 向量）、' +
       "<b>N 层 DecoderLayer</b>（每层是 attention + FFN/MoE）、<b>final norm</b>、<b>lm_head</b>（hidden → 词表）。" +
-      "tokenizer 和采样器在模型外面。</p>" +
+      "但「模型」不等于这张图：参数只是其中一层，外面还有结构、tokenizer/模板/生成配置，以及推理时的运行时状态。</p>" +
+      composeGrid(c, m) +
       '<div class="stack">' +
       block("embedding", "[vocab, hidden] → [n, hidden]", calc.params(m.embed) + " 参数") +
       block("× " + c.layers + " DecoderLayer", "每层：attention + " + (c.experts ? "MoE" : "FFN") +
@@ -206,6 +212,142 @@
     );
   }
 
+
+  /* --------------------------------------------- model package + runtime */
+
+  function composeGrid(c, m) {
+    const cards = [
+      {
+        title: "参数（权重）",
+        big: calc.params(m.total) + " 个数字",
+        body: "embedding / attention / MoE / norm / lm_head 里的数值；决定「知道什么」。",
+        tone: "w",
+      },
+      {
+        title: "结构（超参）",
+        big: c.layers + " 层 · hidden " + c.hidden,
+        body: c.q_heads + " Q 头 / " + c.kv_heads + " KV 头" +
+          (c.experts ? " · " + c.experts + " 专家 top-" + c.top_k : " · FFN " + c.ffn) +
+          " · vocab " + fmt(c.vocab) + "；决定参数形状与计算图，本身不占权重显存。",
+        tone: "e",
+      },
+      {
+        title: "词表 / 模板 / 配置",
+        big: "tokenizer + template + generation",
+        body: "决定文本怎么变成 token、system/user 怎么拼、temperature/top_p 怎么采样；是模型包的一部分，但不在计算图里。",
+        tone: "e",
+      },
+      {
+        title: "运行时状态",
+        big: "KV " + calc.bytes(m.kv_bytes / 1024) + " / token",
+        body: "KV cache、激活、workspace、block table、采样 RNG；模型文件里没有，推理时必须存在。",
+        tone: "k",
+      },
+    ];
+    return (
+      '<div class="compose-grid">' +
+      cards
+        .map(
+          (x) =>
+            '<div class="compose-card ' + x.tone + '"><h4>' + esc(x.title) + "</h4>" +
+            '<div class="big">' + esc(x.big) + "</div><p>" + esc(x.body) + "</p></div>"
+        )
+        .join("") +
+      "</div>"
+    );
+  }
+
+  function packageSection(files) {
+    return (
+      '<h2 class="sec-title">2 · 模型包里除了权重还有什么</h2>' +
+      '<p class="page-lead">下载一个模型 ≠ 只下载权重。config 决定形状，tokenizer/template 决定输入，' +
+      "generation_config 决定采样；同一个权重换模板，行为就变了。</p>" +
+      '<div class="table-wrap"><table class="tagtable"><thead><tr>' +
+      "<th>文件</th><th>内容</th><th>是参数？</th><th>归属</th></tr></thead><tbody>" +
+      files
+        .map(
+          (f) =>
+            "<tr><td><code>" + esc(f.name) + "</code></td><td>" + esc(f.contains) +
+            '</td><td class="' + (f.param ? "good" : "") + '">' + (f.param ? "是" : "否") +
+            "</td><td>" + esc(f.owner) + "</td></tr>"
+        )
+        .join("") +
+      "</tbody></table></div>" +
+      '<p class="note">这些文件加起来是「发布物」；下面第 7 节列的是「运行时现场」，两者不要混。</p>'
+    );
+  }
+
+  function runtimeSection(rt, preset, c, m) {
+    const ctx = state.rtCtx;
+    const batch = state.rtBatch;
+    const gib = 1024 * 1024 * 1024;
+    const kv = (ctx * m.kv_bytes * batch) / gib;
+    const chunk = Math.min(ctx, 2048);
+    const perTok =
+      2 * (c.hidden + m.q_dim + 2 * m.kv_dim +
+        (c.experts ? c.top_k * c.expert_inter * 2 : c.ffn));
+    const act = (chunk * perTok) / gib;
+    const fixed = 1.5;
+    const weights = state.quant === "q4" ? m.q4_gb : m.bf16_gb;
+    const total = weights + kv + act + fixed;
+    const bar = (label, gb, cls) =>
+      '<div class="memrow ' + cls + '"><span>' + label + "</span>" +
+      '<div class="membar"><i style="width:' + Math.max(1, (gb / total) * 100) + '%"></i></div>' +
+      "<b>" + gb.toFixed(2) + " GiB</b></div>";
+
+    return (
+      '<h2 class="sec-title">7 · 运行时状态：模型文件之外的那一半</h2>' +
+      '<p class="page-lead">' + esc(rt.intro) + "它不是参数，也不是权重文件；是「这次请求正在算什么、算到哪了」的现场。" +
+      "按活多久分成四组：</p>" +
+      '<div class="rt-groups">' +
+      rt.groups
+        .map(
+          (g) =>
+            '<div class="rt-card"><b>' + esc(g.label) + "</b><div class=\"rt-chips\">" +
+            g.items.map((i) => "<span>" + esc(i) + "</span>").join("") +
+            "</div></div>"
+        )
+        .join("") +
+      "</div>" +
+      '<h4 class="sec-sub">选上下文和并发，看运行时怎么长</h4>' +
+      '<div class="runtime-controls">' +
+      '<label class="slider"><span>上下文</span><input type="range" data-rt-ctx min="2048" max="262144" step="2048" value="' + ctx + '"><b>' + fmt(ctx) + '</b></label>' +
+      '<label class="slider"><span>并发</span><input type="range" data-rt-batch min="1" max="8" step="1" value="' + batch + '"><b>' + batch + '</b></label>' +
+      "</div>" +
+      '<div class="membars">' +
+      bar("权重", weights, "w") +
+      bar("KV cache", kv, "k") +
+      bar("激活", act, "a") +
+      bar("杂项", fixed, "r") +
+      "</div>" +
+      '<div class="calcgrid">' +
+      stat("权重（固定）", weights.toFixed(1) + " GiB", state.quant === "q4" ? "Q4" : "BF16") +
+      stat("KV（ctx × batch）", kv.toFixed(2) + " GiB", fmt(ctx) + " × " + batch + " × " + calc.bytes(m.kv_bytes / 1024) + "/token") +
+      stat("prefill 激活", act.toFixed(2) + " GiB", "chunk " + fmt(chunk) + " token × " + calc.bytes(perTok / 1024) + "/token") +
+      stat("合计（估算）", total.toFixed(1) + " GiB", "未计框架/分配器碎片") +
+      "</div>" +
+      '<p class="note">decode 每步只处理 1 个 token，激活远小于 prefill；长上下文时 KV 是最大项（decode 每步还要把整段 KV 读一遍，带宽 bound）。prefix cache 命中时，共享 KV 只存一份。</p>' +
+      '<div class="table-wrap"><table class="tagtable"><thead><tr>' +
+      "<th>阶段</th><th>分配</th><th>释放</th></tr></thead><tbody>" +
+      rt.lifecycle
+        .map(
+          (x) =>
+            "<tr><td><b>" + esc(x.phase) + "</b></td><td>" + esc(x.alloc) +
+            "</td><td>" + esc(x.free) + "</td></tr>"
+        )
+        .join("") +
+      "</tbody></table></div>" +
+      '<h4 class="sec-sub">三层分工</h4>' +
+      '<div class="compose-grid three">' +
+      '<div class="compose-card"><h4>模型定义</h4><p>层数、hidden、KV 头、词表、dtype：决定「需要哪些状态、长什么样」。</p></div>' +
+      '<div class="compose-card"><h4>GPU 提供</h4><p>HBM 存 KV/激活/workspace；kernel 生产与消费这些状态；带宽决定 decode。</p></div>' +
+      '<div class="compose-card"><h4>引擎管理</h4><p>block pool / block table / prefix cache / 调度 / 释放 / swap；决定状态放哪、何时复用。</p></div>' +
+      "</div>" +
+      '<p class="note">' + esc(rt.notes) + "</p>" +
+      '<div class="reuse-actions"><button class="btn" id="runtime-calc">去显存计算器，按这张卡算 →</button></div>'
+    );
+  }
+
   /* ------------------------------------------------- layers vs dimensions */
 
   function layersSection(preset, c, m) {
@@ -218,7 +360,7 @@
     const kvPerTokLayer = 2 * c.kv_heads * c.head_dim * 2;
 
     return (
-      '<h2 class="sec-title">2 · 为什么是多层？维度和层是什么关系</h2>' +
+      '<h2 class="sec-title">3 · 为什么是多层？维度和层是什么关系</h2>' +
       '<p class="page-lead">' + esc(LK_DATA.anatomy.notes.layers) + "</p>" +
       '<div class="layer-tools">' +
       slider("层数", "layers", c.layers, 1, 64, 1) +
@@ -294,7 +436,7 @@
       .map((_, i) => '<button class="pipdot' + (i === state.step ? " on" : "") + '" data-step="' + i + '"></button>')
       .join("");
     return (
-      '<h2 class="sec-title">3 · 参数如何参与一次 token 生成</h2>' +
+      '<h2 class="sec-title">4 · 参数如何参与一次 token 生成</h2>' +
       '<p class="page-lead">同一个 forward，用预填充（一次看 n 个 token）或解码（每次 1 个）跑出来。' +
       "参数就是每步被乘的那些矩阵；GPU 负责把每个操作变成 kernel。</p>" +
       '<div class="pipe-controls">' +
@@ -326,7 +468,7 @@
       vram: calc.gb(weightsGb) + " 权重 + " + kvGib.toFixed(2) + " GiB KV + 激活",
     };
     return (
-      '<h2 class="sec-title">4 · GPU 如何加载参数</h2>' +
+      '<h2 class="sec-title">5 · GPU 如何加载参数</h2>' +
       '<p class="page-lead">磁盘上的文件不是一个整体，而是按张量切好的权重。' +
       "加载 = 读进 CPU 内存 → H2D 拷贝进显存；之后推理只读，不再写回。</p>" +
       '<div class="quant-toggle"><span>上下文：</span>' +
@@ -355,7 +497,7 @@
 
   function kernelsTable(rows) {
     return (
-      '<h2 class="sec-title">5 · Token 生成调用了哪些 GPU 计算函数</h2>' +
+      '<h2 class="sec-title">6 · Token 生成调用了哪些 GPU 计算函数</h2>' +
       '<p class="page-lead">同一套流程，prefill 和 decode 的 kernel 一样，瓶颈相反：' +
       "prefill 是大矩阵乘（计算受限），decode 是 GEMV + 读 KV（带宽受限）。</p>" +
       '<div class="table-wrap"><table class="kerneltable"><thead><tr>' +
@@ -377,7 +519,7 @@
 
   function thinkBoxes(notes) {
     return (
-      '<h2 class="sec-title">6 · 用自己的话回答</h2>' +
+      '<h2 class="sec-title">8 · 用自己的话回答</h2>' +
       details("为什么层数增加，参数量和 KV 都线性增加，但 hidden 不变？", notes.layers + " " + notes.kv) +
       details("参数是什么？它和「知识」是什么关系？", notes.params) +
       details("模型、GPU、引擎在这套流程里各做了什么？", notes.gpu)
@@ -450,7 +592,21 @@
         A.render(el, data);
       })
     );
+    el.querySelectorAll("[data-rt-ctx]").forEach((inp) =>
+      inp.addEventListener("change", () => {
+        state.rtCtx = +inp.value;
+        A.render(el, data);
+      })
+    );
+    el.querySelectorAll("[data-rt-batch]").forEach((inp) =>
+      inp.addEventListener("change", () => {
+        state.rtBatch = +inp.value;
+        A.render(el, data);
+      })
+    );
+    const rtCalc = el.querySelector("#runtime-calc");
+    if (rtCalc) rtCalc.addEventListener("click", () => go("calc"));
     const ref = el.querySelector("#anatomy-reflect");
-    if (ref) ref.addEventListener("click", () => go("reflect"));
+    if (ref) ref.addEventListener("click", () => go("kv", { stage: "summary" }));
   }
 })();

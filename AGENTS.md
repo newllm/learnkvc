@@ -45,7 +45,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 | 讲解卡 | `example/*_READING.md`（按 `##`/`###` 切节） |
 | 步骤映射 | `web/tools/steps.json`、`steps.prefix.json`、`steps.paged.json` |
 | 题目/前测/后测/归因/反思 | `web/tools/pedagogy.json` |
-| 模型预设/流水线/GPU 档位 | `web/tools/anatomy.json` |
+| 模型预设/流水线/GPU 档位/模型包/运行时 | `web/tools/anatomy.json` |
 | 运行状态 | `web/tools/collect_traces.py` |
 
 - 生成物 `web/data/data.js`、`web/data/traces.js` **提交进仓库**，保证双击可用；**禁止手改**，改源文件后跑 `build.py`。
@@ -62,12 +62,12 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
    - 探索阅读：现有 steps 代码 ↔ 讲解 ↔ 可视化联动；
    - 提问反思：2–4 个开放问题 + 可折叠参考，写进本地；
    - 总结归纳：参考总结（概要 + 详细）+ 用户自己的总结（textarea）+「完成本章」按钮。
-   - 章节视图顶部有 stagebar；非探索阶段隐藏代码 pane / 可视化 / 时间轴；
+   - 章节视图顶部有 stagebar；左侧是步骤导航（可收缩）；非探索阶段隐藏代码 pane / 可视化 / 步骤导航 / 底部控制条；
    - **多次提问不单独成页**：作为 Prefix 章「探索阅读」中的一个步骤（内嵌多轮/多请求模拟器）；
    - **三层归因不单独成页**：每章「总结归纳」内嵌 3 张卡（模型 / GPU / 引擎）的归因练习，提交后才可完成本章；跨章综合在课后作业的对照矩阵。
 4. **后测**：6 题同概念换问法、评分；提交后生成反馈。
-5. **反馈**：前测/后测分数、变化、按概念对照（提升/维持/退步/仍需复习）、学习完成度（步骤/视图）、错题回看按钮。
-6. **课后作业**：三章「总结归纳」全部完成后解锁；内容是迁移到其他领域（CPU cache / DB buffer pool / CDN / Git packfile / 浏览器缓存任选），含三章对照矩阵、4 道题（迁移 / 计算 / 设计 / 自由类比）、参考答案与提交记录。未完成时显示锁定的章节清单和进度。
+5. **反馈**：前测/后测分数、变化、按概念对照（提升/维持/退步/仍需复习）、学习完成度（步骤/视图）、错题回看按钮；6 个概念覆盖三章 + 模型解剖（参数/结构/模型包/运行时），完成后自测总步数为三章之和（45）。
+6. **课后作业**：三章「总结归纳」全部完成后解锁；内容是迁移到其他领域（CPU cache / DB buffer pool / CDN / Git packfile / 浏览器缓存任选），含三章对照矩阵 + 模型解剖对照矩阵（参数/结构/模型包/运行时）、6 道题（迁移 / KV 计算 / TTL 设计 / 自由类比 / 模型包体检 / 运行时账本）、参考答案与提交记录。未完成时显示锁定的章节清单和进度。
 7. **问题两层**：每道题必须有 `summary`（一句话「考什么」）和 `detail`（可展开的「背景 / 怎么想」，不泄露答案）。
 8. **总结两层**：反馈页总结必须是 `brief`（一句话） + `detail`（详细描述）可折叠；用户先写自己的总结，再点开对照。
 9. **方向**：先形成假设 → 用代码/状态验证 → 归因到「模型 / GPU / 引擎」→ 用自己的话总结。禁止把文档内容直接当课文投喂。
@@ -79,6 +79,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
   - `homework`：`{answers, submitted, at}`；
   - 前/后测分数和答案、所选 GPU、访问记录都在这一个 key 里。
 - `learnkvc.theme`：`dark` / `light`。
+- `learnkvc.stepnav`：`{kv,prefix,paged}` 的导航折叠状态。
 - 路由：`#think`、`#kv/N`、`#kv/think|explore|reflect|summary`（prefix/paged 同理）、`#anatomy`、`#calc`、`#feedback`、`#homework`；旧链接 `#reuse` 重定向到 Prefix 章的多次提问步骤，`#reflect` 重定向到 KV 章总结。
 - 所有 `localStorage` 访问必须 try/catch（`file://` 下可能抛错）。
 
@@ -96,7 +97,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 5. `app.js`：`VIEWS`、元素、`state.<chapter>`、`render<Chapter>Step/Viz/Counters`、hash route、`navStep`、键盘、timeline 显隐。
 6. `style.css`：章节专属样式 + `body[data-view="<chapter>"] .timeline { display:flex }`。
 7. 验收：`build.py` 通过、`node --check` 通过、CDP 遍历无 error、`file://` 可开、760px 布局可用；
-8. 四段式验收：每章 stagebar 4 个按钮、先想答完出 CTA、反思可写、总结完成写 `lessons.<chapter>.summary`；三章完成后 `#homework` 解锁（矩阵 + 4 题 + 提交）。
+8. 四段式验收：每章 stagebar 4 个按钮、先想答完出 CTA、反思可写、总结完成写 `lessons.<chapter>.summary`；三章完成后 `#homework` 解锁（三章矩阵 + 模型解剖矩阵 + 6 题 + 提交）。
 
 ## 6. UI / 设计要求
 
@@ -111,15 +112,16 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 
 ### 布局与交互
 
-- 顶栏：品牌 + 可横向滚动的 tabs + 主题开关。章节视图是 左代码（sticky/独立滚动）+ 右讲解与可视化；底部时间轴只在章节视图出现。
+- 顶栏：品牌 + 可横向滚动的 tabs + 主题开关。章节视图是「左侧步骤导航（可收缩）+ 中间代码 + 右侧讲解/可视化」；底部只保留上一步/下一步和计数器，步骤点不再放底部。
+- 步骤导航：每章列出全部步骤（标题、进行中/已完成）；折叠按钮把宽度收到 36px 轨道，状态存 `learnkvc.stepnav`；窄屏（≤980px）默认收起，展开后列表限高可滚动。非探索阶段自动隐藏导航。
 - 交互优先用「步进 / 滑杆 / 按钮」，不要自动播放惊吓用户；播放到末尾要停止并可重播。
-- 步骤切换要同步：代码高亮 + 自动滚动、讲解卡、可视化、底部计数器、URL hash。
+- 步骤切换要同步：左侧导航高亮 + 代码高亮/自动滚动 + 讲解卡 + 可视化 + 底部计数器 + URL hash。
 - 图表/动画用原生 DOM/SVG/CSS；不做无意义的持续动画。
 - 移动端断点 980px：章节上下堆叠、三栏/多列变单列、导航可横滑、表格可横滚。
 
 ### 无障碍
 
-- 保留 skip link、`aria-live` 计数器、`aria-pressed`（主题）、`aria-label`（时间轴点）。
+- 保留 skip link、`aria-live` 计数器、`aria-pressed`（主题）、导航折叠按钮的 `aria-expanded`/`aria-label`。
 - 键盘可用：←/→ 换步骤，空格播放/暂停；`focus-visible` 必须有明显焦点环。
 - 尊重 `prefers-reduced-motion`；对比度保持可读；不要移除原生控件的可操作性。
 
