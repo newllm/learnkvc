@@ -507,7 +507,7 @@
     const stageDefs = [
       ["think", "先想", lesson.think ? "✓" : ""],
       ["explore", "探索阅读", (lesson.exploreMax || 0) + " / " + steps.length],
-      ["reflect", "提问反思", lesson.reflect ? "✓" : ""],
+      ["reflect", "反思与归因", lesson.reflect && lesson.attributionSubmitted ? "✓" : lesson.reflect ? "待归因" : ""],
       ["summary", "总结归纳", lesson.summary ? "✓" : ""],
     ];
     const stagesHTML = stageDefs
@@ -629,14 +629,14 @@
         setStage(ch, "explore")
       );
     } else if (stageOf(ch) === "reflect") {
-      LK.workshop.renderStageReflect(docEl, ch, lesson.reflect, () => renderChapterNav(ch), () =>
+      LK.workshop.renderStageReflect(docEl, ch, lesson.reflect, lesson.attribution, () => renderChapterNav(ch), () =>
         setStage(ch, "summary")
       );
     } else {
       LK.workshop.renderStageSummary(docEl, ch, lesson.summary, () => renderChapterNav(ch), () => {
         setView("homework");
         updateHash();
-      }, lesson.attribution);
+      });
     }
   }
 

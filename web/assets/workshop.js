@@ -871,14 +871,18 @@
     if (go) go.addEventListener("click", onExplore);
   };
 
-  W.renderStageReflect = function (el, chapter, prompts, onChange, onNext) {
+  W.renderStageReflect = function (el, chapter, prompts, attribution, onChange, onNext) {
     const saved = lessonOf(chapter).reflectText || {};
     const filled = prompts.filter((q) => (saved[q.id] || "").trim()).length;
+    const attr = attribution || [];
+    const p = lessonOf(chapter);
+    const attrDone = !attr.length || !!p.attributionSubmitted;
+    const complete = !!p.reflect;
 
     el.innerHTML =
-      '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 提问反思</div>" +
-      '<h2>先用自己的话回答，再对照参考</h2>' +
-      '<p class="hint">不用写长；写不出来说明刚才的探索还没闭环。参考默认折叠，先写再看。</p>' +
+      '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 反思与归因</div>" +
+      '<h2>先用自己的话回答，再判断这是谁的工作</h2>' +
+      '<p class="hint">反思写不出来，说明刚才的探索还没闭环；归因是把「模型 / GPU / 引擎」的分工说清楚。参考默认折叠，先写再看。</p>' +
       '<div class="qprogress"><span>已写 ' + filled + " / " + prompts.length + "</span><span>保存到本地</span></div>" +
       prompts
         .map(
@@ -888,16 +892,28 @@
             '<details class="thinkbox"><summary>对照参考</summary><p>' + esc(q.ref) + "</p></details></div>"
         )
         .join("") +
-      '<div class="reuse-actions"><button class="btn primary" id="stage-reflect-done">完成反思 →</button></div>';
+      '<h3 class="sec-title">归因：这一步是谁的工作？</h3>' +
+      '<div id="stage-attr"></div>' +
+      '<div class="reuse-actions"><button class="btn primary" id="stage-reflect-done" ' +
+      (attrDone ? "" : "disabled") + ">" +
+      (!attrDone ? "先提交归因" : complete ? "已完成的反思 · 重新标记" : "完成反思 →") + "</button>" +
+      (complete && attrDone
+        ? '<span class="tool-note">反思与归因已完成</span>'
+        : '<span class="tool-note">提交归因后才能完成本阶段</span>') +
+      "</div>";
 
     el.querySelectorAll("[data-ref]").forEach((ta) =>
       ta.addEventListener("input", () => {
-        const p = lessonOf(chapter);
-        const all = Object.assign({}, p.reflectText || {});
+        const prev = lessonOf(chapter);
+        const all = Object.assign({}, prev.reflectText || {});
         all[ta.dataset.ref] = ta.value;
         saveLesson(chapter, { reflectText: all });
       })
     );
+    W.renderStageAttribution(el.querySelector("#stage-attr"), chapter, attr, () => {
+      W.renderStageReflect(el, chapter, prompts, attribution, onChange, onNext);
+      if (onChange) onChange();
+    });
     const done = el.querySelector("#stage-reflect-done");
     if (done) {
       done.addEventListener("click", () => {
@@ -988,11 +1004,9 @@
     }
   };
 
-  W.renderStageSummary = function (el, chapter, summary, onChange, onHomework, attribution) {
+  W.renderStageSummary = function (el, chapter, summary, onChange, onHomework) {
     const p = lessonOf(chapter);
     const complete = p.summary;
-    const attr = attribution || [];
-    const attrDone = !attr.length || p.attributionSubmitted;
 
     el.innerHTML =
       '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 总结归纳</div>" +
@@ -1000,27 +1014,20 @@
       '<p class="hint">先写自己的版本，再展开参考总结对照；写完点「完成本章」，三章都完成后解锁课后作业。</p>' +
       '<div class="summarycard"><b>参考总结 · 概要</b><p>' + esc(summary.brief) + "</p>" +
       '<details><summary>详细描述</summary><p>' + esc(summary.detail) + "</p></details></div>" +
-      '<h3 class="sec-title">归因：这一步是谁的工作？</h3>' +
-      '<div id="stage-attr"></div>' +
       '<div class="rprompt"><label for="stage-summary">我的总结</label>' +
       '<textarea id="stage-summary" rows="5">' + esc(p.summaryText || "") + "</textarea></div>" +
-      '<div class="reuse-actions"><button class="btn primary" id="stage-summary-done" ' +
-      (attrDone ? "" : "disabled") + ">" +
-      (!attrDone ? "先提交归因" : complete ? "已完成的章 · 重新标记" : "完成本章 →") + "</button>" +
+      '<div class="reuse-actions"><button class="btn primary" id="stage-summary-done">' +
+      (complete ? "已完成的章 · 重新标记" : "完成本章 →") + "</button>" +
       (complete ? '<span class="tool-note">完成于 ' + new Date(p.summaryAt).toLocaleString() + "</span>" : "") +
       "</div>" +
       (complete ? '<div class="reuse-actions"><button class="btn" id="stage-homework">去课后作业 →</button></div>' : "");
 
-    W.renderStageAttribution(el.querySelector("#stage-attr"), chapter, attr, () => {
-      W.renderStageSummary(el, chapter, summary, onChange, onHomework, attribution);
-      if (onChange) onChange();
-    });
     const ta = el.querySelector("#stage-summary");
     ta.addEventListener("input", () => saveLesson(chapter, { summaryText: ta.value }));
     el.querySelector("#stage-summary-done").addEventListener("click", () => {
       saveLesson(chapter, { summary: true, summaryText: ta.value, summaryAt: Date.now() });
       if (onChange) onChange();
-      W.renderStageSummary(el, chapter, summary, onChange, onHomework, attribution);
+      W.renderStageSummary(el, chapter, summary, onChange, onHomework);
     });
     const go = el.querySelector("#stage-homework");
     if (go) go.addEventListener("click", onHomework);

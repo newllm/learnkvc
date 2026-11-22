@@ -57,14 +57,14 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 
 1. **学习设定**：先想页顶部固定展示锚点模型（Qwen3-Coder-30B-A3B）规格与可选 GPU（显存/带宽/BF16 算力/PCIe），并给出「Q4 + 上下文 KV + 运行时 ≈ 多少、能否跑、decode 上限、prefill 下限」。
 2. **前测**：6 题、评分；**提交前不显示对错和解释**；分数与答案存 `localStorage`，作为基线。可重做。
-3. **章节四段式（硬性）**：每章必须按「先想 → 探索阅读 → 提问反思 → 总结归纳」组织。
+3. **章节四段式（硬性）**：每章必须按「先想 → 探索阅读 → 反思与归因 → 总结归纳」组织。
    - 先想：3 道预测题，选完才揭示，不计分；
    - 探索阅读：现有 steps 代码 ↔ 讲解 ↔ 可视化联动；
-   - 提问反思：2–4 个开放问题 + 可折叠参考，写进本地；
+   - 反思与归因：2–4 个开放问题 + 可折叠参考；再对 3 张卡做「模型 / GPU / 引擎」归因，提交归因后才能完成本阶段；
    - 总结归纳：参考总结（概要 + 详细）+ 用户自己的总结（textarea）+「完成本章」按钮。
-   - 章节导航统一在左侧轨道（可收缩）：顶部是四阶段（先想/探索/反思/总结），探索阶段下面列出步骤；非探索阶段只显示四阶段与提示，隐藏步骤列表、代码 pane、可视化、底部控制条；
+   - 章节导航统一在左侧轨道（可收缩）：顶部是四阶段（先想/探索阅读/反思与归因/总结归纳），探索阶段下面列出步骤；非探索阶段只显示四阶段与提示，隐藏步骤列表、代码 pane、可视化、底部控制条；
    - **多次提问不单独成页**：作为 Prefix 章「探索阅读」中的一个步骤（内嵌多轮/多请求模拟器）；
-   - **三层归因不单独成页**：每章「总结归纳」内嵌 3 张卡（模型 / GPU / 引擎）的归因练习，提交后才可完成本章；跨章综合在课后作业的对照矩阵。
+   - **三层归因不单独成页**：并入每章「反思与归因」阶段；「总结归纳」只保留参考总结、用户总结与完成本章；跨章综合在课后作业的对照矩阵。
 4. **后测**：6 题同概念换问法、评分；提交后生成反馈。
 5. **反馈**：前测/后测分数、变化、按概念对照（提升/维持/退步/仍需复习）、学习完成度（步骤/视图）、错题回看按钮；6 个概念覆盖三章 + 模型解剖（参数/结构/模型包/运行时），完成后自测总步数为三章之和（45）。
 6. **课后作业**：三章「总结归纳」全部完成后解锁；内容是迁移到其他领域（CPU cache / DB buffer pool / CDN / Git packfile / 浏览器缓存任选），含三章对照矩阵 + 模型解剖对照矩阵（参数/结构/模型包/运行时）、6 道题（迁移 / KV 计算 / TTL 设计 / 自由类比 / 模型包体检 / 运行时账本）、参考答案与提交记录。未完成时显示锁定的章节清单和进度。
@@ -75,7 +75,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 ### localStorage 与路由
 
 - `learnkvc.progress.v1`：`{ pre, post, gpu, views[], steps[], lessons, homework }`。
-  - `lessons.<chapter>`：`{think, thinkAnswers, exploreMax, reflect, reflectText, summary, summaryText, summaryAt}`；
+  - `lessons.<chapter>`：`{think, thinkAnswers, exploreMax, reflect, reflectText, attribution, attributionSubmitted, summary, summaryText, summaryAt}`；
   - `homework`：`{answers, submitted, at}`；
   - 前/后测分数和答案、所选 GPU、访问记录都在这一个 key 里。
 - `learnkvc.theme`：`dark` / `light`。
@@ -97,7 +97,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 5. `app.js`：`VIEWS`、元素、`state.<chapter>`、`render<Chapter>Step/Viz/Counters`、hash route、`navStep`、键盘、timeline 显隐。
 6. `style.css`：章节专属样式 + `body[data-view="<chapter>"] .timeline { display:flex }`。
 7. 验收：`build.py` 通过、`node --check` 通过、CDP 遍历无 error、`file://` 可开、760px 布局可用；
-8. 四段式验收：每章左侧导航有 4 个阶段按钮（先想/探索/反思/总结）、先想答完出 CTA、反思可写、总结完成写 `lessons.<chapter>.summary`；三章完成后 `#homework` 解锁（三章矩阵 + 模型解剖矩阵 + 6 题 + 提交）。
+8. 四段式验收：每章左侧导航有 4 个阶段按钮（先想/探索阅读/反思与归因/总结归纳）、先想答完出 CTA、反思可写、总结完成写 `lessons.<chapter>.summary`；三章完成后 `#homework` 解锁（三章矩阵 + 模型解剖矩阵 + 6 题 + 提交）。
 
 ## 6. UI / 设计要求
 
@@ -152,7 +152,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 
 ## 9. 当前状态与路线
 
-- 已完成：P0/P1（KV 章、前测/后测/反馈/学习设定）、P2（Prefix 章）、P3（Paged 章）、P4（显存计算器 + 亮色主题 + 响应式 + 无障碍基础）、P5（根 README 入口 + GitHub Pages workflow）、每章四段式、多次提问并入 Prefix 章、多层归因并入各章总结、三章后的迁移课后作业。
+- 已完成：P0/P1（KV 章、前测/后测/反馈/学习设定）、P2（Prefix 章）、P3（Paged 章）、P4（显存计算器 + 亮色主题 + 响应式 + 无障碍基础）、P5（根 README 入口 + GitHub Pages workflow）、每章四段式、多次提问并入 Prefix 章、反思与归因合并、三章后的迁移课后作业。
 - 已知缺口（可继续做）：
   - 章节级前测/后测目前是全局一套；如需更细，可给每章 2–3 题并复用 `pedagogy.json` 结构；
   - GitHub Pages 需要在仓库 Settings → Pages 选择 “GitHub Actions” 才会真正部署；
