@@ -318,7 +318,7 @@ llama bench -m model.gguf -p 512 -n 128
 
 - 先做 6 题**评分前测**（同时说明本次学习锚定的模型 Qwen3-Coder-30B-A3B 和可切换的 GPU 硬件）；
 - 三个章节都按「**请回答 → 探索阅读 → 反思与归因 → 总结归纳**」四段式进行：先猜再读，读完写反思和自己的总结；
-- 在 Prefix 章内用「多次提问」模拟多轮对话与多请求共享前缀；每章总结内嵌「模型 / GPU / 引擎」归因练习；用「模型解剖」认识层数/参数/维度/GPU kernel；
+- 在 Prefix 章内用「多次提问」模拟多轮对话与多请求共享前缀；每章「反思与归因」内嵌「模型 / GPU / 引擎」归因练习；用「模型解剖」认识层数/参数/维度/GPU kernel；
 - 学完做**后测**，得到前测/后测对照、按概念的学习反馈和回看建议；
 - 三章总结完成后解锁**课后作业**：把 KV cache 的复用/共享/淘汰迁移到其他领域（CPU cache、DB buffer pool、CDN 等）。
 
@@ -329,7 +329,7 @@ python3 -m http.server 8000
 # http://127.0.0.1:8000/web/index.html
 ```
 
-如果仓库开启了 GitHub Pages，入口是 <https://newllm.github.io/learnkvc/web/index.html>。
+如果仓库开启了 GitHub Pages，入口是 <https://newllm.github.io/learnkvc/web/#think>（直接进入「请回答」阶段）。
 生成/更新页面数据：`python3 web/tools/build.py`（详见 [`web/README.md`](web/README.md) 与 [`web/DESIGN.md`](web/DESIGN.md)）。
 
 ## 文档索引
