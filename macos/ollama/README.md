@@ -60,6 +60,7 @@ macos/ollama/
   - [让模型常驻（避免每次请求都等加载）](#让模型常驻避免每次请求都等加载)
   - [怎么判断有没有触发 offload](#怎么判断有没有触发-offload)
   - [prefill 到底占多少内存、为什么慢](#prefill-到底占多少内存为什么慢)
+  - [每层在做什么：一层的数据流](#每层在做什么一层的数据流)
 - [日常开发要多大上下文](#日常开发要多大上下文)
   - [一次 7m45s 请求的拆解](#一次-7m45s-请求的拆解)
 - [能不能看算子级耗时（类似 Linux perf）](#能不能看算子级耗时类似-linux-perf)
@@ -881,7 +882,12 @@ ollama ps
 
 把 `num_ctx` 从 32768 降到 16384，KV 预留直接减半；升到 65536 则翻倍，16 GB 机器上 9b 会超预算。
 
-**为什么慢：** prefill 是计算密集型，不是内存带宽型。10.8K token、9B 参数，要把整个 prompt 过一遍所有层（每层 GEMM + 8 层 full attention 的 O(n²)），M2 的 GPU 算力大约只有数据中心卡的几十分之一。按 100 秒算就是 **~108 tok/s 的 prefill**，对 M2 + 9B 是正常量级；和 decode 的 14 tok/s 是两回事。
+**为什么慢：** prefill 是计算密集型，不是内存带宽型。10.8K token、9B 参数的 prefill，FLOPs 有两条腿：
+
+- **GEMM**（QKV/O 投影 + MLP + 24 层线性注意力）：粗算 `≈ 2 × 9B × 10.8K ≈ 194 TFLOPs`，对 token 数线性增长；
+- **8 层 full attention**：`≈ 4 × 8 × d_qk × n²`；按 16 个 Q 头、head_dim 256（`d_qk = 4096`）估算，10.8K token 约 **15 TFLOPs**，只占 ~8%，要到约 14 万 token 才和 GEMM 持平，256K 时反超。
+
+M2 的 GPU 算力大约只有数据中心卡的几十分之一：194 TFLOPs / 100 秒 ≈ **2 TFLOPS 有效算力**，和实测吻合。所以这个长度下**慢在 GEMM 把算力打满，而不是 attention 的 O(n²)**。按 100 秒算就是 **~108 tok/s 的 prefill**，对 M2 + 9B 是正常量级；和 decode 的 14 tok/s 是两回事。
 
 再加上：
 - 前缀缓存没命中时，每轮都要重算这 1 万 token；
@@ -889,6 +895,32 @@ ollama ps
 - speculative decode 只影响生成阶段，救不了 prefill。
 
 所以优化 prefill 的方向只有：**换小模型（4b）、缩短 prompt、保持前缀稳定让 prefix cache 命中、别开 64K**。
+
+### 每层在做什么：一层的数据流
+
+前面把 prefill 的 FLOPs 拆成「GEMM + 8 层 full attention」两条腿。这一节把 `qwen3.5:9b` 的一层打开，看这两条腿分别落在哪。参数取自模型自身的元数据（`ollama show` 和 GGUF 头）：32 层、hidden 4096、FFN 12288、16 个 Q 头 / 4 个 KV 头、head_dim 256；每 4 层插 1 层 full attention（第 4、8、…、32 层，共 8 层），其余 24 层是线性注意力（Gated DeltaNet 一类的递推结构）。
+
+一层就是两个残差子层，prefill 和 decode 跑的是同一张图，只是张量形状不同：
+
+```text
+x ──► RMSNorm ──► attention 子层 ──► (+x) ──► RMSNorm ──► MLP 子层 ──► (+x)
+```
+
+| 子层 | 里面有什么 | prefill（n ≈ 10.8K） | decode（n = 1） |
+| --- | --- | --- | --- |
+| 线性注意力（24 层） | `in_proj_qkv` / `in_proj_z` / `in_proj_a` / `in_proj_b` → 短卷积（kernel 4）→ delta 规则递推 → 门控归一化 → `out_proj` | `[n, 4096]` 上的几组 GEMM（qkv / z / a / b 投影与 `out_proj`），递推部分逐 token 顺序算 | 只更新固定大小的递推状态（`state_size = 128`），不随上下文变长 |
+| full attention（8 层） | q/k/v 投影 → q_norm / k_norm → 部分 RoPE（只转 64 维）→ 写 KV cache → GQA（16 Q 头 : 4 KV 头）→ `out_proj` | 投影是 GEMM；`QKᵀ` 是 `[n, n]`，只有这 8 层是 O(n²) | 每步读完整 KV（32 KiB × 上下文） |
+| MLP（每层） | SwiGLU：gate / up 两个 `4096 → 12288`，相乘后再 down 回 `4096` | 每 token 约 `2 × 3 × 4096 × 12288 ≈ 0.30 GFLOPs` | GEMV，以读权重为主 |
+
+几个能直接对上前面数字的结论：
+
+- **KV 只来自 8 层 full attention。** 每 token 每层 `2 × 4 × 256 × 2 B = 4 KiB`，8 层正好 **32 KiB/token**，就是前面表格里的数；24 层线性注意力不占 KV cache（只维护固定大小的递推状态），所以 9B 的 KV 只有「32 层全是 full attention」同类模型的 1/4。`qwen3.5:4b` 只是宽度小（hidden 2560 / FFN 9216），层数和注意力配比相同，KV 同为 32 KiB/token。
+- **prefill 的算力主要花在 MLP 和投影上。** MLP 一层每 token 约 0.30 GFLOPs，32 层 × 10.8K token ≈ **105 TFLOPs**，是那 194 TFLOPs 里最大的一块；attention 投影加上 8 层 full attention 的 15 TFLOPs 填掉剩下的部分。这就是「慢在 GEMM 把算力打满」的实际来源。
+- **decode 走的是另一条路。** 每步输入 `[1, 4096]`，GEMM 退化成 GEMV，算力不再是瓶颈；瓶颈变成每步要读的权重和 KV（上下文 × 32 KiB）。所以 prefill 的优化方向是算力（换小模型、缩 prompt），decode 是带宽（KV 量化、减上下文）。
+
+日志里 `speculative decode stats` 那行是投机解码的统计（草案 token 让主模型一次验证多个），只影响 decode，救不了 prefill。
+
+换成 [Qwen3-Coder-30B](#qwen3-coder-30b复杂代码开发的显存要求) 是另一种组合：48 层**全部**是 full attention（4 个 KV 头、head_dim 128 → 96 KiB/token），MLP 位置换成 MoE——每层一个 router 在 128 个专家里选 8 个。decode 每步只读激活的 3.3B 参数，所以快；prefill 时 10.8K 个 token 会摊到大部分专家，GEMM 仍按 30.5B 总参算，所以贵。同样叫「一层」，稠密模型和 MoE 的账不一样。
 
 ## 日常开发要多大上下文
 
