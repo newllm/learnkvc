@@ -16,11 +16,40 @@
   </div>
   <nav class="tabs" id="tabs">
     <button data-view="think">请回答 · 前测</button>
-    <button data-view="kv">① KV cache 章</button>
-    <button data-view="prefix">② Prefix cache 章</button>
-    <button data-view="paged">③ PagedAttention 章</button>
-    <button data-view="anatomy">模型解剖</button>
-    <button data-view="calc">显存计算器</button>
+    <div class="nav-group" data-nav-group>
+      <button class="nav-trigger" data-nav-trigger aria-haspopup="menu" aria-expanded="false" aria-controls="menu-chapters">
+        <span data-nav-label>章节</span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="nav-menu" id="menu-chapters" role="menu" aria-label="章节导航" hidden>
+        <button type="button" role="menuitem" data-view="kv" data-short="KV cache" aria-current="false">
+          <span class="nav-item-title">① KV cache 章</span>
+          <span class="nav-item-sub">一次生成：重算 vs 缓存</span>
+        </button>
+        <button type="button" role="menuitem" data-view="prefix" data-short="Prefix cache" aria-current="false">
+          <span class="nav-item-title">② Prefix cache 章</span>
+          <span class="nav-item-sub">多请求共享前缀与块池</span>
+        </button>
+        <button type="button" role="menuitem" data-view="paged" data-short="PagedAttention" aria-current="false">
+          <span class="nav-item-title">③ PagedAttention 章</span>
+          <span class="nav-item-sub">分页、block table 与 gather</span>
+        </button>
+      </div>
+    </div>
+    <div class="nav-group" data-nav-group>
+      <button class="nav-trigger" data-nav-trigger aria-haspopup="menu" aria-expanded="false" aria-controls="menu-tools">
+        <span data-nav-label>模型工具</span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="nav-menu" id="menu-tools" role="menu" aria-label="模型工具" hidden>
+        <button type="button" role="menuitem" data-view="anatomy" data-short="模型解剖" aria-current="false">
+          <span class="nav-item-title">模型解剖</span>
+          <span class="nav-item-sub">参数 / 结构 / 模型包 / 运行时</span>
+        </button>
+        <button type="button" role="menuitem" data-view="calc" data-short="显存计算器" aria-current="false">
+          <span class="nav-item-title">显存计算器</span>
+          <span class="nav-item-sub">权重 + KV + 运行时能放下吗</span>
+        </button>
+      </div>
+    </div>
     <button data-view="feedback">学习反馈</button>
     <button data-view="homework">课后作业</button>
   </nav>
@@ -107,12 +136,18 @@
 
   <!-- 4. 模型解剖 -->
   <section class="view scrollable" id="view-anatomy">
-    <div class="workshop" id="anatomy"></div>
+    <div class="tool-layout">
+      <aside class="tool-toc" id="toc-anatomy" aria-label="模型解剖小节导航"></aside>
+      <div class="tool-main"><div class="workshop" id="anatomy"></div></div>
+    </div>
   </section>
 
   <!-- 4b. 显存计算器 -->
   <section class="view scrollable" id="view-calc">
-    <div class="workshop" id="calc"></div>
+    <div class="tool-layout">
+      <aside class="tool-toc" id="toc-calc" aria-label="显存计算器小节导航"></aside>
+      <div class="tool-main"><div class="workshop" id="calc"></div></div>
+    </div>
   </section>
 
   <!-- 5. 学习反馈 -->
@@ -147,6 +182,7 @@
 <script src="assets/workshop.js"></script>
 <script src="assets/anatomy.js"></script>
 <script src="assets/calc.js"></script>
+<script src="assets/sectionnav.js"></script>
 <script src="assets/app.js"></script>
 </body>
 </html>

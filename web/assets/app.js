@@ -25,7 +25,7 @@
     calc: $("#view-calc"),
     feedback: $("#view-feedback"),
     homework: $("#view-homework"),
-    tabs: Array.from(document.querySelectorAll("#tabs button")),
+    tabs: Array.from(document.querySelectorAll("#tabs [data-view]")),
     code: $("#code"),
     codeMeta: $("#code-meta"),
     prefixCode: $("#prefix-code"),
@@ -51,6 +51,17 @@
     ovWhy: $("#ov-why"),
   };
 
+  const navGroups = Array.from(document.querySelectorAll("#tabs [data-nav-group]")).map((root) => {
+    const trigger = root.querySelector("[data-nav-trigger]");
+    const label = root.querySelector("[data-nav-label]");
+    return {
+      trigger,
+      menu: root.querySelector(".nav-menu"),
+      label,
+      base: label.textContent,
+    };
+  });
+
   let codeView = null;
   let prefixCode = null;
   let pagedCode = null;
@@ -58,6 +69,8 @@
   state.prefix = { step: 0, scenario: "shared", snap: 0, playing: false, timer: null };
   state.paged = { step: 0, snap: 0, sel: "seq-b", playing: false, timer: null };
   const CHAPTERS = ["kv", "prefix", "paged"];
+  const CH_NUMS = ["①", "②", "③"];
+  const CH_SHORT = ["KV cache", "Prefix cache", "PagedAttention"];
   const STAGE_NAMES = ["think", "explore", "reflect", "summary"];
   state.stages = {};
   state.navCollapsed = { kv: false, prefix: false, paged: false };
@@ -514,7 +527,8 @@
       .map(
         ([id, label, sub], i) =>
           '<button class="stage-nav-item' + (id === stage ? " on" : "") +
-          (sub === "✓" ? " done" : "") + '" data-nav-stage="' + id + '">' +
+          (sub === "✓" ? " done" : "") + '" data-nav-stage="' + id + '" title="' + label +
+          (sub ? "：" + sub : "") + '">' +
           '<span class="sid">0' + (i + 1) + "</span>" +
           '<span class="stt">' + label + "</span>" +
           '<em>' + sub + "</em></button>"
@@ -524,10 +538,23 @@
     const headCount = showSteps
       ? idx + 1 + " / " + steps.length
       : stageIdx + 1 + " / " + STAGE_NAMES.length;
+    const chaptersHTML = CHAPTERS.map((c, i) => {
+      const title = (D[c] && D[c].title) || c;
+      const done = LK.progress.lesson(c).summary;
+      return '<button class="stepnav-chapter' + (c === ch ? " on" : "") +
+        '" data-nav-ch="' + c + '" aria-current="' + (c === ch) + '" title="' +
+        CH_NUMS[i] + " " + esc(title) + (done ? "（已完成）" : "") + '">' +
+        '<span class="sc-no">' + CH_NUMS[i] + "</span>" +
+        '<span class="sc-tt">' + esc(title) + "</span>" +
+        '<span class="sc-tt-sm">' + esc(CH_SHORT[i]) + "</span>" +
+        '<span class="sc-done">' + (done ? "✓" : "") + "</span></button>";
+    }).join("");
 
     nav.innerHTML =
       '<div class="stepnav-head"><span>章节导航</span><b>' + headCount + "</b>" +
       '<button class="stepnav-toggle" type="button" aria-expanded="true" aria-label="收起章节导航">‹</button></div>' +
+      '<div class="stepnav-section">章节</div>' +
+      '<div class="stepnav-chapters">' + chaptersHTML + "</div>" +
       '<div class="stage-nav">' + stagesHTML + "</div>" +
       (showSteps
         ? '<div class="stepnav-section">探索步骤</div>' +
@@ -546,6 +573,14 @@
         : '<p class="stepnav-hint">切换到「探索阅读」查看 ' + steps.length + " 个步骤。</p>");
 
     nav.querySelector(".stepnav-toggle").addEventListener("click", () => toggleNav(ch));
+    nav.querySelectorAll("[data-nav-ch]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const target = b.dataset.navCh;
+        if (!CHAPTERS.includes(target) || target === ch) return;
+        setView(target);
+        updateHash();
+      })
+    );
     nav.querySelectorAll("[data-nav-stage]").forEach((b) =>
       b.addEventListener("click", () => setStage(ch, b.dataset.navStage))
     );
@@ -561,7 +596,9 @@
     const list = nav.querySelector(".stepnav-list");
     const active = list && list.querySelector(".active");
     if (list && active) {
-      list.scrollTop = Math.max(0, active.offsetTop - list.clientHeight / 2);
+      const offset =
+        active.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop;
+      list.scrollTop = Math.max(0, offset - list.clientHeight / 2 + active.offsetHeight / 2);
     }
   }
 
@@ -678,6 +715,51 @@
     if (location.hash !== hash) history.replaceState(null, "", hash);
   }
 
+  /* ------------------------------------------------------ topbar dropdowns */
+
+  function closeNavMenus(except) {
+    navGroups.forEach((g) => {
+      if (g === except || g.menu.hidden) return;
+      g.menu.hidden = true;
+      g.trigger.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function placeNavMenu(g) {
+    g.menu.style.left = "";
+    const rect = g.menu.getBoundingClientRect();
+    const overflow = rect.right - (window.innerWidth - 12);
+    if (overflow > 0) g.menu.style.left = -Math.min(overflow, rect.left - 12) + "px";
+  }
+
+  function openNavMenu(g) {
+    closeNavMenus(g);
+    g.menu.hidden = false;
+    g.trigger.setAttribute("aria-expanded", "true");
+    placeNavMenu(g);
+    const first = g.menu.querySelector('[role="menuitem"]');
+    if (first) first.focus();
+  }
+
+  function toggleNavMenu(g) {
+    if (g.menu.hidden) {
+      openNavMenu(g);
+    } else {
+      g.menu.hidden = true;
+      g.trigger.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function syncNavGroups(view) {
+    navGroups.forEach((g) => {
+      const items = Array.from(g.menu.querySelectorAll("[data-view]"));
+      const active = items.filter((b) => b.dataset.view === view)[0] || null;
+      items.forEach((b) => b.setAttribute("aria-current", b === active ? "true" : "false"));
+      g.trigger.classList.toggle("active", !!active);
+      g.label.textContent = active ? g.base + " · " + active.dataset.short : g.base;
+    });
+  }
+
   /* -------------------------------------------------------------- views */
 
   function setView(view) {
@@ -687,7 +769,13 @@
     const timeline = document.querySelector(".timeline");
     if (timeline) timeline.style.display = "";
     if (LK.progress) LK.progress.recordView(view);
-    el.tabs.forEach((t) => t.classList.toggle("active", t.dataset.view === view));
+    closeNavMenus();
+    el.tabs.forEach((t) => {
+      const on = t.dataset.view === view;
+      t.classList.toggle("active", on);
+      t.setAttribute("aria-current", on ? "true" : "false");
+    });
+    syncNavGroups(view);
     VIEWS.forEach((v) => el[v] && el[v].classList.toggle("active", v === view));
     if (view === "kv") {
       buildDots();
@@ -772,11 +860,55 @@
       });
     });
 
+    navGroups.forEach((g) => {
+      g.trigger.addEventListener("click", () => toggleNavMenu(g));
+      g.trigger.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          openNavMenu(g);
+        } else if (e.key === "Escape" && !g.menu.hidden) {
+          e.preventDefault();
+          closeNavMenus();
+        }
+      });
+      g.menu.addEventListener("click", (e) => {
+        if (!e.target.closest("[data-view]")) return;
+        closeNavMenus();
+        g.trigger.focus();
+      });
+      g.menu.addEventListener("keydown", (e) => {
+        const items = Array.from(g.menu.querySelectorAll('[role="menuitem"]'));
+        const i = items.indexOf(document.activeElement);
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeNavMenus();
+          g.trigger.focus();
+        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          if (!items.length) return;
+          const step = e.key === "ArrowDown" ? 1 : -1;
+          items[(i + step + items.length) % items.length].focus();
+        } else if (e.key === "Home" || e.key === "End") {
+          e.preventDefault();
+          items[e.key === "Home" ? 0 : items.length - 1].focus();
+        } else if (e.key === "Tab") {
+          closeNavMenus();
+          g.trigger.focus();
+        }
+      });
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest || !e.target.closest("#tabs .nav-group")) closeNavMenus();
+    });
+    window.addEventListener("resize", () => closeNavMenus());
+
     el.prev.addEventListener("click", () => navStep(-1));
     el.next.addEventListener("click", () => navStep(1));
 
     document.addEventListener("keydown", (e) => {
       if (!CHAPTERS.includes(state.view) || stageOf(state.view) !== "explore") return;
+      if (e.target.closest && e.target.closest(".nav-group")) return;
       const tag = (e.target.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
       if (e.key === "ArrowLeft") {
@@ -868,6 +1000,10 @@
   initStages();
   initNav();
   buildDots();
+  if (LK.sectionnav) {
+    LK.sectionnav.mount($("#toc-anatomy"), el.anatomyBody);
+    LK.sectionnav.mount($("#toc-calc"), el.calcBody);
+  }
   codeView = LK.codeview.mount(el.code, kv.lines);
   prefixCode = LK.codeview.mount(el.prefixCode, LK_DATA.prefix.lines);
   pagedCode = LK.codeview.mount(el.pagedCode, LK_DATA.paged.lines);

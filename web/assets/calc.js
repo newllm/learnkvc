@@ -67,6 +67,7 @@
       '<h1 class="page-title">这套模型跑在这张卡上，要多少显存？</h1>' +
       '<p class="page-lead">参数、量化、上下文、并发、KV 精度——五个滑杆决定同一组数字。' +
       "公式和「本次学习设定」一致：权重看参数量，KV 看上下文 × 层数 × KV 头，速度看带宽和算力。</p>" +
+      '<h2 class="sec-title">1 · 输入：模型 / 精度 / 上下文 / 并发 / GPU</h2>' +
       '<div class="calc-layout"><div class="calc-controls">' +
       '<label class="calc-field"><span>模型</span><select data-field="preset">' +
       data.presets
@@ -113,6 +114,7 @@
       '<div class="spec"><span>decode 理论</span><b>' + Math.round(decodeTok) + " tok/s</b></div>" +
       "</div></div>" +
       '<div class="calc-result">' +
+      '<h2 class="sec-title">2 · 显存账本：权重 + KV + 运行时</h2>' +
       '<div class="compare">' +
       '<div class="stat"><div class="stat-label">总占用</div><div class="stat-value">' +
       gbfmt(totalGb) + '</div><div class="stat-sub">权重 ' + gbfmt(weightsGb) + " + KV " +
@@ -124,6 +126,7 @@
       "</div>" +
       '<div class="membars">' + bar("权重", weightsGb, "w") + bar("KV cache", kvTotalGb, "k") +
       bar("运行时", runtimeGb, "r") + "</div>" +
+      '<h2 class="sec-title">3 · 速度上限：prefill 与 decode</h2>' +
       '<div class="compare calc-est">' +
       '<div class="stat"><div class="stat-label">prefill 计算量（n=' + fmt(state.ctx) + '）</div><div class="stat-value">' +
       (prefillFlops / 1e12).toFixed(1) + ' TF</div><div class="stat-sub">n=' +
@@ -135,6 +138,7 @@
       '<div class="stat"><div class="stat-label">decode 带宽上限</div><div class="stat-value">' +
       Math.round(decodeTok) + ' tok/s</div><div class="stat-sub">每步读激活权重 + 全部 KV</div></div>' +
       "</div>" +
+      '<h2 class="sec-title">4 · 公式与口径</h2>' +
       '<p class="note">同一套公式：<code>权重 = 参数量 × 每参数字节</code>，' +
       "<code>KV = 上下文 × 层数 × KV 头 × head_dim × 2 × 字节</code>，" +
       "<code>decode ≈ 带宽 / (激活权重 + KV)</code>。并发请求各自占一份 KV；prefix cache 共享前缀时才会计数复用。</p>" +

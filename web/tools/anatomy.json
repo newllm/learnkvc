@@ -487,5 +487,325 @@
       }
     ],
     "notes": "参数固定；KV 随上下文 × 并发线性增长；prefill 激活随本次 chunk 的 token 数；workspace / CUDA Graph 是近固定的常驻成本。"
+  },
+  "gpuFunctions": {
+    "intro": "同一个操作可以从五层看：PyTorch/引擎调用 → 库与调度 → CUDA kernel → GPU 硬件单元。名字在不同框架里不一样，落到卡上只有几类活：矩阵乘、逐元素/归约、采样、搬运与通信。",
+    "layers": [
+      {
+        "name": "PyTorch / 引擎",
+        "desc": "你写的 op 与推理引擎的算子封装",
+        "examples": "F.linear · scaled_dot_product_attention · vLLM paged_attention_v2"
+      },
+      {
+        "name": "库 / 调度",
+        "desc": "GEMM、Attention、通信、量化库",
+        "examples": "cuBLASLt · CUTLASS · FlashAttention · FlashInfer · NCCL"
+      },
+      {
+        "name": "CUDA kernel",
+        "desc": "真正 launch 到 stream 上的函数",
+        "examples": "CUDA C++ / Triton / PTX；cudaLaunchKernel 或 <<<grid, block>>>"
+      },
+      {
+        "name": "硬件单元",
+        "desc": "执行 kernel 的部件",
+        "examples": "Tensor Core · CUDA Core / SFU · SMEM / L2 / HBM · Copy Engine · NVLink"
+      }
+    ],
+    "groups": [
+      {
+        "id": "matmul",
+        "title": "矩阵计算：GEMM / GEMV / Attention",
+        "desc": "prefill 是 [n, d] × [d, d] 的大 GEMM，计算受限；decode 的 M=1 退化为 GEMV，读权重受限。",
+        "rows": [
+          {
+            "op": "线性层 / QKV / o_proj / lm_head",
+            "call": "F.linear · torch.matmul",
+            "cuda": "cublasLtMatmul · cublasGemmEx · CUTLASS Gemm",
+            "unit": "Tensor Core",
+            "note": "按 dtype 走 SGEMM / HGEMM / FP8；M=1 时 Tensor Core 很闲"
+          },
+          {
+            "op": "多头 attention：QKᵀ / PV",
+            "call": "F.scaled_dot_product_attention",
+            "cuda": "flash_attn_varlen_func · FlashInfer · xformers",
+            "unit": "Tensor Core + SMEM",
+            "note": "分块 + online softmax，不把 n×n 矩阵写回 HBM"
+          },
+          {
+            "op": "Paged KV 上的 decode attention",
+            "call": "引擎封装（vLLM / FlashInfer）",
+            "cuda": "paged_attention_v1/v2 · BatchDecodeWithPagedKVCache",
+            "unit": "Tensor Core + HBM",
+            "note": "按 block table gather K/V；decode 主要瓶颈是读整段 KV"
+          },
+          {
+            "op": "MoE 每个 expert 的 MLP",
+            "call": "fused MoE（TensorRT-LLM / vLLM）",
+            "cuda": "CUTLASS grouped GEMM · Triton fused_moe_kernel",
+            "unit": "Tensor Core",
+            "note": "每个 expert 的 M 不同，要分组或补齐；只算 top-k"
+          },
+          {
+            "op": "多 head / 多请求小批量",
+            "call": "torch.bmm",
+            "cuda": "cublasGemmStridedBatched",
+            "unit": "Tensor Core",
+            "note": "把 batch 维塞进一次 launch，省启动开销"
+          },
+          {
+            "op": "量化 GEMM（INT4/INT8/FP8）",
+            "call": "bnb.matmul_4bit · torch._scaled_mm",
+            "cuda": "gptq_gemm · awq_gemm · marlin_gemm · cutlass_scaled_mm",
+            "unit": "Tensor Core（INT8/FP8）",
+            "note": "反量化通常融进 GEMM 主循环或 epilogue"
+          }
+        ]
+      },
+      {
+        "id": "norm",
+        "title": "归一化 / 激活 / 位置编码",
+        "desc": "数据量小但每层每步都跑，kernel 往往和相邻算子融合，省一次 HBM 往返和一次 launch。",
+        "rows": [
+          {
+            "op": "RMSNorm / LayerNorm",
+            "call": "F.rms_norm · F.layer_norm",
+            "cuda": "rms_norm · fused_add_rms_norm · Apex / Triton 自定义",
+            "unit": "CUDA Core + SFU(rsqrt)",
+            "note": "和 residual add 融合最划算；两遍 reduction 读一次写一次"
+          },
+          {
+            "op": "Qwen3 的 q_norm / k_norm",
+            "call": "每个 head 独立 RMSNorm",
+            "cuda": "rms_norm（head_dim 维度）",
+            "unit": "CUDA Core",
+            "note": "在 RoPE 之前做；小张量容易被 launch 开销主导"
+          },
+          {
+            "op": "RoPE 位置编码",
+            "call": "apply_rotary_pos_emb",
+            "cuda": "rotary_embedding · FlashInfer apply_rope",
+            "unit": "CUDA Core",
+            "note": "成对旋转，不是矩阵乘；按位置索引 cos/sin 表"
+          },
+          {
+            "op": "SiLU / SwiGLU / GELU",
+            "call": "F.silu · F.gelu",
+            "cuda": "silu_and_mul（gate 与 up 融成一个）",
+            "unit": "CUDA Core + SFU(exp)",
+            "note": "FFN / MoE 里夹在两个 GEMM 之间"
+          },
+          {
+            "op": "Softmax",
+            "call": "F.softmax",
+            "cuda": "FlashAttention 内联 · cuDNN softmax",
+            "unit": "CUDA Core + SFU",
+            "note": "max + sum 两次 reduction；数值稳定要先减最大值"
+          },
+          {
+            "op": "Residual add / dropout",
+            "call": "x + y · F.dropout",
+            "cuda": "elementwise kernel（推理时 dropout no-op）",
+            "unit": "CUDA Core",
+            "note": "通常和 norm 融合成一个 kernel"
+          }
+        ]
+      },
+      {
+        "id": "sampling",
+        "title": "采样与解码控制",
+        "desc": "只处理最后 1 个位置，FLOPs 很小，但 top-k/top-p、sort/select、随机数都要真写 kernel。",
+        "rows": [
+          {
+            "op": "greedy / argmax",
+            "call": "torch.argmax",
+            "cuda": "reduction kernel",
+            "unit": "CUDA Core",
+            "note": "只保留最大值和下标"
+          },
+          {
+            "op": "top-k / top-p / min-p",
+            "call": "torch.topk · 自定义",
+            "cuda": "top_k_top_p_sampling_from_probs · Triton sampler",
+            "unit": "CUDA Core",
+            "note": "词表 15 万，排序 / 选择往往比 GEMM 还难并行"
+          },
+          {
+            "op": "multinomial / rejection",
+            "call": "torch.multinomial",
+            "cuda": "采样 kernel + curand 状态",
+            "unit": "CUDA Core",
+            "note": "拒绝采样用于「先按大模型猜、再按小模型验」"
+          },
+          {
+            "op": "重复 / 存在惩罚",
+            "call": "logits processor",
+            "cuda": "elementwise + gather",
+            "unit": "CUDA Core",
+            "note": "要回看已生成 token 的集合"
+          }
+        ]
+      },
+      {
+        "id": "cudart",
+        "title": "显存、流与 CUDA Graph",
+        "desc": "这一层不改变数学，但决定 GPU 能不能被喂饱：分配、拷贝、同步和 launch 开销都在这里。",
+        "rows": [
+          {
+            "op": "分配 / 释放显存",
+            "call": "torch.empty · 引擎 block pool",
+            "cuda": "cudaMalloc · cudaFree · cudaMallocAsync",
+            "unit": "显存分配器",
+            "note": "vLLM 预分配 KV 块池，热路径不再 malloc"
+          },
+          {
+            "op": "H2D 权重 / D2H logits",
+            "call": "tensor.to('cuda')",
+            "cuda": "cudaMemcpyAsync · cudaMemcpyPeerAsync",
+            "unit": "Copy Engine / NVLink",
+            "note": "配合 pinned memory 才是真异步；H2D 带宽远低于 HBM"
+          },
+          {
+            "op": "kernel 启动与同步",
+            "call": "每次 op 调用",
+            "cuda": "cudaLaunchKernel · cudaStreamSynchronize",
+            "unit": "GPU 前端",
+            "note": "一次 launch 微秒级；decode 每步几十个 kernel"
+          },
+          {
+            "op": "CUDA Graph 捕获 / 重放",
+            "call": "torch.cuda.CUDAGraph · vLLM enforce_eager=False",
+            "cuda": "cudaStreamBeginCapture · cudaGraphInstantiate · cudaGraphLaunch",
+            "unit": "GPU 前端",
+            "note": "省 launch，不省 FLOPs；形状固定（decode）才划算"
+          },
+          {
+            "op": "统一内存 / 预取",
+            "call": "torch 不直接暴露",
+            "cuda": "cudaMallocManaged · cudaMemPrefetchAsync",
+            "unit": "MMU + HBM",
+            "note": "主机侧访问会掉带宽，热路径一般不用"
+          },
+          {
+            "op": "多卡集合通信",
+            "call": "torch.distributed",
+            "cuda": "ncclAllReduce · ncclAllGather · ncclReduceScatter",
+            "unit": "NVLink / InfiniBand",
+            "note": "TP 每层两次 allreduce，尽量和 GEMM 重叠"
+          }
+        ]
+      },
+      {
+        "id": "engine",
+        "title": "引擎侧函数：调度与 KV 管理",
+        "desc": "这些不是数学 kernel，而是「什么时候跑、跑在哪些块上」；它们决定 TTFT、TPOT 和 GPU 利用率。",
+        "rows": [
+          {
+            "op": "KV 写入 paged 块",
+            "call": "引擎调用",
+            "cuda": "reshape_and_cache · reshape_and_cache_flash",
+            "unit": "HBM",
+            "note": "按 slot 写 K/V，不要求物理连续"
+          },
+          {
+            "op": "block table 查表",
+            "call": "attention kernel 内部",
+            "cuda": "paged_attention_v2 的索引读取",
+            "unit": "L2 / HBM",
+            "note": "逻辑位置 → 物理块，再按块读 KV"
+          },
+          {
+            "op": "块拷贝 / 换出",
+            "call": "prefix cache / CPU offload",
+            "cuda": "copy_blocks · swap_blocks",
+            "unit": "Copy Engine",
+            "note": "共享前缀或显存不足时才发生"
+          },
+          {
+            "op": "请求调度 / 拼批",
+            "call": "engine（CPU）",
+            "cuda": "不直接对应 kernel",
+            "unit": "CPU + GPU 队列",
+            "note": "continuous batching 把多请求拼进一次 forward"
+          },
+          {
+            "op": "MoE expert 并行通信",
+            "call": "expert parallel（EP）",
+            "cuda": "ncclSend/Recv · NVSHMEM",
+            "unit": "NVLink",
+            "note": "EP 的 all-to-all 比 TP allreduce 更难和计算重叠"
+          }
+        ]
+      }
+    ],
+    "chain": {
+      "title": "一次 decode 的调用链（以 Qwen3-30B-A3B 为例）",
+      "note": "prefill 的链条类似，但 attention 换成 varlen prefill、GEMM 的 M=n；decode 的 M=1，几乎所有 GEMM 都退化成 GEMV。",
+      "steps": [
+        {
+          "op": "input_ids → embedding",
+          "call": "torch.embedding → index_select kernel"
+        },
+        {
+          "op": "每层：residual + norm",
+          "call": "fused_add_rms_norm"
+        },
+        {
+          "op": "QKV 投影",
+          "call": "cuBLASLt GEMM（QKV 可融合成一次）"
+        },
+        {
+          "op": "q_norm / k_norm",
+          "call": "rms_norm（每个 head）"
+        },
+        {
+          "op": "RoPE",
+          "call": "rotary_embedding"
+        },
+        {
+          "op": "写 KV cache",
+          "call": "reshape_and_cache → paged blocks"
+        },
+        {
+          "op": "decode attention",
+          "call": "paged_attention_v2 / FlashInfer decode"
+        },
+        {
+          "op": "输出投影",
+          "call": "cuBLASLt GEMM（o_proj）"
+        },
+        {
+          "op": "MoE 路由",
+          "call": "topk_softmax → moe_align_block_size"
+        },
+        {
+          "op": "MoE experts",
+          "call": "fused_moe_kernel：grouped GEMM + SiLU"
+        },
+        {
+          "op": "final norm",
+          "call": "rms_norm"
+        },
+        {
+          "op": "lm_head",
+          "call": "GEMV / GEMM → logits [vocab]"
+        },
+        {
+          "op": "采样",
+          "call": "top-k / top-p / argmax → 下一个 token"
+        },
+        {
+          "op": "整图重放（可选）",
+          "call": "cudaGraphLaunch 把上面 1–13 步打包"
+        }
+      ]
+    },
+    "caveats": [
+      "torch.matmul 不是 kernel 名：dispatch 由 dtype、shape、后端决定（SDPA 会在 flash / mem-efficient / math 之间选）。",
+      "decode 的 GEMM 实际是 GEMV：Tensor Core 利用率低，瓶颈在 HBM 带宽，所以量化权重、减少读取收益最大。",
+      "FlashAttention 不是新数学：仍是 QKᵀ → softmax → PV，只是分块 + online softmax + 不把 n×n 写回 HBM。",
+      "CUDA Graph 省的是 launch 开销，不减少 FLOPs；形状变化（变长 prefill）就抓不了图。",
+      "NCCL 通信是否与 GEMM 重叠，决定 TP 的实际吞吐；通信库只负责搬字节，不负责算。"
+    ]
   }
 }

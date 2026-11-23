@@ -259,6 +259,9 @@ def prefix_trace() -> dict:
     mod_name = "learnkvc_prefix_demo"
     spec = importlib.util.spec_from_file_location(mod_name, EXAMPLES / "prefix_cache_demo.py")
     mod = importlib.util.module_from_spec(spec)
+    # dataclasses resolves ``cls.__module__`` through sys.modules; register the
+    # freshly loaded module before executing it or @dataclass raises.
+    sys.modules[mod_name] = mod
     spec.loader.exec_module(mod)
 
     class TraceSim(mod.Simulator):

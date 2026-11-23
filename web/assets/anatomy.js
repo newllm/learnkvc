@@ -93,6 +93,7 @@
       pipeline(data.timeline, preset, c) +
       gpuLoad(data.gpuLoad, weightsGb, kvGib, h2dSec, state.quant, ctx) +
       kernelsTable(data.kernels) +
+      gpuFunctionMap(data.gpuFunctions) +
       runtimeSection(data.runtime, preset, c, m) +
       thinkBoxes(data.notes) +
       '<div class="reuse-actions"><button class="btn primary" id="anatomy-reflect">把「模型/GPU/引擎」写进我的总结 →</button></div>';
@@ -296,7 +297,7 @@
       "<b>" + gb.toFixed(2) + " GiB</b></div>";
 
     return (
-      '<h2 class="sec-title">7 · 运行时状态：模型文件之外的那一半</h2>' +
+      '<h2 class="sec-title">8 · 运行时状态：模型文件之外的那一半</h2>' +
       '<p class="page-lead">' + esc(rt.intro) + "它不是参数，也不是权重文件；是「这次请求正在算什么、算到哪了」的现场。" +
       "按活多久分成四组：</p>" +
       '<div class="rt-groups">' +
@@ -515,11 +516,62 @@
     );
   }
 
+  /* ------------------------------------------------------ GPU function map */
+
+  function gpuFunctionMap(fn) {
+    const secNo = 7;
+    const groups = fn.groups
+      .map(
+        (g, i) =>
+          '<h3 class="sec-sub fn-sub" data-toc-sub>' + secNo + "." + (i + 1) + " " + esc(g.title) + "</h3>" +
+          '<p class="note">' + esc(g.desc) + "</p>" +
+          '<div class="table-wrap"><table class="fntable"><thead><tr>' +
+          "<th>操作</th><th>PyTorch / 引擎调用</th><th>CUDA / 库函数</th><th>硬件单元</th><th>说明</th>" +
+          "</tr></thead><tbody>" +
+          g.rows
+            .map(
+              (r) =>
+                "<tr><td>" + esc(r.op) + "</td><td><code>" + esc(r.call) + "</code></td>" +
+                "<td><code>" + esc(r.cuda) + "</code></td><td>" + esc(r.unit) + "</td>" +
+                "<td>" + esc(r.note) + "</td></tr>"
+            )
+            .join("") +
+          "</tbody></table></div>"
+      )
+      .join("");
+
+    return (
+      '<h2 class="sec-title">' + secNo + ' · GPU 函数地图：CUDA / kernel / 矩阵计算</h2>' +
+      '<p class="page-lead">' + esc(fn.intro) + "</p>" +
+      '<div class="fnlayers">' +
+      fn.layers
+        .map(
+          (l, i) =>
+            '<div class="fnlayer"><b>' + (i + 1) + " · " + esc(l.name) + "</b>" +
+            "<p>" + esc(l.desc) + "</p><span>" + esc(l.examples) + "</span></div>"
+        )
+        .join("") +
+      "</div>" +
+      groups +
+      '<h3 class="sec-sub fn-sub" data-toc-sub>' + secNo + "." + (fn.groups.length + 1) + " " +
+      esc(fn.chain.title) + "</h3>" +
+      '<p class="note">' + esc(fn.chain.note) + "</p>" +
+      '<ol class="fnchain">' +
+      fn.chain.steps
+        .map((s) => "<li><b>" + esc(s.op) + "</b> → <code>" + esc(s.call) + "</code></li>")
+        .join("") +
+      "</ol>" +
+      '<div class="fncaveats"><b>口径与常见误区</b><ul>' +
+      fn.caveats.map((c) => "<li>" + esc(c) + "</li>").join("") +
+      "</ul></div>"
+    );
+  }
+
   /* ---------------------------------------------------------------- notes */
 
   function thinkBoxes(notes) {
     return (
-      '<h2 class="sec-title">8 · 用自己的话回答</h2>' +
+      '<h2 class="sec-title">9 · 用自己的话回答</h2>' +
       details("为什么层数增加，参数量和 KV 都线性增加，但 hidden 不变？", notes.layers + " " + notes.kv) +
       details("参数是什么？它和「知识」是什么关系？", notes.params) +
       details("模型、GPU、引擎在这套流程里各做了什么？", notes.gpu)

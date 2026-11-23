@@ -298,6 +298,7 @@ def build_anatomy() -> dict:
         "context": spec["context"],
         "files": spec["files"],
         "runtime": spec["runtime"],
+        "gpuFunctions": spec["gpuFunctions"],
     }
 
 
