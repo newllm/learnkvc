@@ -42,6 +42,7 @@
 | ② Prefix 章的「多次提问」步骤 | 多轮对话 / 多请求共享前缀模拟器，现场比较 prefill 与 KV 占用 | `traces.reuse` |
 | 每章「反思与归因」内嵌归因 | 3 张卡分到「模型 / GPU / 引擎」，提交后才能完成本阶段 | `pedagogy.json` |
 | ④ 模型解剖 | 模型组成、参数/维度/层数、参数如何参与 token 生成、GPU 加载、kernel 表 | `anatomy.json` + 公式 |
+| ④b 模型训练 | 训练 step、显存账本、并行/省显存、最小训练脚本 + 每卡显存计算器 | `train.json` + `train_tiny.py` |
 | P2 / P3（规划） | Prefix cache、PagedAttention 沿用同一套「请回答 → 证据」结构 | 后续 |
 
 总览不再是独立页面：`README.md` 的「为什么需要 KV Cache」收进「请回答」页的折叠区，作为忍不住想看结论时的证据。
@@ -121,6 +122,17 @@
 
 预设覆盖 TinyModel、Qwen2.5-Coder-7B/32B、Qwen3-Coder-30B-A3B；参数量用公式在构建期算好并断言（30B → 30.53B total / 3.35B active / 96 KiB per token）。
 
+## 3.7 模型训练（v2.8）
+
+训练页沿用模型工具的小节导航（5 节），主线是「一次 step 的四笔钱」：
+
+- **step**：forward → loss → backward → optimizer；forward 留激活，backward 产梯度，optimizer 维护 m/v + master。
+- **显存账本**：权重 `N × bytes`、梯度 `N × bytes`、AdamW 状态 `N × (8 + master)`、激活 `layers × batch × seq × hidden × 12 × bytes`；经验值 AdamW+BF16 约 16 B/参数。
+- **交互计算器**：模型 / 精度 / 优化器 / ZeRO 0–3 / DP×TP×PP / 序列 / micro-batch / 激活重算 / offload → 每卡峰值、是否放得下、最大 micro-batch；公式在结果下方可手算核对。
+- **并行**：DP 不省显存；ZeRO-1/2/3 逐级切优化器/梯度/参数（FSDP≈ZeRO-3）；TP 切单层矩阵、限 NVLink；PP 切层、有空泡；激活重算用 30% 计算换显存；offload 走 PCIe。
+- **可运行脚本**：`example/train_tiny.py`（2 层 TinyGPT、合成循环序列、CPU 一分钟内），演示 forward/loss/backward/step、梯度累积和账本打印；`build.py` 只读源码，不执行。
+
+
 ## 4. 页面布局
 
 ```
@@ -146,7 +158,7 @@
 
 移动端（< 980px）：左侧导航默认收起成 38px 轨道；展开后章节排成 3 列、四阶段排成 4 列（隐藏进度文字、保留完成打勾），步骤列表限高滚动；代码区固定 42vh，可视化与讲解上下堆叠，底部保留前后步与计数器。
 
-模型工具（模型解剖 / 显存计算器）：桌面是 200px 小节导航 + 正文两栏，导航 sticky 且可折叠到 36px（与章节左栏同宽、同底色、同折叠按钮）；≤980px 默认收起成正文顶部条，展开后列表限高滚动，正文表格可横向滚动。
+模型工具（模型解剖 / 显存计算器 / 模型训练）：桌面是 200px 小节导航 + 正文两栏，导航 sticky 且可折叠到 36px（与章节左栏同宽、同底色、同折叠按钮）；≤980px 默认收起成正文顶部条，展开后列表限高滚动，正文表格可横向滚动。
 
 ## 5. 交互设计（逐章）
 

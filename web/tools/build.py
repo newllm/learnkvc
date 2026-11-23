@@ -302,6 +302,17 @@ def build_anatomy() -> dict:
     }
 
 
+def build_train() -> dict:
+    here = Path(__file__).resolve().parent
+    spec = json.loads((here / "train.json").read_text(encoding="utf-8"))
+    code_path = ROOT / "example" / "train_tiny.py"
+    spec["code"] = {
+        "file": "example/train_tiny.py",
+        "lines": code_path.read_text(encoding="utf-8").split("\n"),
+    }
+    return spec
+
+
 # --------------------------------------------------------------------------- #
 # Build
 # --------------------------------------------------------------------------- #
@@ -391,6 +402,7 @@ def main() -> None:
         "lessons": pedagogy["lessons"],
         "homework": pedagogy["homework"],
         "anatomy": build_anatomy(),
+        "train": build_train(),
     }
     (DATA / "data.js").write_text(
         "window.LK_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n", encoding="utf-8"

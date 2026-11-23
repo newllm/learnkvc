@@ -12,7 +12,7 @@
 
   const kv = D.kv;
   const MAX_GEN = TR.generated.length;
-  const VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "calc", "feedback", "homework"];
+  const VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "calc", "train", "feedback", "homework"];
   const state = { view: "think", step: 0, genStep: MAX_GEN, playing: false, timer: null };
 
   const $ = (sel) => document.querySelector(sel);
@@ -23,6 +23,7 @@
     paged: $("#view-paged"),
     anatomy: $("#view-anatomy"),
     calc: $("#view-calc"),
+    train: $("#view-train"),
     feedback: $("#view-feedback"),
     homework: $("#view-homework"),
     tabs: Array.from(document.querySelectorAll("#tabs [data-view]")),
@@ -47,6 +48,7 @@
     quiz: $("#quiz"),
     anatomyBody: $("#anatomy"),
     calcBody: $("#calc"),
+    trainBody: $("#train"),
     feedbackBody: $("#feedback"),
     ovWhy: $("#ov-why"),
   };
@@ -726,8 +728,27 @@
     });
   }
 
-  function placeNavMenu(g) {
+  function resetMenuPos(g) {
+    g.menu.style.position = "";
     g.menu.style.left = "";
+    g.menu.style.right = "";
+    g.menu.style.top = "";
+    g.menu.style.width = "";
+  }
+
+  function placeNavMenu(g) {
+    resetMenuPos(g);
+    if (window.innerWidth <= 980) {
+      // Fixed + full width on mobile: an absolutely positioned menu that
+      // starts off-screen widens the layout viewport before it is clamped.
+      const r = g.trigger.getBoundingClientRect();
+      g.menu.style.position = "fixed";
+      g.menu.style.left = "12px";
+      g.menu.style.right = "12px";
+      g.menu.style.top = Math.round(r.bottom + 6) + "px";
+      g.menu.style.width = "auto";
+      return;
+    }
     const rect = g.menu.getBoundingClientRect();
     const overflow = rect.right - (window.innerWidth - 12);
     if (overflow > 0) g.menu.style.left = -Math.min(overflow, rect.left - 12) + "px";
@@ -800,6 +821,11 @@
       LK.calc.render(el.calcBody, {
         presets: D.anatomy.presets,
         context: D.anatomy.context,
+      });
+    } else if (view === "train") {
+      LK.train.render(el.trainBody, D.train, {
+        presets: D.anatomy.presets,
+        gpus: D.anatomy.context.gpus,
       });
     } else if (view === "homework") {
       LK.workshop.renderHomework(el.homeworkBody, D.homework, (ch) => {
@@ -904,6 +930,10 @@
     document.addEventListener("click", (e) => {
       if (!e.target.closest || !e.target.closest("#tabs .nav-group")) closeNavMenus();
     });
+    document.addEventListener("scroll", (e) => {
+      if (e.target.closest && e.target.closest(".nav-menu")) return;
+      closeNavMenus();
+    }, true);
     window.addEventListener("resize", () => closeNavMenus());
 
     el.prev.addEventListener("click", () => navStep(-1));
@@ -1006,6 +1036,7 @@
   if (LK.sectionnav) {
     LK.sectionnav.mount($("#toc-anatomy"), el.anatomyBody);
     LK.sectionnav.mount($("#toc-calc"), el.calcBody);
+    LK.sectionnav.mount($("#toc-train"), el.trainBody);
   }
   codeView = LK.codeview.mount(el.code, kv.lines);
   prefixCode = LK.codeview.mount(el.prefixCode, LK_DATA.prefix.lines);

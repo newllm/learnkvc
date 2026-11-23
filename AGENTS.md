@@ -4,16 +4,17 @@
 
 ## 1. 仓库是什么
 
-`learnkvc` 用三份可运行的示例讲 KV cache：
+`learnkvc` 用三份 KV cache 示例 + 一份训练脚本讲「推理与训练」：
 
 - `example/kv_cache.py`：单请求内部的重算 vs 缓存；
 - `example/prefix_cache_demo.py`：多请求共享前缀（块池、哈希链、引用计数、LRU）；
-- `example/paged_attention.py`：PagedAttention 的 block table 与 gather。
+- `example/paged_attention.py`：PagedAttention 的 block table 与 gather；
+- `example/train_tiny.py`：最小 PyTorch 训练循环（forward/loss/backward/optimizer、梯度累积、显存账本）；需要 torch，`build.py` 只读源码不执行。
 
 `web/` 是零依赖静态交互页，**教学主线是「思考」而不是「读文档」**：
 
 ```
-请回答（前测） → 三章四段式（含多次提问、三层归因） → 模型解剖 / 计算器 → 后测 → 学习反馈 → 课后作业
+请回答（前测） → 三章四段式（含多次提问、三层归因） → 模型解剖 / 计算器 / 训练 → 后测 → 学习反馈 → 课后作业
 ```
 
 ## 2. 常用命令
@@ -46,6 +47,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 | 步骤映射 | `web/tools/steps.json`、`steps.prefix.json`、`steps.paged.json` |
 | 题目/前测/后测/归因/反思 | `web/tools/pedagogy.json` |
 | 模型预设/流水线/GPU 档位/模型包/运行时 | `web/tools/anatomy.json` |
+| 训练教程 / 训练计算器 | `web/tools/train.json` + `example/train_tiny.py` |
 | 运行状态 | `web/tools/collect_traces.py` |
 
 - 生成物 `web/data/data.js`、`web/data/traces.js` **提交进仓库**，保证双击可用；**禁止手改**，改源文件后跑 `build.py`。
@@ -80,8 +82,8 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
   - 前/后测分数和答案、所选 GPU、访问记录都在这一个 key 里。
 - `learnkvc.theme`：`dark` / `light`。
 - `learnkvc.stepnav`：`{kv,prefix,paged}` 的导航折叠状态。
-- `learnkvc.sectionnav`：`{anatomy,calc}` 的模型工具小节导航折叠状态。
-- 路由：`#think`、`#kv/N`、`#kv/think|explore|reflect|summary`（prefix/paged 同理）、`#anatomy`、`#calc`、`#feedback`、`#homework`；旧链接 `#reuse` 重定向到 Prefix 章的多次提问步骤，`#reflect` 重定向到 KV 章总结。
+- `learnkvc.sectionnav`：`{anatomy,calc,train}` 的模型工具小节导航折叠状态。
+- 路由：`#think`、`#kv/N`、`#kv/think|explore|reflect|summary`（prefix/paged 同理）、`#anatomy`、`#calc`、`#train`、`#feedback`、`#homework`；旧链接 `#reuse` 重定向到 Prefix 章的多次提问步骤，`#reflect` 重定向到 KV 章总结。
 - 所有 `localStorage` 访问必须 try/catch（`file://` 下可能抛错）。
 
 ## 5. 新增章节 checklist
@@ -113,9 +115,9 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 
 ### 布局与交互
 
-- 顶栏：品牌 + 导航 + 主题开关。导航一级是「请回答 · 前测 / 学习反馈 / 课后作业」；三个章节收进「章节」下拉，模型解剖与显存计算器收进「模型工具」下拉。触发按钮显示当前所在项（如「章节 · KV cache」），`aria-expanded` 同步；点外部、Esc、选中任一项都关闭。窄屏（≤980px）导航换行，不再横向滚动，下拉菜单要夹在视口内。章节视图是「左侧步骤导航（可收缩）+ 中间代码 + 右侧讲解/可视化」；底部只保留上一步/下一步和计数器，步骤点不再放底部。
+- 顶栏：品牌 + 导航 + 主题开关。导航一级是「请回答 · 前测 / 学习反馈 / 课后作业」；三个章节收进「章节」下拉，模型解剖、显存计算器与模型训练收进「模型工具」下拉。触发按钮显示当前所在项（如「章节 · KV cache」），`aria-expanded` 同步；点外部、Esc、选中任一项都关闭。窄屏（≤980px）导航换行，不再横向滚动，下拉菜单要夹在视口内。章节视图是「左侧步骤导航（可收缩）+ 中间代码 + 右侧讲解/可视化」；底部只保留上一步/下一步和计数器，步骤点不再放底部。
 - 步骤导航：左侧轨道顶部先是「章节」切换（三章标题 + ①/②/③，当前高亮、完成后打勾；点击切章并保留该章上次所处阶段；折叠时只留 ①②③），然后是四阶段（带完成状态与探索进度），探索阶段下面列出全部步骤（标题、进行中/已完成）；折叠按钮把宽度收到 36px 轨道，状态存 `learnkvc.stepnav`；窄屏（≤980px）默认收起，展开后章节为 3 列、阶段为 4 列（隐藏进度文字、保留完成打勾）、步骤列表限高可滚动。非探索阶段仍显示章节与四阶段，只隐藏步骤列表。
-- 模型工具（模型解剖 / 显存计算器）沿用章节导航的轨道语言（`assets/sectionnav.js`）：200px 左栏（面板底色 + 右边框 + 「小节导航 / 当前 / 总数 / 折叠按钮」）、编号 01…、GPU 函数地图下 6 个二级小节（7.1–7.6）；滚动高亮、点击跳转、换预设/拉滑杆后自动重建；折叠到 36px 只留编号，状态存 `learnkvc.sectionnav`；≤980px 默认收起成顶部条，展开后列表限高滚动。
+- 模型工具（模型解剖 / 显存计算器 / 模型训练）沿用章节导航的轨道语言（`assets/sectionnav.js`）：200px 左栏（面板底色 + 右边框 + 「小节导航 / 当前 / 总数 / 折叠按钮」）、编号 01…、GPU 函数地图下 6 个二级小节（7.1–7.6）；滚动高亮、点击跳转、换预设/拉滑杆后自动重建；折叠到 36px 只留编号，状态存 `learnkvc.sectionnav`；≤980px 默认收起成顶部条，展开后列表限高滚动。
 - 交互优先用「步进 / 滑杆 / 按钮」，不要自动播放惊吓用户；播放到末尾要停止并可重播。
 - 步骤切换要同步：左侧导航高亮 + 代码高亮/自动滚动 + 讲解卡 + 可视化 + 底部计数器 + URL hash。
 - 图表/动画用原生 DOM/SVG/CSS；不做无意义的持续动画。
@@ -132,7 +134,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 
 - **零依赖**：不引 React/Vue、npm 包、CDN、外部字体；只用原生 HTML/CSS/JS。
 - **经典 `<script>`**（不是 ES module），保证 `file://` 直接打开可用；数据用 `window.LK_DATA` / `window.LK_TRACES` 注入，不用 `fetch`。
-- 新页面/新脚本保持顺序加载：`data.js → traces.js → codeview.js → viz/*.js → workshop/anatomy/calc → sectionnav.js → app.js`。
+- 新页面/新脚本保持顺序加载：`data.js → traces.js → codeview.js → viz/*.js → workshop/anatomy/calc/train → sectionnav.js → app.js`。
 - **静态资源带版本号**：`web/index.html` 里 CSS/data/JS 的 URL 都带 `?v=YYYY-MM-DD`。改 `web/assets/**` 或 `web/data/**` 后必须同步更新这个版本号，否则 GitHub Pages 缓存会让新旧 HTML/JS 混用（例如旧 app.js 把无 `data-view` 的下拉触发器当 tab，点出 `#undefined`）。
 - 文案中文、代码标识英文；新加的大段说明写进 `web/DESIGN.md` 或 `web/README.md`，不要只藏在代码注释里。
 
@@ -156,7 +158,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 
 ## 9. 当前状态与路线
 
-- 已完成：P0/P1（KV 章、前测/后测/反馈/学习设定）、P2（Prefix 章）、P3（Paged 章）、P4（显存计算器 + 亮色主题 + 响应式 + 无障碍基础）、P5（根 README 入口 + GitHub Pages workflow）、每章四段式、多次提问并入 Prefix 章、反思与归因合并、三章后的迁移课后作业、模型工具左侧小节导航 + GPU 函数地图。
+- 已完成：P0/P1（KV 章、前测/后测/反馈/学习设定）、P2（Prefix 章）、P3（Paged 章）、P4（显存计算器 + 亮色主题 + 响应式 + 无障碍基础）、P5（根 README 入口 + GitHub Pages workflow）、每章四段式、多次提问并入 Prefix 章、反思与归因合并、三章后的迁移课后作业、模型工具左侧小节导航 + GPU 函数地图 + 模型训练教程（显存账本 / 并行 / 可运行脚本）。
 - 已知缺口（可继续做）：
   - 章节级前测/后测目前是全局一套；如需更细，可给每章 2–3 题并复用 `pedagogy.json` 结构；
   - GitHub Pages 需要在仓库 Settings → Pages 选择 “GitHub Actions” 才会真正部署；

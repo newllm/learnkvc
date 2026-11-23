@@ -1,0 +1,156 @@
+{
+  "kicker": "模型工具 · 训练",
+  "title": "模型训练：一次 step 把钱花在哪",
+  "lead": "推理只要权重 + KV；训练还要梯度、优化器状态和每一层的激活。一次训练 step 的显存通常是推理的 4–10 倍，并行和显存优化的目的就是把这几笔钱拆到更多卡、更多层、更多时间上。",
+  "stepSection": {
+    "title": "1 · 训练 vs 推理：一次 step 的四个动作",
+    "lead": "推理是 forward 一次；训练是 forward 之后还要算 loss、反传梯度、更新参数。每一步都产生需要保留的张量，直到 optimizer step 结束。",
+    "steps": [
+      {
+        "name": "forward",
+        "what": "输入 batch → logits；同时保留每层的中间激活，供反向使用。",
+        "keeps": "激活：每层 attention / MLP 的输入输出（最大的变量）"
+      },
+      {
+        "name": "loss",
+        "what": "logits 与 label 做 cross entropy（或偏好/RL loss），得到一个标量。",
+        "keeps": "很小；但 loss 决定反传的起点"
+      },
+      {
+        "name": "backward",
+        "what": "从 loss 反传，逐层算出每个参数的梯度，同时释放对应激活。",
+        "keeps": "梯度：和参数同尺寸（全部参数各一份）"
+      },
+      {
+        "name": "optimizer",
+        "what": "AdamW 用一阶/二阶矩更新参数；更新完清空梯度。",
+        "keeps": "优化器状态：m、v（fp32），混合精度还有 fp32 master 权重"
+      }
+    ]
+  },
+  "ledgerSection": {
+    "title": "2 · 训练显存账本：权重 / 梯度 / 优化器 / 激活",
+    "lead": "训练显存 = 参数状态（权重 + 梯度 + 优化器）+ 激活 + 临时 workspace。参数状态和 N 成正比，激活和 batch × seq × layers 成正比。",
+    "items": [
+      {
+        "key": "weights",
+        "title": "权重",
+        "formula": "N × 每参数字节",
+        "desc": "BF16 2 B/参数，FP32 4 B/参数。MoE 要按全部 expert 计，不是只算激活的那几个。"
+      },
+      {
+        "key": "grads",
+        "title": "梯度",
+        "formula": "N × 每参数字节",
+        "desc": "每个可训练参数都有一份梯度；和权重同尺寸、同精度（混合精度下常是 fp32 或 bf16）。"
+      },
+      {
+        "key": "optimizer",
+        "title": "优化器状态",
+        "formula": "AdamW：N × (8 + master)",
+        "desc": "m、v 是 fp32 各 4 B；BF16 训练再加 fp32 master 权重 4 B，约 12 B/参数。SGD momentum 只要 4 B。"
+      },
+      {
+        "key": "activations",
+        "title": "激活",
+        "formula": "layers × batch × seq × hidden × ~12 × bytes",
+        "desc": "反向要用，所以 forward 的中间结果不能立刻释放；序列越长、batch 越大、层越多，激活越大。融合 attention 不落 n×n 分数矩阵。"
+      }
+    ],
+    "rules": [
+      "AdamW + BF16 的经验值：参数状态约 16 B/参数（权重 2 + 梯度 2 + 优化器 12）。7B ≈ 113 GiB，30B ≈ 455 GiB，还没算激活。",
+      "激活通常比参数状态小，但长上下文 + 大 batch 时会反超；激活重算、micro-batch、序列并行都是冲它来的。",
+      "推理只留权重和 KV；训练至少多出梯度、优化器状态和激活三笔，所以同一张卡推理能跑、训练不一定能跑。"
+    ],
+    "calcLead": "选模型、精度、并行方式，看每张卡要装多少；公式就在结果下面，可以手算核对。",
+    "calcNote": "估算不含 CUDA context、通信 buffer、碎片和临时 workspace（这里固定预留 2 GiB）。真实框架通常还要多 10–20%，请留余量。"
+  },
+  "parallelSection": {
+    "title": "3 · 并行与省显存：DP / ZeRO / FSDP / TP / PP",
+    "lead": "并行不是「卡多就快」，而是先把哪一笔钱切开：数据并行切 batch，ZeRO/FSDP 切参数状态，TP 切单层矩阵，PP 切层。切得越细，通信越多。",
+    "rows": [
+      {
+        "name": "DP（数据并行）",
+        "shards": "不切模型；每卡一份完整权重，batch 切分。",
+        "comm": "每步 all-reduce 梯度（和参数量同尺寸）。",
+        "when": "模型能单卡放下，只想扩大吞吐；显存不省。"
+      },
+      {
+        "name": "ZeRO-1 / 2 / 3（FSDP）",
+        "shards": "ZeRO-1 切优化器状态；ZeRO-2 再切梯度；ZeRO-3 / FSDP 连权重也切。",
+        "comm": "逐级增加：参数 all-gather / 梯度 reduce-scatter；ZeRO-3 通信最多。",
+        "when": "单卡装不下参数状态时的第一选择；PyTorch 的 FSDP 就是 ZeRO-3 思路。"
+      },
+      {
+        "name": "TP（张量并行）",
+        "shards": "把每层的 QKV / o_proj / MLP 矩阵按列或行切开，每卡算一部分。",
+        "comm": "每层两次 all-reduce（attention 与 MLP 后），延迟敏感。",
+        "when": "单层大到一张卡算不动；通常限制在单机 NVLink 内，TP ≤ 8。"
+      },
+      {
+        "name": "PP（流水线并行）",
+        "shards": "按层切成 stage；每卡只放一段连续的层。",
+        "comm": "stage 之间传激活；有 pipeline bubble（空泡）。",
+        "when": "跨机扩展；层数要能被 stage 整除，micro-batch 要够多才能填满流水线。"
+      },
+      {
+        "name": "激活重算（checkpointing）",
+        "shards": "forward 只存每层输入，反向时重新算中间激活。",
+        "comm": "无额外通信；多约 30% 计算。",
+        "when": "激活是大头时的性价比首选；用计算换显存。"
+      },
+      {
+        "name": "Offload",
+        "shards": "把优化器状态 / 参数换到 CPU（甚至 NVMe）。",
+        "comm": "PCIe 带宽成为瓶颈；训练明显变慢。",
+        "when": "显存差一点、又没有更多卡时的兜底。"
+      }
+    ],
+    "savings": [
+      "梯度累积：把大 global batch 拆成多个 micro-batch，只降激活峰值，不降参数状态；不增加显存里的 batch。",
+      "混合精度：BF16 前向/反向 + FP32 master 权重；激活和权重读写都减半，但优化器状态仍是 fp32。",
+      "序列并行 / context parallel：把长序列切到多卡，专治长上下文激活；和 TP 不同，切的是序列维。",
+      "8-bit 优化器：把 m、v 量化到 8 bit，优化器状态从 8 B 降到 2 B/参数，代价是精度与实现复杂度。"
+    ]
+  },
+  "scriptSection": {
+    "title": "4 · 动手：最小可跑训练脚本",
+    "lead": "example/train_tiny.py 用 2 层、d_model=64 的 TinyGPT 学一个循环序列，CPU 上一分钟内跑完。它把 forward → loss → backward → optimizer step、梯度累积和显存账本都写在同一个文件里。",
+    "file": "example/train_tiny.py",
+    "run": "python3 example/train_tiny.py --steps 200 --device cpu",
+    "notes": [
+      "看 loss：初始约 3.4（ln 32），几十步后应明显下降；不降就看学习率、mask 和数据。",
+      "看梯度累积：--accum 4 表示 4 个 micro-batch 才更新一次；global batch = batch × accum。",
+      "看账本：脚本打印 weights / grads / optimizer / activations 的粗算；改 --batch 或 --seq 只影响激活。",
+      "这份脚本刻意没有 AMP、checkpointing、FSDP；它对应的是「单卡、能跑通」的最小闭环。"
+    ]
+  },
+  "checkSection": {
+    "title": "5 · 检查清单与自问",
+    "lead": "能回答下面四个问题，就说明你不是在背名词，而是知道显存和并行各自在切什么。",
+    "checklist": [
+      "先看模型能不能单卡放下：权重 + 梯度 + 优化器状态是否超过显存？超了先上 ZeRO/FSDP，而不是加 TP。",
+      "再看激活：seq × micro-batch 是否让激活成为最大项？是就开激活重算或减小 micro-batch。",
+      "最后看通信：TP 限制在单机 NVLink；PP 要看层数和 micro-batch 能否填满流水线；ZeRO-3 的 all-gather 最重。",
+      "训练精度：BF16 为主，FP32 master + AdamW；FP16 要 loss scaling，FP8 要框架/硬件支持。"
+    ],
+    "questions": [
+      {
+        "q": "为什么训练显存不是推理的 2 倍，而是常常 4–10 倍？",
+        "a": "推理只有权重 + KV；训练还要梯度（1× 参数）、优化器状态（AdamW 约 3× 参数）、以及反向要用的激活。参数状态一项就约 16 B/参数，是 BF16 权重的 8 倍。"
+      },
+      {
+        "q": "ZeRO-1、ZeRO-2、ZeRO-3 各切什么？为什么通信越来越多？",
+        "a": "ZeRO-1 切优化器状态，ZeRO-2 再切梯度，ZeRO-3 / FSDP 连参数也切。切得越多，前向要 all-gather 参数、反向要 reduce-scatter 梯度，通信量和频率都上升。"
+      },
+      {
+        "q": "什么情况下用 TP，什么情况下用 PP？",
+        "a": "单层矩阵大到一张卡放不下/算不动时用 TP，通常限制在单机 NVLink（TP ≤ 8）；要跨机扩展、层数多时用 PP。TP 通信频繁但延迟低，PP 通信少但有流水线空泡。"
+      },
+      {
+        "q": "激活重算为什么能省显存？代价是什么？",
+        "a": "forward 只存每层输入，反向时重算中间激活，省掉大部分激活存储；代价是多一次 forward 计算（约 +30%），所以是拿计算换显存。"
+      }
+    ]
+  }
+}
