@@ -212,7 +212,17 @@
       '<div class="train-code-head"><span>' + esc(data.scriptSection.file) + "</span><span>PyTorch · CPU / GPU</span></div>" +
       '<div class="train-code" id="train-code"></div>' +
 
-      /* 5. check */
+      /* 5. simulation code */
+      '<h2 class="sec-title">' + esc(data.codeSection.title) + "</h2>" +
+      '<p class="page-lead">' + esc(data.codeSection.lead) + "</p>" +
+      '<pre class="train-run"><code>' + esc(data.codeSection.run) + "</code></pre>" +
+      '<ul class="train-rules">' + data.codeSection.notes.map((n) => "<li>" + esc(n) + "</li>").join("") + "</ul>" +
+      '<div class="train-code-head"><span>' + esc(data.codeSection.file) + "</span><span>纯 Python · 可运行</span></div>" +
+      '<div class="train-code" id="train-sim-code"></div>' +
+      '<h3 class="sec-sub">示例输出</h3>' +
+      '<pre class="train-run"><code>' + esc(data.simOutput) + "</code></pre>" +
+
+      /* 6. check */
       '<h2 class="sec-title">' + esc(data.checkSection.title) + "</h2>" +
       '<p class="page-lead">' + esc(data.checkSection.lead) + "</p>" +
       '<ul class="train-rules train-checklist">' + data.checkSection.checklist.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>" +
@@ -222,6 +232,8 @@
 
     const codeEl = el.querySelector("#train-code");
     if (codeEl && LK.codeview && data.code) LK.codeview.mount(codeEl, data.code.lines);
+    const simCodeEl = el.querySelector("#train-sim-code");
+    if (simCodeEl && LK.codeview && data.simCode) LK.codeview.mount(simCodeEl, data.simCode.lines);
 
     el.querySelectorAll("[data-field]").forEach((inp) => {
       inp.addEventListener("change", () => {

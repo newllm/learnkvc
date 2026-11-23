@@ -185,8 +185,19 @@
     ],
     "note": "工业实现：DistServe / Splitwise 提出 PD 分离；vLLM、SGLang、TensorRT-LLM 都有 disaggregated prefill 实验路径；KV 传输常用 NIXL、Mooncake、DeepEP 等 RDMA 库。"
   },
+  "codeSection": {
+    "title": "6 · 仿真代码：ring 与 PD 用 Python 跑一遍",
+    "lead": "这一节把前面的公式落成一段纯 Python：不依赖 NCCL、GPU 或 torch，直接打印 ring 的每一步、每卡流量、bus bandwidth，以及 PD 的 KV 传输与 TTFT。代码在 example/net_sim.py，可直接运行。",
+    "file": "example/net_sim.py",
+    "run": "python3 example/net_sim.py",
+    "notes": [
+      "ring 的步数、每卡流量和时间都由 S、N、带宽、延迟算出；改参数就能看到 ring 与 tree 的交叉点。",
+      "PD 部分把 KV 传输拆成「延迟 + KV/带宽」，再叠加 prefill 与首个 decode step，得到 TTFT。",
+      "脚本末尾有断言：步数、每卡字节、PD 随 prompt 的增长关系，跑通即说明账本自洽。"
+    ]
+  },
   "check": {
-    "title": "6 · 网络账本与排查清单",
+    "title": "7 · 网络账本与排查清单",
     "lead": "先确认「有没有走 RDMA」，再确认「带宽/延迟够不够」，最后才谈 PD 分离。下面每一条都能落到一条命令或一个指标。",
     "checklist": [
       "集合通信：NCCL_DEBUG=INFO 看 transport；NET/IB 或 NET/RoCE 才对，NET/Socket 先修网络。",
@@ -215,7 +226,7 @@
       }
     ]
   },
-  "lesson":   {
+  "lesson": {
     "think": [
       {
         "q": "decode 时 TP 的 all-reduce 消息很小，为什么不能忽略？",

@@ -84,8 +84,8 @@
   const DOC_CHAPTERS = ["net", "train"];
   const ALL_CHAPTERS = CHAPTERS.concat(DOC_CHAPTERS);
   const DOC_SECTIONS = {
-    net: ["why", "nccl", "sim", "roce", "pd", "check"],
-    train: ["stepSection", "ledgerSection", "parallelSection", "scriptSection", "checkSection"],
+    net: ["why", "nccl", "sim", "roce", "pd", "codeSection", "check"],
+    train: ["stepSection", "ledgerSection", "parallelSection", "scriptSection", "codeSection", "checkSection"],
   };
   const CH_NUMS = ["①", "②", "③"];
   const CH_SHORT = ["KV cache", "Prefix cache", "PagedAttention"];

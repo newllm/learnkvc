@@ -125,8 +125,19 @@
       "这份脚本刻意没有 AMP、checkpointing、FSDP；它对应的是「单卡、能跑通」的最小闭环。"
     ]
   },
+  "codeSection": {
+    "title": "5 · 仿真代码：把训练账本跑一遍",
+    "lead": "不用真的分配 80 GB 张量：这段纯 Python 把权重、梯度、优化器状态、激活和 ZeRO/TP/PP/激活重算写成账本，打印每个场景的每卡峰值与是否放得下。代码在 example/train_sim.py，可直接运行。",
+    "file": "example/train_sim.py",
+    "run": "python3 example/train_sim.py",
+    "notes": [
+      "ZeRO-1/2/3 分别切优化器、梯度、参数；TP/PP 切模型，但 TP 加 all-reduce、PP 有气泡。",
+      "激活重算把激活降为约 0.35 倍，用约 30% 额外计算换显存。",
+      "脚本末尾断言「切得越多峰值越低」和 ZeRO-3 能放下、ZeRO-0 放不下，避免只改展示数字。"
+    ]
+  },
   "checkSection": {
-    "title": "5 · 检查清单与自问",
+    "title": "6 · 检查清单与自问",
     "lead": "能回答下面四个问题，就说明你不是在背名词，而是知道显存和并行各自在切什么。",
     "checklist": [
       "先看模型能不能单卡放下：权重 + 梯度 + 优化器状态是否超过显存？超了先上 ZeRO/FSDP，而不是加 TP。",
@@ -153,7 +164,7 @@
       }
     ]
   },
-  "lesson":   {
+  "lesson": {
     "think": [
       {
         "q": "AdamW + BF16 训练，参数状态大约占多少 B/参数？",

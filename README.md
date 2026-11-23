@@ -1,6 +1,6 @@
 # learnkvc
 
-用三份最小可运行的示例代码，把 LLM 推理里的 **KV Cache** 从「单请求的重算与复用」讲到「多请求的共享块」，再到「PagedAttention 的块表与显存管理」；另附用 Docker 跑 Ollama / vLLM、在 macOS 上用 Ollama / llama.cpp 原生跑 Llama 的实操示例。
+用三份最小可运行的示例代码，把 LLM 推理里的 **KV Cache** 从「单请求的重算与复用」讲到「多请求的共享块」，再到「PagedAttention 的块表与显存管理」；另附训练显存与推理网络的纯 Python 仿真，以及用 Docker 跑 Ollama / vLLM、在 macOS 上用 Ollama / llama.cpp 原生跑 Llama 的实操示例。
 
 没有模型权重：`kv_cache.py` 用一个 2 层玩具模型把「无 cache 重算」和「KV cache 增量」跑在同一份代码里（需要 PyTorch），`prefix_cache_demo.py` 用纯标准库模拟服务端的块级前缀共享。每个结论都有可执行的代码和断言。
 
@@ -56,7 +56,9 @@
 │   ├── PREFIX_CACHE_READING.md     # 逐段阅读导图
 │   ├── paged_attention.py          # 块表 + PagedAttention：逻辑位置 → 物理块
 │   ├── PAGED_ATTENTION_READING.md  # 逐段阅读导图
-│   └── train_tiny.py               # 最小 PyTorch 训练：step / 梯度累积 / 显存账本
+│   ├── train_tiny.py               # 最小 PyTorch 训练：step / 梯度累积 / 显存账本
+│   ├── train_sim.py                # 纯 Python 训练显存仿真：ZeRO/TP/PP/激活重算
+│   └── net_sim.py                  # 纯 Python 网络仿真：NCCL ring + PD KV 传输
 ├── macos/
 │   ├── ollama/                     # 在 macOS 上原生跑 Ollama（Metal GPU）的示例
 │   │   ├── run.sh                  # 检查/启动 serve + 拉模型 + 调用一次 API

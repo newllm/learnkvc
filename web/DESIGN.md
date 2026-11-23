@@ -125,24 +125,26 @@
 
 ## 3.7 模型训练（四段式章节）
 
-模型训练是四段式章节（`#train`）：请回答 3 题 → 探索 5 节 → 反思 4 题 + 3 张归因卡 → 总结；探索阶段没有代码 pane（训练脚本本身就是内容的一部分），左栏列出 5 个教程小节并随滚动高亮。模型解剖/显存计算器作为配套工具收在「模型训练」下拉里。主线是「一次 step 的四笔钱」：
+模型训练是四段式章节（`#train`）：请回答 3 题 → 探索 6 节（含 `example/train_sim.py` 仿真代码）→ 反思 4 题 + 3 张归因卡 → 总结；探索阶段没有代码 pane（训练脚本本身就是内容的一部分），左栏列出 6 个教程小节并随滚动高亮。模型解剖/显存计算器作为配套工具收在「模型训练」下拉里。主线是「一次 step 的四笔钱」：
 
 - **step**：forward → loss → backward → optimizer；forward 留激活，backward 产梯度，optimizer 维护 m/v + master。
 - **显存账本**：权重 `N × bytes`、梯度 `N × bytes`、AdamW 状态 `N × (8 + master)`、激活 `layers × batch × seq × hidden × 12 × bytes`；经验值 AdamW+BF16 约 16 B/参数。
 - **交互计算器**：模型 / 精度 / 优化器 / ZeRO 0–3 / DP×TP×PP / 序列 / micro-batch / 激活重算 / offload → 每卡峰值、是否放得下、最大 micro-batch；公式在结果下方可手算核对。
 - **并行**：DP 不省显存；ZeRO-1/2/3 逐级切优化器/梯度/参数（FSDP≈ZeRO-3）；TP 切单层矩阵、限 NVLink；PP 切层、有空泡；激活重算用 30% 计算换显存；offload 走 PCIe。
 - **可运行脚本**：`example/train_tiny.py`（2 层 TinyGPT、合成循环序列、CPU 一分钟内），演示 forward/loss/backward/step、梯度累积和账本打印；`build.py` 只读源码，不执行。
+- **仿真代码**：`example/train_sim.py` 纯标准库模拟每卡账本，打印 DP / ZeRO-1/2/3 / TP / PP / 激活重算下的峰值；页面内嵌源码与 build 期运行出的真实输出。
 
 
 ## 3.8 推理网络（四段式章节）
 
-推理网络是四段式章节（`#net`）：左侧章节导航有请回答 / 探索阅读 / 反思与归因 / 总结归纳；探索阶段保留 6 个教程小节，没有代码 pane，点击小节滚动到对应 `h2`。6 个小节说明「网络在推理里到底做什么」：
+推理网络是四段式章节（`#net`）：左侧章节导航有请回答 / 探索阅读 / 反思与归因 / 总结归纳；探索阶段保留 7 个教程小节（含 `example/net_sim.py` 仿真代码），没有代码 pane，点击小节滚动到对应 `h2`。7 个小节说明「网络在推理里到底做什么」：
 
 - **为什么需要**：TP 每层 all-reduce、MoE all-to-all、PD 的 KV 迁移、prefix cache 块传输；区分「每层小集合通信」与「每请求 KV 迁移」。
 - **NCCL**：collectives 语义/流量/步数，ring vs tree vs NVLS/SHARP，NVLink / IB / RoCE / Socket 传输对比。
 - **ring 模拟器**：all-reduce / all-gather / reduce-scatter / all-to-all / send-recv，rank 数、消息大小、带宽、延迟可调；逐步显示每个 rank 发哪个 chunk，输出步数、每卡流量、网络总流量、ring 时间、bus bandwidth、tree 对照。
 - **RoCE**：RDMA/GPUDirect、RoCEv2 GID、PFC/ECN/DCQCN、MTU、rail-optimized，NCCL 环境变量表、验证命令与常见坑。
 - **PD 分离**：router → prefill → KV transfer → decode 的流程；KV 传输 = KV 大小/带宽 + 延迟；计算 TTFT、TPOT、生成总时长、链路请求容量；对比同机不迁移。
+- **仿真代码**：`example/net_sim.py` 纯标准库打印 ring 的步数/每卡流量/时间、all-reduce 调度表与 PD 的 KV 传输/TTFT；页面内嵌源码与真实输出。
 - **检查清单**：NCCL_DEBUG、all_reduce_perf、show_gids、ibv_devinfo、PD 三段计时。
 
 ### 3.9 文档型章节（net / train）
@@ -150,8 +152,9 @@
 `net`/`train` 不套代码章节的三栏 DOM，而是 `.chapter.doc-chapter` 两栏：左侧章节导航（四阶段 + 教程小节），右侧 `.doc-main > .workshop` 整篇教程。
 
 - 四阶段仍复用 `workshop.js` 的 `renderStageThink/Reflect/Summary`，lesson 存在 `net.json`/`train.json` 的 `lesson` 字段，`build.py` 合并进 `data.lessons`。
-- 探索阶段渲染整篇教程；左栏步骤来自教程的 `h2.sec-title`（6 / 5 节），点击滚到对应 `h2`，滚动时用 `currentDocIndex` 同步 active、计数和 `exploreMax`；URL 用 `#net/N` / `#train/N` 记录当前小节。
+- 探索阶段渲染整篇教程；左栏步骤来自教程的 `h2.sec-title`（7 / 6 节），点击滚到对应 `h2`，滚动时用 `currentDocIndex` 同步 active、计数和 `exploreMax`；URL 用 `#net/N` / `#train/N` 记录当前小节。
 - 没有代码 pane / 可视化 pane / 底部 timeline；切换 stage 时右侧内容整体替换，和 KV 章的四段式节奏一致。
+- 两章的「仿真代码」小节把 `example/net_sim.py` / `example/train_sim.py` 用 codeview 嵌入，并内联 `build.py` 运行出的真实 stdout；纯标准库，不依赖 NCCL / torch。
 - `stop`：离开 net 或切出 explore 时停止 NCCL 模拟播放。
 
 ## 4. 页面布局

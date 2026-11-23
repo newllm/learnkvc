@@ -17,6 +17,7 @@ import ast
 import html
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -302,9 +303,30 @@ def build_anatomy() -> dict:
     }
 
 
+def run_example(path: Path) -> str:
+    """Run a pure-stdlib example and return its stdout (for inline output)."""
+    proc = subprocess.run(
+        [sys.executable, str(path)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"{path} failed ({proc.returncode}):\n{proc.stderr}")
+    return proc.stdout.strip()
+
+
 def build_net() -> dict:
     here = Path(__file__).resolve().parent
-    return json.loads((here / "net.json").read_text(encoding="utf-8"))
+    spec = json.loads((here / "net.json").read_text(encoding="utf-8"))
+    sim_path = ROOT / "example" / "net_sim.py"
+    spec["simCode"] = {
+        "file": "example/net_sim.py",
+        "lines": sim_path.read_text(encoding="utf-8").split("\n"),
+    }
+    spec["simOutput"] = run_example(sim_path)
+    return spec
 
 
 def build_train() -> dict:
@@ -315,6 +337,12 @@ def build_train() -> dict:
         "file": "example/train_tiny.py",
         "lines": code_path.read_text(encoding="utf-8").split("\n"),
     }
+    sim_path = ROOT / "example" / "train_sim.py"
+    spec["simCode"] = {
+        "file": "example/train_sim.py",
+        "lines": sim_path.read_text(encoding="utf-8").split("\n"),
+    }
+    spec["simOutput"] = run_example(sim_path)
     return spec
 
 

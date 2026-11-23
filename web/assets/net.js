@@ -100,6 +100,15 @@
       '<ul class="train-rules">' + data.pd.tradeoffs.map((t) => "<li>" + esc(t) + "</li>").join("") + "</ul>" +
       '<p class="note">' + esc(data.pd.note) + "</p>" +
 
+      '<h2 class="sec-title">' + esc(data.codeSection.title) + "</h2>" +
+      '<p class="page-lead">' + esc(data.codeSection.lead) + "</p>" +
+      '<pre class="train-run"><code>' + esc(data.codeSection.run) + "</code></pre>" +
+      '<ul class="train-rules">' + data.codeSection.notes.map((n) => "<li>" + esc(n) + "</li>").join("") + "</ul>" +
+      '<div class="train-code-head"><span>' + esc(data.codeSection.file) + "</span><span>纯 Python · 可运行</span></div>" +
+      '<div class="train-code" id="net-sim-code"></div>' +
+      '<h3 class="sec-sub">示例输出</h3>' +
+      '<pre class="train-run"><code>' + esc(data.simOutput) + "</code></pre>" +
+
       section(data.check, function () {
         return '<ul class="train-rules train-checklist">' + data.check.checklist.map((c) => "<li>" + esc(c) + "</li>").join("") + "</ul>" +
           data.check.questions.map((q) => details(q.q, q.a)).join("");
@@ -107,6 +116,8 @@
 
     mountSim(el.querySelector("#nccl-sim"), data);
     mountPd(el.querySelector("#pd-sim"), data, world);
+    const simCodeEl = el.querySelector("#net-sim-code");
+    if (simCodeEl && LK.codeview && data.simCode) LK.codeview.mount(simCodeEl, data.simCode.lines);
   };
 
   /* --------------------------------------------------------------- sim */

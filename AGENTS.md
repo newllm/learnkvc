@@ -4,12 +4,14 @@
 
 ## 1. 仓库是什么
 
-`learnkvc` 用三份 KV cache 示例 + 一份训练脚本讲「推理与训练」，网页把 KV cache、推理网络、模型训练组织成三个学习章节：
+`learnkvc` 用三份 KV cache 示例 + 最小训练脚本 + 两份纯 Python 仿真讲「推理与训练」，网页把 KV cache、推理网络、模型训练组织成三个学习章节：
 
 - `example/kv_cache.py`：单请求内部的重算 vs 缓存；
 - `example/prefix_cache_demo.py`：多请求共享前缀（块池、哈希链、引用计数、LRU）；
 - `example/paged_attention.py`：PagedAttention 的 block table 与 gather；
 - `example/train_tiny.py`：最小 PyTorch 训练循环（forward/loss/backward/optimizer、梯度累积、显存账本）；需要 torch，`build.py` 只读源码不执行。
+- `example/net_sim.py`：纯 Python 模拟 NCCL ring 与 PD KV 传输，打印步数/流量/时间/TTFT。
+- `example/train_sim.py`：纯 Python 模拟训练显存账本（DP/ZeRO/TP/PP/激活重算），打印每卡峰值。
 
 `web/` 是零依赖静态交互页，**教学主线是「思考」而不是「读文档」**：
 
@@ -47,11 +49,11 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 | 步骤映射 | `web/tools/steps.json`、`steps.prefix.json`、`steps.paged.json` |
 | 题目/前测/后测/归因/反思 | `web/tools/pedagogy.json`；`net`/`train` 的 lesson 随 `net.json`/`train.json`，`build.py` 合并进 `data.lessons` |
 | 模型预设/流水线/GPU 档位/模型包/运行时 | `web/tools/anatomy.json` |
-| 训练教程 / 训练计算器 / 章节 lesson | `web/tools/train.json` + `example/train_tiny.py` |
-| 推理网络 / NCCL 模拟 / PD 分离 / 章节 lesson | `web/tools/net.json` |
+| 训练教程 / 训练计算器 / 章节 lesson | `web/tools/train.json` + `example/train_tiny.py` + `example/train_sim.py` |
+| 推理网络 / NCCL 模拟 / PD 分离 / 章节 lesson | `web/tools/net.json` + `example/net_sim.py` |
 | 运行状态 | `web/tools/collect_traces.py` |
 
-- 生成物 `web/data/data.js`、`web/data/traces.js` **提交进仓库**，保证双击可用；**禁止手改**，改源文件后跑 `build.py`。
+- 生成物 `web/data/data.js`、`web/data/traces.js` **提交进仓库**，保证双击可用；**禁止手改**，改源文件后跑 `build.py`。`build.py` 会运行 `net_sim.py` / `train_sim.py`，把真实 stdout 注入 `simOutput`。
 - `build.py` 对模型规模有断言（30.5B / 3.35B / 96 KiB、7B 56 KiB、32B 256 KiB）；prefix 由真实 demo 运行、paged 由纯记账生成，没有硬断言。改数字时要同步核对关键值（prefix 命中率 52% / 18% / 33%，paged 9 个快照、seq-c 复用 b2/b3），不能只改展示。
 - 代码引用用符号：`function:generate`、`class:PrefixCache.acquire`、`docstring:module`；section 用**标题原文**匹配。
 - 示例文件必须保持可独立运行（`python3 example/kv_cache.py`），不要引入只服务于网页的改动。
@@ -67,10 +69,10 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
    - 总结归纳：参考总结（概要 + 详细）+ 用户自己的总结（textarea）+「完成本章」按钮。
    - 章节导航统一在左侧轨道（可收缩）：KV 三章顶部是「章节」切换（三章标题 + ①②③，当前高亮、完成打勾，点击切章并保留各章阶段）；`net`/`train` 是文档型章节，不显示三章切换。下面是四阶段（请回答/探索阅读/反思与归因/总结归纳），探索阶段下面列出步骤（KV 是代码步骤，`net`/`train` 是教程小节）；非探索阶段仍显示章节（KV）与四阶段，隐藏步骤列表、代码 pane、可视化、底部控制条；
    - **多次提问不单独成页**：作为 Prefix 章「探索阅读」中的一个步骤（内嵌多轮/多请求模拟器）；
-   - `net`/`train` 的请回答/反思/总结内容在各自主 JSON 的 `lesson` 字段，构建时合并；探索阶段保留 NCCL 模拟器、PD 计算器、训练计算器和训练代码；
+   - `net`/`train` 的请回答/反思/总结内容在各自主 JSON 的 `lesson` 字段，构建时合并；探索阶段保留 NCCL 模拟器、PD 计算器、训练计算器，以及 `example/net_sim.py` / `example/train_sim.py` 仿真代码与 build 期输出；
    - **三层归因不单独成页**：并入每章「反思与归因」阶段；「总结归纳」只保留参考总结、用户总结与完成本章；跨章综合在课后作业的对照矩阵。
 4. **后测**：6 题同概念换问法、评分；提交后生成反馈。
-5. **反馈**：前测/后测分数、变化、按概念对照（提升/维持/退步/仍需复习）、学习完成度（步骤/视图）、错题回看按钮；6 个概念覆盖 KV 三章 + 模型解剖（参数/结构/模型包/运行时），学习视图覆盖 7 个入口；自测总步数为三章 45 + 推理网络 6 + 模型训练 5 = 56。
+5. **反馈**：前测/后测分数、变化、按概念对照（提升/维持/退步/仍需复习）、学习完成度（步骤/视图）、错题回看按钮；6 个概念覆盖 KV 三章 + 模型解剖（参数/结构/模型包/运行时），学习视图覆盖 7 个入口；自测总步数为三章 45 + 推理网络 7 + 模型训练 6 = 58。
 6. **课后作业**：KV 三章「总结归纳」全部完成后解锁（`net`/`train` 的总结不阻塞作业）；内容是迁移到其他领域（CPU cache / DB buffer pool / CDN / Git packfile / 浏览器缓存任选），含三章对照矩阵 + 模型解剖对照矩阵（参数/结构/模型包/运行时）、6 道题（迁移 / KV 计算 / TTL 设计 / 自由类比 / 模型包体检 / 运行时账本）、参考答案与提交记录。未完成时显示锁定的章节清单和进度。
 7. **问题两层**：每道题必须有 `summary`（一句话「考什么」）和 `detail`（可展开的「背景 / 怎么想」，不泄露答案）。
 8. **总结两层**：反馈页总结必须是 `brief`（一句话） + `detail`（详细描述）可折叠；用户先写自己的总结，再点开对照。
@@ -163,7 +165,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 
 ## 9. 当前状态与路线
 
-- 已完成：P0/P1（KV 章、前测/后测/反馈/学习设定）、P2（Prefix 章）、P3（Paged 章）、P4（显存计算器 + 亮色主题 + 响应式 + 无障碍基础）、P5（根 README 入口 + GitHub Pages workflow）、每章四段式、多次提问并入 Prefix 章、反思与归因合并、三章后的迁移课后作业、GPU 函数地图、模型训练与推理网络的四段式章节（NCCL ring 模拟 / RoCE / PD 分离计算器 / 训练计算器）；模型解剖与显存计算器归入「模型训练」菜单。
+- 已完成：P0/P1（KV 章、前测/后测/反馈/学习设定）、P2（Prefix 章）、P3（Paged 章）、P4（显存计算器 + 亮色主题 + 响应式 + 无障碍基础）、P5（根 README 入口 + GitHub Pages workflow）、每章四段式、多次提问并入 Prefix 章、反思与归因合并、三章后的迁移课后作业、GPU 函数地图、模型训练与推理网络的四段式章节（NCCL ring 模拟 / RoCE / PD 分离计算器 / 训练计算器 / `net_sim.py` / `train_sim.py` 仿真代码）；模型解剖与显存计算器归入「模型训练」菜单。
 - 已知缺口（可继续做）：
   - 章节级前测/后测目前是全局一套；如需更细，可给每章 2–3 题并复用 `pedagogy.json` 结构；
   - GitHub Pages 需要在仓库 Settings → Pages 选择 “GitHub Actions” 才会真正部署；
