@@ -302,6 +302,11 @@ def build_anatomy() -> dict:
     }
 
 
+def build_net() -> dict:
+    here = Path(__file__).resolve().parent
+    return json.loads((here / "net.json").read_text(encoding="utf-8"))
+
+
 def build_train() -> dict:
     here = Path(__file__).resolve().parent
     spec = json.loads((here / "train.json").read_text(encoding="utf-8"))
@@ -403,6 +408,7 @@ def main() -> None:
         "homework": pedagogy["homework"],
         "anatomy": build_anatomy(),
         "train": build_train(),
+        "net": build_net(),
     }
     (DATA / "data.js").write_text(
         "window.LK_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n", encoding="utf-8"

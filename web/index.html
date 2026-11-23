@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>learnkvc · 思考式阅读器</title>
-<link rel="stylesheet" href="assets/style.css?v=2026-11-23-2">
+<link rel="stylesheet" href="assets/style.css?v=2026-11-23-3">
 </head>
 <body data-view="think">
 <a class="skip" href="#main">跳到正文</a>
@@ -51,6 +51,10 @@
         <button type="button" role="menuitem" data-view="train" data-short="模型训练" aria-current="false">
           <span class="nav-item-title">模型训练</span>
           <span class="nav-item-sub">显存账本 / 并行 / 最小训练脚本</span>
+        </button>
+        <button type="button" role="menuitem" data-view="net" data-short="推理网络" aria-current="false">
+          <span class="nav-item-title">推理网络</span>
+          <span class="nav-item-sub">NCCL / RoCE / PD 分离</span>
         </button>
       </div>
     </div>
@@ -162,6 +166,14 @@
     </div>
   </section>
 
+  <!-- 4d. 推理网络 -->
+  <section class="view scrollable" id="view-net">
+    <div class="tool-layout">
+      <aside class="tool-toc" id="toc-net" aria-label="推理网络小节导航"></aside>
+      <div class="tool-main"><div class="workshop" id="net"></div></div>
+    </div>
+  </section>
+
   <!-- 5. 学习反馈 -->
   <section class="view scrollable" id="view-feedback">
     <div class="workshop" id="feedback"></div>
@@ -186,17 +198,18 @@
 </noscript>
 
 <!-- bump ?v= below whenever web/assets or web/data change (GitHub Pages caches assets) -->
-<script src="data/data.js?v=2026-11-23-2"></script>
-<script src="data/traces.js?v=2026-11-23-2"></script>
-<script src="assets/codeview.js?v=2026-11-23-2"></script>
-<script src="assets/viz/kv.js?v=2026-11-23-2"></script>
-<script src="assets/viz/prefix.js?v=2026-11-23-2"></script>
-<script src="assets/viz/paged.js?v=2026-11-23-2"></script>
-<script src="assets/workshop.js?v=2026-11-23-2"></script>
-<script src="assets/anatomy.js?v=2026-11-23-2"></script>
-<script src="assets/calc.js?v=2026-11-23-2"></script>
-<script src="assets/train.js?v=2026-11-23-2"></script>
-<script src="assets/sectionnav.js?v=2026-11-23-2"></script>
-<script src="assets/app.js?v=2026-11-23-2"></script>
+<script src="data/data.js?v=2026-11-23-3"></script>
+<script src="data/traces.js?v=2026-11-23-3"></script>
+<script src="assets/codeview.js?v=2026-11-23-3"></script>
+<script src="assets/viz/kv.js?v=2026-11-23-3"></script>
+<script src="assets/viz/prefix.js?v=2026-11-23-3"></script>
+<script src="assets/viz/paged.js?v=2026-11-23-3"></script>
+<script src="assets/workshop.js?v=2026-11-23-3"></script>
+<script src="assets/anatomy.js?v=2026-11-23-3"></script>
+<script src="assets/calc.js?v=2026-11-23-3"></script>
+<script src="assets/train.js?v=2026-11-23-3"></script>
+<script src="assets/net.js?v=2026-11-23-3"></script>
+<script src="assets/sectionnav.js?v=2026-11-23-3"></script>
+<script src="assets/app.js?v=2026-11-23-3"></script>
 </body>
 </html>

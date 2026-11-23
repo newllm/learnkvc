@@ -12,7 +12,7 @@
 
   const kv = D.kv;
   const MAX_GEN = TR.generated.length;
-  const VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "calc", "train", "feedback", "homework"];
+  const VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "calc", "train", "net", "feedback", "homework"];
   const state = { view: "think", step: 0, genStep: MAX_GEN, playing: false, timer: null };
 
   const $ = (sel) => document.querySelector(sel);
@@ -24,6 +24,7 @@
     anatomy: $("#view-anatomy"),
     calc: $("#view-calc"),
     train: $("#view-train"),
+    net: $("#view-net"),
     feedback: $("#view-feedback"),
     homework: $("#view-homework"),
     tabs: Array.from(document.querySelectorAll("#tabs [data-view]")),
@@ -49,6 +50,7 @@
     anatomyBody: $("#anatomy"),
     calcBody: $("#calc"),
     trainBody: $("#train"),
+    netBody: $("#net"),
     feedbackBody: $("#feedback"),
     ovWhy: $("#ov-why"),
   };
@@ -786,6 +788,7 @@
 
   function setView(view) {
     if (!VIEWS.includes(view)) view = "think";
+    if (LK.net && LK.net.stop) LK.net.stop();
     if (state.playing) stopPlay(false);
     state.view = view;
     document.body.dataset.view = view;
@@ -824,6 +827,11 @@
       });
     } else if (view === "train") {
       LK.train.render(el.trainBody, D.train, {
+        presets: D.anatomy.presets,
+        gpus: D.anatomy.context.gpus,
+      });
+    } else if (view === "net") {
+      LK.net.render(el.netBody, D.net, {
         presets: D.anatomy.presets,
         gpus: D.anatomy.context.gpus,
       });
@@ -1037,6 +1045,7 @@
     LK.sectionnav.mount($("#toc-anatomy"), el.anatomyBody);
     LK.sectionnav.mount($("#toc-calc"), el.calcBody);
     LK.sectionnav.mount($("#toc-train"), el.trainBody);
+    LK.sectionnav.mount($("#toc-net"), el.netBody);
   }
   codeView = LK.codeview.mount(el.code, kv.lines);
   prefixCode = LK.codeview.mount(el.prefixCode, LK_DATA.prefix.lines);

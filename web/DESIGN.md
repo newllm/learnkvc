@@ -43,6 +43,7 @@
 | 每章「反思与归因」内嵌归因 | 3 张卡分到「模型 / GPU / 引擎」，提交后才能完成本阶段 | `pedagogy.json` |
 | ④ 模型解剖 | 模型组成、参数/维度/层数、参数如何参与 token 生成、GPU 加载、kernel 表 | `anatomy.json` + 公式 |
 | ④b 模型训练 | 训练 step、显存账本、并行/省显存、最小训练脚本 + 每卡显存计算器 | `train.json` + `train_tiny.py` |
+| ④c 推理网络 | NCCL collectives/ring 模拟、RoCE/RDMA、PD 分离 + KV 传输计算器 | `net.json` + `net.js` |
 | P2 / P3（规划） | Prefix cache、PagedAttention 沿用同一套「请回答 → 证据」结构 | 后续 |
 
 总览不再是独立页面：`README.md` 的「为什么需要 KV Cache」收进「请回答」页的折叠区，作为忍不住想看结论时的证据。
@@ -133,6 +134,17 @@
 - **可运行脚本**：`example/train_tiny.py`（2 层 TinyGPT、合成循环序列、CPU 一分钟内），演示 forward/loss/backward/step、梯度累积和账本打印；`build.py` 只读源码，不执行。
 
 
+## 3.8 推理网络（v2.9）
+
+推理网络页用 6 个小节说明「网络在推理里到底做什么」：
+
+- **为什么需要**：TP 每层 all-reduce、MoE all-to-all、PD 的 KV 迁移、prefix cache 块传输；区分「每层小集合通信」与「每请求 KV 迁移」。
+- **NCCL**：collectives 语义/流量/步数，ring vs tree vs NVLS/SHARP，NVLink / IB / RoCE / Socket 传输对比。
+- **ring 模拟器**：all-reduce / all-gather / reduce-scatter / all-to-all / send-recv，rank 数、消息大小、带宽、延迟可调；逐步显示每个 rank 发哪个 chunk，输出步数、每卡流量、网络总流量、ring 时间、bus bandwidth、tree 对照。
+- **RoCE**：RDMA/GPUDirect、RoCEv2 GID、PFC/ECN/DCQCN、MTU、rail-optimized，NCCL 环境变量表、验证命令与常见坑。
+- **PD 分离**：router → prefill → KV transfer → decode 的流程；KV 传输 = KV 大小/带宽 + 延迟；计算 TTFT、TPOT、生成总时长、链路请求容量；对比同机不迁移。
+- **检查清单**：NCCL_DEBUG、all_reduce_perf、show_gids、ibv_devinfo、PD 三段计时。
+
 ## 4. 页面布局
 
 ```
@@ -158,7 +170,7 @@
 
 移动端（< 980px）：左侧导航默认收起成 38px 轨道；展开后章节排成 3 列、四阶段排成 4 列（隐藏进度文字、保留完成打勾），步骤列表限高滚动；代码区固定 42vh，可视化与讲解上下堆叠，底部保留前后步与计数器。
 
-模型工具（模型解剖 / 显存计算器 / 模型训练）：桌面是 200px 小节导航 + 正文两栏，导航 sticky 且可折叠到 36px（与章节左栏同宽、同底色、同折叠按钮）；≤980px 默认收起成正文顶部条，展开后列表限高滚动，正文表格可横向滚动。
+模型工具（模型解剖 / 显存计算器 / 模型训练 / 推理网络）：桌面是 200px 小节导航 + 正文两栏，导航 sticky 且可折叠到 36px（与章节左栏同宽、同底色、同折叠按钮）；≤980px 默认收起成正文顶部条，展开后列表限高滚动，正文表格可横向滚动。
 
 ## 5. 交互设计（逐章）
 
@@ -310,7 +322,7 @@ web/
 - **无障碍**：`aria-live="polite"` 播报计数器；步骤导航项与折叠按钮都是原生 `<button>`（折叠带 `aria-expanded`）；顶栏下拉带 `aria-haspopup="menu"`/`aria-expanded`/`aria-current`，支持 ↑/↓/Home/End/Esc/Tab 与点外部关闭；焦点环可见；对比度 ≥ 4.5:1。
 - **主题**：暗色默认，可切亮色，选择存 `localStorage`。
 - **打印**：`@media print` 隐藏控件，输出「讲解 + 代码 + 当前状态」。
-- **深链**：`#kv/step-3`、`#kv/L186`、`#calculator?ctx=32k&kv=fp16`。
+- **深链**：`#kv/step-3`、`#anatomy`、`#calc`、`#train`、`#net`。
 
 ## 10. 实施计划
 

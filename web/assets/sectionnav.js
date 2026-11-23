@@ -56,7 +56,8 @@
   function mount(nav, content) {
     if (!nav || !content) return null;
     const layout = nav.closest(".tool-layout");
-    const view = nav.closest(".view") || document.scrollingElement || document.documentElement;
+    const viewEl = nav.closest(".view");
+    const view = viewEl || document.scrollingElement || document.documentElement;
     const key = content.id || "tool";
     const reduce =
       window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -73,6 +74,12 @@
       const bar = document.querySelector(".topbar");
       const h = bar ? Math.round(bar.getBoundingClientRect().height) : 54;
       document.documentElement.style.setProperty("--topbar-h", h + "px");
+    }
+
+    function syncNavOffset() {
+      if (!viewEl) return;
+      const h = nav.hidden ? 0 : Math.round(nav.getBoundingClientRect().height);
+      viewEl.style.setProperty("--tool-nav-h", h + "px");
     }
 
     function applyCollapsed() {
@@ -119,6 +126,7 @@
           .join("") +
         "</div>";
       applyCollapsed();
+      syncNavOffset();
     }
 
     function flatten() {
@@ -197,6 +205,7 @@
         collapsed = !collapsed;
         saveStore(key, collapsed);
         applyCollapsed();
+        syncNavOffset();
         return;
       }
       const btn = e.target.closest("[data-target]");
@@ -216,6 +225,7 @@
     window.addEventListener("resize", () => {
       syncTopbar();
       applyCollapsed();
+      syncNavOffset();
       update();
     });
 
@@ -224,6 +234,7 @@
 
     syncTopbar();
     rebuild();
+    syncNavOffset();
     return { refresh: rebuild, destroy: () => mo.disconnect() };
   }
 

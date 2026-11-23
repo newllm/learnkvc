@@ -1,0 +1,218 @@
+{
+  "kicker": "模型工具 · 推理网络",
+  "title": "推理网络：NCCL / RoCE / PD 分离",
+  "lead": "推理不是「一张卡算完就结束」：TP 每层要 all-reduce，MoE 要 all-to-all，PD 分离要把 KV 从 prefill 池搬到 decode 池。网络不是一根大管子，而是很多次延迟敏感的小集合通信，加上每请求的 KV 迁移。",
+  "why": {
+    "title": "1 · 推理为什么需要网络",
+    "lead": "先分清「每层都发生的集合通信」和「每请求一次的 KV 迁移」；前者看延迟，后者看带宽。",
+    "items": [
+      {
+        "name": "TP（张量并行）",
+        "data": "每层 attention 与 MLP 后各一次 all-reduce；decode 时 batch×hidden 很小。",
+        "when": "单层放不下一张卡；通信频繁、消息小，延迟和 NVLink 带宽决定 decode 速度。"
+      },
+      {
+        "name": "EP / MoE",
+        "data": "每个 MoE 层两次 all-to-all：token 发给 expert，结果再发回。",
+        "when": "专家放在不同卡/机；流量突发、对拥塞敏感，需要 rail-optimized 网络。"
+      },
+      {
+        "name": "PD 分离",
+        "data": "prefill 池算完 prompt 的 KV，通过 RDMA/NVLink 搬到 decode 池，每请求一次。",
+        "when": "长 prompt + 长输出；KV 大小随 prompt 线性增长，决定 TTFT 和网络容量。"
+      },
+      {
+        "name": "Prefix cache",
+        "data": "命中前缀的 KV 块可以从远端缓存/另一实例搬过来，省 prefill。",
+        "when": "多轮/多请求共享前缀；块传输与哈希命中率决定收益。"
+      },
+      {
+        "name": "副本 / 负载均衡",
+        "data": "推理 DP 副本之间通常不做每步集合通信，只做请求路由。",
+        "when": "扩吞吐；网络主要承载请求与 KV 迁移，而不是每层同步。"
+      }
+    ]
+  },
+  "nccl": {
+    "title": "2 · NCCL：集合通信、算法与传输",
+    "lead": "NCCL 把「多卡一起算」抽象成 collectives；它根据消息大小和拓扑自动选 ring/tree/NVLS 和传输层。你写的是 all_reduce，它决定数据怎么走。",
+    "collectives": [
+      {
+        "name": "AllReduce",
+        "what": "所有 rank 的输入求和/平均，结果广播给所有 rank。",
+        "bytes": "每 rank 发出 2(N−1)/N × S；ring 需要 2(N−1) 步。",
+        "use": "TP 的 attention/MLP 输出同步；训练梯度同步。"
+      },
+      {
+        "name": "AllGather",
+        "what": "每个 rank 的 chunk 拼到所有 rank。",
+        "bytes": "每 rank 发出 (N−1)/N × S；ring 需要 N−1 步。",
+        "use": "MoE/专家权重收集、FSDP 参数 all-gather。"
+      },
+      {
+        "name": "ReduceScatter",
+        "what": "先归约再把不同 chunk 分给不同 rank。",
+        "bytes": "每 rank 发出 (N−1)/N × S；ring 需要 N−1 步。",
+        "use": "ZeRO 梯度 reduce-scatter、TP 的互补操作。"
+      },
+      {
+        "name": "AllToAll",
+        "what": "每个 rank 给其他每个 rank 发不同的 chunk。",
+        "bytes": "每 rank 发出 (N−1)/N × S；ring 需要 N−1 步。",
+        "use": "MoE 的 token 分发/回收，EP 的核心通信。"
+      },
+      {
+        "name": "Broadcast",
+        "what": "一个 rank 的数据发给所有 rank。",
+        "bytes": "root 发出 S；树形约 log N 步。",
+        "use": "权重/配置分发、采样种子同步。"
+      },
+      {
+        "name": "Send / Recv",
+        "what": "点对点传输。",
+        "bytes": "S；一步。",
+        "use": "PD 的 KV 迁移、流水线并行的 stage 间传激活。"
+      }
+    ],
+    "algorithms": [
+      {
+        "name": "Ring",
+        "tradeoff": "带宽最优：每个 rank 只和前后邻居传，适合大消息；步数 O(N)。",
+        "when": "大 all-reduce（≥ 几 MB）、跨机带宽受限。"
+      },
+      {
+        "name": "Tree",
+        "tradeoff": "延迟更低：O(log N) 步，但每步传整块，带宽利用率低于 ring。",
+        "when": "小消息、延迟敏感；NCCL 常自动在小消息选 tree。"
+      },
+      {
+        "name": "NVLS / NVLink SHARP",
+        "tradeoff": "在 NVSwitch 内做归约，少一次数据往返；需要 Hopper/Blackwell + NVLink 交换机。",
+        "when": "单机多卡、消息中等；NCCL 检测到 NVLS 会自动启用。"
+      },
+      {
+        "name": "CollNet / SHARP",
+        "tradeoff": "把归约卸载到 InfiniBand 交换机；跨机大集群。",
+        "when": "IB 网络 + 支持 SHARP 的交换机。"
+      }
+    ],
+    "transports": [
+      {
+        "link": "NVLink / NVSwitch",
+        "bw": "数百 GB/s 到 TB/s 级",
+        "latency": "亚微秒",
+        "scope": "单机 GPU 间；TP 的首选。"
+      },
+      {
+        "link": "InfiniBand",
+        "bw": "100–400 Gb/s per port（≈12.5–50 GB/s）",
+        "latency": "1–2 µs",
+        "scope": "跨机；支持 SHARP、GPUDirect RDMA。"
+      },
+      {
+        "link": "RoCEv2",
+        "bw": "100–400 Gb/s per port（≈12.5–50 GB/s）",
+        "latency": "2–5 µs（无损配置）",
+        "scope": "跨机、以太网；需要 PFC/ECN/DCQCN，配置不当会掉速。"
+      },
+      {
+        "link": "TCP Socket",
+        "bw": "10–100 Gb/s",
+        "latency": "几十–几百 µs",
+        "scope": "兜底；NCCL 检测不到 IB/RoCE 时会回退，性能差一个量级。"
+      }
+    ]
+  },
+  "sim": {
+    "title": "3 · 模拟 NCCL：ring 集合通信",
+    "lead": "拖动 rank 数、消息大小、链路带宽和延迟，看 ring 的步数、每卡发出量、网络总流量和 bus bandwidth。步进/播放可以看到每一步谁把哪个 chunk 发给谁。",
+    "note": "时间模型：每步 = 延迟 + chunk/BW；ring all-reduce 有 2(N−1) 步，chunk = S/N。真实 NCCL 还会做协议分片、多 QP、NVLS/SHARP、拥塞控制；这里给的是 ring 的理论下界。"
+  },
+  "roce": {
+    "title": "4 · RoCE / RDMA：无损网络与调参",
+    "lead": "RoCEv2 把 IB 的 RDMA 语义搬到以太网：UDP 4791、GID 索引、PFC 无损、ECN/DCQCN 拥塞控制。NCCL 能不能跑满，取决于这些配置，而不是「网卡是 400G」这句话。",
+    "concepts": [
+      "RDMA：网卡直接读写远端内存，绕过内核；GPU 场景配合 GPUDirect RDMA，数据从 GPU 显存直达网卡。",
+      "RoCEv2：RDMA over Converged Ethernet，跑在 UDP 上；需要 VLAN/GID 配置，常见 GID index 3。",
+      "PFC：按优先级暂停，防止丢包；配置错会产生 PFC storm，拖垮整网。",
+      "ECN + DCQCN：交换机标记拥塞、网卡降速；只配 PFC 不配 ECN，容易在拥塞时排队爆炸。",
+      "MTU：端到端一致（常见 4200/9000）；不一致会 fragmentation 或直接不通。",
+      "Rail-optimized：每台机器的每张网卡接到不同的 spine/rail，避免 all-to-all 时单 rail 拥塞。"
+    ],
+    "env": [
+      { "name": "NCCL_DEBUG", "value": "INFO", "why": "确认选了 NET/IB 还是 NET/Socket；第一排查项。" },
+      { "name": "NCCL_IB_HCA", "value": "mlx5_0,mlx5_1", "why": "指定参与 RDMA 的网卡，避免选错管理口。" },
+      { "name": "NCCL_SOCKET_IFNAME", "value": "eth0", "why": "TCP bootstrap 用的网卡；和 IB_HCA 分开。" },
+      { "name": "NCCL_IB_GID_INDEX", "value": "3", "why": "RoCEv2 的 GID 索引；用 show_gids 确认。" },
+      { "name": "NCCL_IB_TC", "value": "106", "why": "流量 class / DSCP，要和交换机 PFC/ECN 配置对齐。" },
+      { "name": "NCCL_NET_GDR_LEVEL", "value": "2", "why": "允许 GPUDirect RDMA（GPU 显存直连网卡），避免 H2D 拷贝。" },
+      { "name": "NCCL_ALGO", "value": "Ring / Tree / NVLS", "why": "调算法；一般让 NCCL 自动选，排障时固定对比。" },
+      { "name": "NCCL_PROTO", "value": "Simple / LL / LL128", "why": "协议；小消息 LL 延迟低，大消息 Simple 带宽高。" },
+      { "name": "NCCL_IB_QPS_PER_CONNECTION", "value": "4", "why": "多 QP 提升单连接吞吐，但也会增加拥塞风险。" },
+      { "name": "NCCL_P2P_DISABLE", "value": "1", "why": "排障用：关闭 P2P 看是否 PCIe/P2P 问题；平时不要开。" }
+    ],
+    "commands": [
+      "nvidia-smi topo -m  # 看 GPU 之间是 NVLink、PCIe 还是跨 NUMA",
+      "show_gids  # 确认 RoCEv2 的 GID index 和网卡",
+      "ibv_devinfo  # 看 link state、MTU、端口速率",
+      "NCCL_DEBUG=INFO all_reduce_perf -b 8 -e 8G -f 2 -g 8  # 看 busbw 和选中的 transport",
+      "ib_write_bw -d mlx5_0  # 单独测 RDMA 写带宽，排除 NCCL 因素"
+    ],
+    "pitfalls": [
+      "NCCL 日志出现 NET/Socket：不是 IB/RoCE 没配好，就是 GID/网卡/权限选错。",
+      "PFC 配了但 ECN 没配：拥塞时队列堆积，延迟抖动，吞吐反而下降。",
+      "GID index 选到 RoCEv1 或错误的 VLAN：连接能建立但性能异常。",
+      "NCCL_IB_HCA 选到管理口：带宽只有 10/25G，成为瓶颈。",
+      "只测单流 ib_write_bw，不测 all_reduce_perf：集合通信的瓶颈常在多打一/incast。"
+    ]
+  },
+  "pd": {
+    "title": "5 · PD 分离：prefill 与 decode 拆开",
+    "lead": "prefill 是计算受限的大矩阵，decode 是带宽受限的逐 token 读取；把两者放在同一张卡上会互相抢资源。PD 分离用两个池子分别扩缩容，代价是每请求把 KV 从 prefill 池搬到 decode 池。",
+    "flow": [
+      "router 收到请求，按 prompt 长度/前缀命中选 prefill worker。",
+      "prefill worker 算完 prompt 的 KV，写入可传输的 KV 块。",
+      "KV 通过 RDMA（RoCE/IB）或同机 NVLink 传到 decode worker。",
+      "decode worker 从 KV 继续逐 token 生成，流式返回。",
+      "完成后释放 KV；prefix cache 可让后续请求跳过 prefill。"
+    ],
+    "tradeoffs": [
+      "收益：prefill 和 decode 独立扩缩容；长 prompt 不再阻塞 decode 的 TPOT；两池可以选不同硬件。",
+      "代价：KV 迁移占网络和时间；跨机要走 RDMA，最好 GPUDirect，避免 host 拷贝。",
+      "什么时候划算：prompt 长、输出也长、并发高；如果 prompt 很短或网络慢，迁移开销可能盖过收益。",
+      "pool 比例：prefill:decode 要按 prompt/output 长度和到达率调；固定 1:1 往往不是最优。",
+      "和 prefix cache 一起用：命中前缀可以完全跳过 prefill，但 KV 仍要能从缓存/远端取到 decode 池。"
+    ],
+    "note": "工业实现：DistServe / Splitwise 提出 PD 分离；vLLM、SGLang、TensorRT-LLM 都有 disaggregated prefill 实验路径；KV 传输常用 NIXL、Mooncake、DeepEP 等 RDMA 库。"
+  },
+  "check": {
+    "title": "6 · 网络账本与排查清单",
+    "lead": "先确认「有没有走 RDMA」，再确认「带宽/延迟够不够」，最后才谈 PD 分离。下面每一条都能落到一条命令或一个指标。",
+    "checklist": [
+      "集合通信：NCCL_DEBUG=INFO 看 transport；NET/IB 或 NET/RoCE 才对，NET/Socket 先修网络。",
+      "带宽：all_reduce_perf 从小消息扫到大消息，看 busbw 是否接近链路带宽 × (N−1)/N。",
+      "延迟：decode 的 TP all-reduce 消息很小，busbw 低不一定是错；看小消息延迟。",
+      "RoCE：show_gids + ibv_devinfo + PFC/ECN 计数器；GID index、MTU、TC 三件套对齐。",
+      "PD：分别测 prefill、KV transfer、decode 三段；transfer 是否走 GPUDirect，是否发生 host 拷贝。",
+      "容量：KV/请求 × 请求速率 ≤ 网络带宽；否则 decode 池会被 KV 传输拖住。"
+    ],
+    "questions": [
+      {
+        "q": "为什么 decode 的 TP all-reduce 对延迟特别敏感？",
+        "a": "decode 每步只处理 1 个 token，消息很小（batch×hidden），但每层都要同步；计算时间短，all-reduce 的固定延迟和 launch 开销占比高，所以 NVLink/低延迟网络比大带宽更重要。"
+      },
+      {
+        "q": "Ring 和 Tree 怎么选？",
+        "a": "大消息选 ring（带宽利用率高、每步只传 S/N）；小消息选 tree（O(log N) 步、延迟低）。NCCL 会按消息大小和拓扑自动选，排障时可以固定 NCCL_ALGO 对比。"
+      },
+      {
+        "q": "PD 分离为什么不一定更快？",
+        "a": "它把 prefill 和 decode 解耦，但增加了 KV 迁移。如果 prompt 短、输出短或网络慢，迁移时间会抵消收益；只有当两池资源冲突明显、且 KV 传输够快时才划算。"
+      },
+      {
+        "q": "RoCE 配好了但 NCCL 还是走 Socket，先看什么？",
+        "a": "先看 NCCL_DEBUG=INFO 的 transport；再查 NCCL_IB_HCA、NCCL_IB_GID_INDEX、show_gids、ibv_devinfo 的 link state，以及容器里的 RDMA 设备是否透传。"
+      }
+    ]
+  }
+}
