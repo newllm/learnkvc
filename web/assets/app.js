@@ -38,7 +38,13 @@
     pagedCodeMeta: $("#paged-code-meta"),
     pagedDoc: $("#paged-doc"),
     pagedViz: $("#paged-viz"),
-    stepNavs: { kv: $("#stepnav-kv"), prefix: $("#stepnav-prefix"), paged: $("#stepnav-paged") },
+    stepNavs: {
+      kv: $("#stepnav-kv"),
+      prefix: $("#stepnav-prefix"),
+      paged: $("#stepnav-paged"),
+      train: $("#stepnav-train"),
+      net: $("#stepnav-net"),
+    },
     homeworkBody: $("#homework"),
     doc: $("#doc-card"),
     viz: $("#viz"),
@@ -49,8 +55,10 @@
     quiz: $("#quiz"),
     anatomyBody: $("#anatomy"),
     calcBody: $("#calc"),
-    trainBody: $("#train"),
-    netBody: $("#net"),
+    trainBody: $("#train-body"),
+    netBody: $("#net-body"),
+    trainMain: $("#train-main"),
+    netMain: $("#net-main"),
     feedbackBody: $("#feedback"),
     ovWhy: $("#ov-why"),
   };
@@ -73,11 +81,20 @@
   state.prefix = { step: 0, scenario: "shared", snap: 0, playing: false, timer: null };
   state.paged = { step: 0, snap: 0, sel: "seq-b", playing: false, timer: null };
   const CHAPTERS = ["kv", "prefix", "paged"];
+  const DOC_CHAPTERS = ["net", "train"];
+  const ALL_CHAPTERS = CHAPTERS.concat(DOC_CHAPTERS);
+  const DOC_SECTIONS = {
+    net: ["why", "nccl", "sim", "roce", "pd", "check"],
+    train: ["stepSection", "ledgerSection", "parallelSection", "scriptSection", "checkSection"],
+  };
   const CH_NUMS = ["①", "②", "③"];
   const CH_SHORT = ["KV cache", "Prefix cache", "PagedAttention"];
   const STAGE_NAMES = ["think", "explore", "reflect", "summary"];
   state.stages = {};
-  state.navCollapsed = { kv: false, prefix: false, paged: false };
+  state.docStep = { net: 0, train: 0 };
+  state.docLock = { net: 0, train: 0 };
+  state.navCollapsed = { kv: false, prefix: false, paged: false, net: false, train: false };
+  const world = { presets: D.anatomy.presets, gpus: D.anatomy.context.gpus };
 
   const esc = (s) =>
     String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -486,7 +503,7 @@
 
   function initNav() {
     const saved = navStore();
-    CHAPTERS.forEach((ch) => {
+    ALL_CHAPTERS.forEach((ch) => {
       state.navCollapsed[ch] =
         typeof saved[ch] === "boolean" ? saved[ch] : window.innerWidth <= 980;
     });
@@ -539,6 +556,7 @@
       )
       .join("");
     const showSteps = stage === "explore";
+    const isDoc = DOC_CHAPTERS.includes(ch);
     const headCount = showSteps
       ? idx + 1 + " / " + steps.length
       : stageIdx + 1 + " / " + STAGE_NAMES.length;
@@ -557,8 +575,10 @@
     nav.innerHTML =
       '<div class="stepnav-head"><span>章节导航</span><b>' + headCount + "</b>" +
       '<button class="stepnav-toggle" type="button" aria-expanded="true" aria-label="收起章节导航">‹</button></div>' +
-      '<div class="stepnav-section">章节</div>' +
-      '<div class="stepnav-chapters">' + chaptersHTML + "</div>" +
+      (isDoc
+        ? ""
+        : '<div class="stepnav-section">章节</div>' +
+          '<div class="stepnav-chapters">' + chaptersHTML + "</div>") +
       '<div class="stage-nav">' + stagesHTML + "</div>" +
       (showSteps
         ? '<div class="stepnav-section">探索步骤</div>' +
@@ -591,7 +611,8 @@
     nav.querySelectorAll("[data-nav-i]").forEach((b) =>
       b.addEventListener("click", () => {
         const i = +b.dataset.navI;
-        if (ch === "kv") setStep(i);
+        if (isDoc) scrollDocTo(ch, i);
+        else if (ch === "kv") setStep(i);
         else if (ch === "prefix") setPrefixStep(i);
         else setPagedStep(i);
       })
@@ -608,18 +629,26 @@
 
   /* ------------------------------------------------------- lesson stages */
 
+  function docSectionSteps(ch) {
+    const d = ch === "net" ? D.net : D.train;
+    return DOC_SECTIONS[ch].map((key) => ({ title: (d[key] && d[key].title) || key }));
+  }
+
   function chapterSteps(ch) {
+    if (DOC_CHAPTERS.includes(ch)) return docSectionSteps(ch);
     return ch === "kv" ? kv.steps : ch === "prefix" ? LK_DATA.prefix.steps : LK_DATA.paged.steps;
   }
 
   function chapterStepIndex(ch) {
+    if (DOC_CHAPTERS.includes(ch)) return state.docStep[ch] || 0;
     return ch === "kv" ? state.step : ch === "prefix" ? state.prefix.step : state.paged.step;
   }
 
   function setChapterStep(ch, i) {
     const max = chapterSteps(ch).length - 1;
     const v = Math.max(0, Math.min(max, i));
-    if (ch === "kv") state.step = v;
+    if (DOC_CHAPTERS.includes(ch)) state.docStep[ch] = v;
+    else if (ch === "kv") state.step = v;
     else if (ch === "prefix") state.prefix.step = v;
     else state.paged.step = v;
   }
@@ -629,7 +658,7 @@
   }
 
   function initStages() {
-    CHAPTERS.forEach((ch) => {
+    ALL_CHAPTERS.forEach((ch) => {
       const l = LK.progress.lesson(ch);
       state.stages[ch] = l.summary ? "summary" : l.reflect ? "summary" : l.think ? "explore" : "think";
     });
@@ -642,11 +671,20 @@
       if (ch === "prefix") stopPrefixPlay();
       if (ch === "paged") stopPagedPlay();
     }
+    if (DOC_CHAPTERS.includes(ch)) {
+      renderDocStage(ch);
+      updateHash();
+      return;
+    }
     renderChapterStage(ch);
     updateHash();
   }
 
   function renderChapterStage(ch) {
+    if (DOC_CHAPTERS.includes(ch)) {
+      renderDocStage(ch);
+      return;
+    }
     const view = el[ch];
     if (!view) return;
     STAGE_NAMES.forEach((s) => view.classList.toggle("stage-" + s, stageOf(ch) === s));
@@ -681,6 +719,142 @@
     }
   }
 
+
+  /* ------------------------------------------------------- doc chapters */
+
+  function docBody(ch) {
+    return ch === "net" ? el.netBody : el.trainBody;
+  }
+
+  function docMainEl(ch) {
+    return ch === "net" ? el.netMain : el.trainMain;
+  }
+
+  function renderDocStage(ch) {
+    const view = el[ch];
+    if (!view) return;
+    if (ch === "net" && LK.net && LK.net.stop) LK.net.stop();
+    STAGE_NAMES.forEach((s) => view.classList.toggle("stage-" + s, stageOf(ch) === s));
+    renderChapterNav(ch);
+    const body = docBody(ch);
+    const main = docMainEl(ch);
+    if (!body || !main) return;
+    const stage = stageOf(ch);
+
+    if (stage === "explore") {
+      if (ch === "net") LK.net.render(body, D.net, world);
+      else LK.train.render(body, D.train, world);
+      bindDocScroll(ch);
+      main.scrollTop = 0;
+      const i = chapterStepIndex(ch);
+      const secs = body.querySelectorAll("h2.sec-title");
+      if (i > 0 && secs[i]) scrollMainToSection(ch, secs[i]);
+      updateDocActive(ch);
+      return;
+    }
+
+    const lesson = D.lessons[ch];
+    if (stage === "think") {
+      LK.workshop.renderStageThink(body, ch, lesson.think, () => renderChapterNav(ch), () =>
+        setStage(ch, "explore")
+      );
+    } else if (stage === "reflect") {
+      LK.workshop.renderStageReflect(body, ch, lesson.reflect, lesson.attribution, () =>
+        renderChapterNav(ch), () => setStage(ch, "summary")
+      );
+    } else {
+      LK.workshop.renderStageSummary(body, ch, lesson.summary, () => renderChapterNav(ch), () => {
+        setView("homework");
+        updateHash();
+      });
+    }
+    main.scrollTop = 0;
+  }
+
+  function bindDocScroll(ch) {
+    const main = docMainEl(ch);
+    if (!main || main.dataset.docBound === "1") return;
+    main.dataset.docBound = "1";
+    main.addEventListener("scroll", () => {
+      if (state.view !== ch || stageOf(ch) !== "explore") return;
+      updateDocActive(ch);
+    }, { passive: true });
+  }
+
+  function currentDocIndex(ch) {
+    const main = docMainEl(ch);
+    const body = docBody(ch);
+    if (!main || !body) return 0;
+    const secs = Array.from(body.querySelectorAll("h2.sec-title"));
+    if (!secs.length) return 0;
+    const top = main.getBoundingClientRect().top + 96;
+    let idx = 0;
+    secs.forEach((sec, i) => {
+      if (sec.getBoundingClientRect().top <= top) idx = i;
+    });
+    if (main.scrollTop + main.clientHeight >= main.scrollHeight - 4) idx = secs.length - 1;
+    return idx;
+  }
+
+  function updateDocActive(ch) {
+    const nav = el.stepNavs[ch];
+    const steps = chapterSteps(ch);
+    if (!nav || !steps.length) return;
+    if (Date.now() < (state.docLock[ch] || 0)) return;
+    const idx = Math.max(0, Math.min(steps.length - 1, currentDocIndex(ch)));
+    const prev = state.docStep[ch];
+    state.docStep[ch] = idx;
+    if (LK.progress) LK.progress.recordStep(ch + ":" + (idx + 1));
+    if (prev !== idx) updateHash();
+    nav.querySelectorAll(".stepnav-item").forEach((b, i) => {
+      b.classList.toggle("active", i === idx);
+      b.classList.toggle("done", i < idx);
+    });
+    const head = nav.querySelector(".stepnav-head > b");
+    if (head) head.textContent = idx + 1 + " / " + steps.length;
+    const em = nav.querySelector('[data-nav-stage="explore"] em');
+    const lesson = LK.progress.lesson(ch);
+    const max = Math.max(lesson.exploreMax || 0, idx + 1);
+    if (max !== (lesson.exploreMax || 0)) LK.progress.saveLesson(ch, { exploreMax: max });
+    if (em) em.textContent = max + " / " + steps.length;
+  }
+
+  function scrollMainToSection(ch, sec) {
+    const main = docMainEl(ch);
+    if (!main || !sec) return;
+    const top = main.scrollTop + sec.getBoundingClientRect().top - main.getBoundingClientRect().top - 12;
+    main.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+  }
+
+  function scrollDocTo(ch, i) {
+    const body = docBody(ch);
+    const main = docMainEl(ch);
+    if (!body || !main) return;
+    const secs = Array.from(body.querySelectorAll("h2.sec-title"));
+    if (!secs.length) return;
+    const v = Math.max(0, Math.min(secs.length - 1, i));
+    state.docStep[ch] = v;
+    state.docLock[ch] = Date.now() + 300;
+    if (v === 0) main.scrollTo({ top: 0, behavior: "auto" });
+    else scrollMainToSection(ch, secs[v]);
+    const lesson = LK.progress.lesson(ch);
+    const max = Math.max(lesson.exploreMax || 0, v + 1);
+    if (max !== (lesson.exploreMax || 0)) LK.progress.saveLesson(ch, { exploreMax: max });
+    if (LK.progress) LK.progress.recordStep(ch + ":" + (v + 1));
+    const nav = el.stepNavs[ch];
+    if (nav) {
+      nav.querySelectorAll(".stepnav-item").forEach((b, k) => {
+        b.classList.toggle("active", k === v);
+        b.classList.toggle("done", k < v);
+      });
+      const head = nav.querySelector(".stepnav-head > b");
+      if (head) head.textContent = v + 1 + " / " + secs.length;
+      const em = nav.querySelector('[data-nav-stage="explore"] em');
+      if (em) em.textContent = max + " / " + secs.length;
+    }
+    updateHash();
+  }
+
   /* ---------------------------------------------------------- dots/hash */
 
   function navStep(delta) {
@@ -712,7 +886,7 @@
   function updateHash() {
     const view = VIEWS.includes(state.view) ? state.view : "think";
     let hash = "#" + view;
-    if (CHAPTERS.includes(view)) {
+    if (CHAPTERS.includes(view) || DOC_CHAPTERS.includes(view)) {
       const ch = view;
       const stage = stageOf(ch);
       hash = stage === "explore" ? "#" + ch + "/" + (chapterStepIndex(ch) + 1) : "#" + ch + "/" + stage;
@@ -825,16 +999,8 @@
         presets: D.anatomy.presets,
         context: D.anatomy.context,
       });
-    } else if (view === "train") {
-      LK.train.render(el.trainBody, D.train, {
-        presets: D.anatomy.presets,
-        gpus: D.anatomy.context.gpus,
-      });
-    } else if (view === "net") {
-      LK.net.render(el.netBody, D.net, {
-        presets: D.anatomy.presets,
-        gpus: D.anatomy.context.gpus,
-      });
+    } else if (view === "train" || view === "net") {
+      renderDocStage(view);
     } else if (view === "homework") {
       LK.workshop.renderHomework(el.homeworkBody, D.homework, (ch) => {
         setView(ch);
@@ -846,14 +1012,16 @@
         postTest: D.think.postTest,
         takeaway: D.reflect.takeaway,
         summary: D.reflect.feedbackSummary,
-        totalSteps: kv.steps.length + D.prefix.steps.length + D.paged.steps.length,
+        totalSteps:
+          kv.steps.length + D.prefix.steps.length + D.paged.steps.length +
+          docSectionSteps("net").length + docSectionSteps("train").length,
       });
     }
   }
 
   function route() {
     const hash = location.hash.replace(/^#/, "");
-    for (const ch of CHAPTERS) {
+    for (const ch of ALL_CHAPTERS) {
       if (hash === ch || hash.startsWith(ch + "/")) {
         const rest = hash.slice(ch.length + 1);
         if (STAGE_NAMES.includes(rest)) {
@@ -948,10 +1116,18 @@
     el.next.addEventListener("click", () => navStep(1));
 
     document.addEventListener("keydown", (e) => {
-      if (!CHAPTERS.includes(state.view) || stageOf(state.view) !== "explore") return;
       if (e.target.closest && e.target.closest(".nav-group")) return;
       const tag = (e.target.tagName || "").toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (DOC_CHAPTERS.includes(state.view)) {
+        if (stageOf(state.view) !== "explore") return;
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault();
+          scrollDocTo(state.view, chapterStepIndex(state.view) + (e.key === "ArrowLeft" ? -1 : 1));
+        }
+        return;
+      }
+      if (!CHAPTERS.includes(state.view) || stageOf(state.view) !== "explore") return;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         navStep(-1);
@@ -968,7 +1144,7 @@
     document.addEventListener("lk:navigate", (e) => {
       const detail = e.detail || {};
       if (!VIEWS.includes(detail.view)) return;
-      if (CHAPTERS.includes(detail.view)) {
+      if (CHAPTERS.includes(detail.view) || DOC_CHAPTERS.includes(detail.view)) {
         if (detail.stage && STAGE_NAMES.includes(detail.stage)) {
           state.stages[detail.view] = detail.stage;
         } else if (typeof detail.step === "number") {
@@ -1044,8 +1220,6 @@
   if (LK.sectionnav) {
     LK.sectionnav.mount($("#toc-anatomy"), el.anatomyBody);
     LK.sectionnav.mount($("#toc-calc"), el.calcBody);
-    LK.sectionnav.mount($("#toc-train"), el.trainBody);
-    LK.sectionnav.mount($("#toc-net"), el.netBody);
   }
   codeView = LK.codeview.mount(el.code, kv.lines);
   prefixCode = LK.codeview.mount(el.prefixCode, LK_DATA.prefix.lines);

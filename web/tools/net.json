@@ -1,5 +1,5 @@
 {
-  "kicker": "模型工具 · 推理网络",
+  "kicker": "学习章节 · 推理网络",
   "title": "推理网络：NCCL / RoCE / PD 分离",
   "lead": "推理不是「一张卡算完就结束」：TP 每层要 all-reduce，MoE 要 all-to-all，PD 分离要把 KV 从 prefill 池搬到 decode 池。网络不是一根大管子，而是很多次延迟敏感的小集合通信，加上每请求的 KV 迁移。",
   "why": {
@@ -212,6 +212,82 @@
       {
         "q": "RoCE 配好了但 NCCL 还是走 Socket，先看什么？",
         "a": "先看 NCCL_DEBUG=INFO 的 transport；再查 NCCL_IB_HCA、NCCL_IB_GID_INDEX、show_gids、ibv_devinfo 的 link state，以及容器里的 RDMA 设备是否透传。"
+      }
+    ]
+  },
+  "lesson":   {
+    "think": [
+      {
+        "q": "decode 时 TP 的 all-reduce 消息很小，为什么不能忽略？",
+        "options": [
+          "消息小，但每层都做、对延迟敏感",
+          "只有 prefill 才需要",
+          "只影响显存，不影响速度"
+        ],
+        "answer": 0,
+        "why": "decode 每步只处理 1 个 token，all-reduce 的固定延迟和每层同步占比很高；小消息看延迟，大消息才看带宽。"
+      },
+      {
+        "q": "PD 分离时，prefill 池把 KV 交给 decode 池，最理想走哪条路？",
+        "options": [
+          "GPUDirect RDMA（RoCE / IB）或同机 NVLink",
+          "先拷回 CPU，再走 TCP",
+          "先写磁盘再读"
+        ],
+        "answer": 0,
+        "why": "KV 体积大、每请求一次；RDMA/NVLink 避免 host 拷贝，TCP 会多两次内存拷贝和更高延迟。"
+      },
+      {
+        "q": "NCCL_DEBUG=INFO 里看到 NET/Socket，最先查什么？",
+        "options": [
+          "IB/RoCE 网卡、GID index、容器 RDMA 透传",
+          "模型参数量",
+          "batch size 和 temperature"
+        ],
+        "answer": 0,
+        "why": "NET/Socket 表示没走 RDMA；优先确认 NCCL_IB_HCA、NCCL_IB_GID_INDEX、show_gids 和 ibv_devinfo 的 link state。"
+      }
+    ],
+    "reflect": [
+      {
+        "q": "Ring 和 Tree 各自适合什么消息大小？为什么？",
+        "ref": "大消息用 ring：每步只传 S/N，带宽利用率高，但步数 O(N)。小消息用 tree：O(log N) 步、延迟低，每步传整块。NCCL 会按大小和拓扑自动选。"
+      },
+      {
+        "q": "PD 分离为什么不一定更快？",
+        "ref": "它把 prefill/decode 解耦，但增加 KV 迁移；prompt 短、输出短或网络慢时，迁移时间可能盖过收益。只有在两池资源冲突明显、KV 传输足够快时才划算。"
+      },
+      {
+        "q": "RoCE 为什么要同时配 PFC 和 ECN/DCQCN？",
+        "ref": "PFC 防丢包但会反压/暂停；ECN 让交换机提前标记拥塞、网卡降速。只配 PFC 容易排队爆炸和 PFC storm；只配 ECN 可能仍丢包。"
+      },
+      {
+        "q": "你的场景里，先测哪个网络指标最有信息量？",
+        "ref": "先用 all_reduce_perf 扫消息大小看 busbw 和 transport；PD 场景再单独测 KV 传输（GPUDirect、带宽、延迟），不要只看网卡标称速率。"
+      }
+    ],
+    "summary": {
+      "brief": "推理网络 = TP/EP 的小集合通信 + PD/前缀的 KV 迁移；NCCL 选 ring/tree/NVLS 和 NVLink/IB/RoCE，RoCE 靠 PFC+ECN 无损，PD 用 KV 传输换资源隔离。",
+      "detail": "TP 每层 all-reduce（decode 小消息、延迟敏感），MoE 每层 all-to-all（突发、易拥塞）。ring all-reduce 2(N-1) 步、每步 S/N，时间 ≈ 2(N-1)(延迟 + S/(N·BW))；小消息 tree 更快，大消息 ring 带宽更高。跨机优先 IB/RoCE + GPUDirect，NCCL 日志出现 NET/Socket 先修网络。PD 分离把 prefill 和 decode 拆池，KV 传输 = KV 大小/带宽 + 延迟，决定 TTFT 和网络容量；长 prompt、长输出、高并发才划算。"
+    },
+    "attribution": [
+      {
+        "id": "net-g1",
+        "label": "TP 每层 all-reduce 的通信",
+        "bucket": "gpu",
+        "why": "集合通信在 GPU/NIC 上执行，带宽、延迟和拓扑决定 decode 速度。"
+      },
+      {
+        "id": "net-g2",
+        "label": "RoCE 的 PFC / ECN / GID 配置",
+        "bucket": "gpu",
+        "why": "无损网络、GID 和 RDMA 路径属于 GPU 网络基础设施，配错就回退 Socket。"
+      },
+      {
+        "id": "net-e1",
+        "label": "PD 的路由、池比例与 KV 迁移",
+        "bucket": "engine",
+        "why": "什么时候 prefill、搬到哪个 decode 池、池子怎么扩缩容，都是推理引擎的调度策略。"
       }
     ]
   }

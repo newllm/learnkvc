@@ -410,6 +410,8 @@ def main() -> None:
         "train": build_train(),
         "net": build_net(),
     }
+    data["lessons"]["net"] = data["net"]["lesson"]
+    data["lessons"]["train"] = data["train"]["lesson"]
     (DATA / "data.js").write_text(
         "window.LK_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n", encoding="utf-8"
     )

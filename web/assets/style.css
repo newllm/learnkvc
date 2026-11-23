@@ -1699,3 +1699,24 @@ html[data-theme="light"] .fnchain li::before { background: #eef2f7; }
 
 html[data-theme="light"] .sim-field select { background: #fff; color: var(--fg); }
 html[data-theme="light"] .pd-seg.pre { color: #fff; }
+
+/* ===================== document chapters (net / train) ===================== */
+
+.chapter.doc-chapter { grid-template-columns: 200px minmax(0, 1fr); }
+.chapter.doc-chapter.nav-collapsed { grid-template-columns: 36px minmax(0, 1fr); }
+.doc-main { min-width: 0; min-height: 0; overflow-y: auto; }
+.doc-main .workshop { max-width: 1000px; margin: 0 auto; padding: 34px 28px 72px; }
+.doc-main h2.sec-title { scroll-margin-top: 12px; }
+
+@media (max-width: 980px) {
+  .chapter.doc-chapter,
+  .chapter.doc-chapter.nav-collapsed,
+  .view.stage-think .chapter.doc-chapter,
+  .view.stage-reflect .chapter.doc-chapter,
+  .view.stage-summary .chapter.doc-chapter,
+  .view:not(.stage-explore) .chapter.doc-chapter {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .doc-main .workshop { padding: 20px 16px 60px; }
+}

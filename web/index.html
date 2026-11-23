@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>learnkvc · 思考式阅读器</title>
-<link rel="stylesheet" href="assets/style.css?v=2026-11-23-5">
+<link rel="stylesheet" href="assets/style.css?v=2026-11-23-6">
 </head>
 <body data-view="think">
 <a class="skip" href="#main">跳到正文</a>
@@ -18,28 +18,33 @@
     <button data-view="think">请回答 · 前测</button>
     <div class="nav-group" data-nav-group>
       <button class="nav-trigger" data-nav-trigger aria-haspopup="menu" aria-expanded="false" aria-controls="menu-chapters">
-        <span data-nav-label>章节</span><span class="caret" aria-hidden="true">▾</span>
+        <span data-nav-label>认识 KVCache</span><span class="caret" aria-hidden="true">▾</span>
       </button>
-      <div class="nav-menu" id="menu-chapters" role="menu" aria-label="章节导航" hidden>
-        <button type="button" role="menuitem" data-view="kv" data-short="KV cache" aria-current="false">
-          <span class="nav-item-title">① KV cache 章</span>
+      <div class="nav-menu" id="menu-chapters" role="menu" aria-label="认识 KVCache" hidden>
+        <button type="button" role="menuitem" data-view="kv" data-short="KV" aria-current="false">
+          <span class="nav-item-title">① 单请求 KV cache</span>
           <span class="nav-item-sub">一次生成：重算 vs 缓存</span>
         </button>
-        <button type="button" role="menuitem" data-view="prefix" data-short="Prefix cache" aria-current="false">
-          <span class="nav-item-title">② Prefix cache 章</span>
+        <button type="button" role="menuitem" data-view="prefix" data-short="Prefix" aria-current="false">
+          <span class="nav-item-title">② Prefix cache</span>
           <span class="nav-item-sub">多请求共享前缀与块池</span>
         </button>
-        <button type="button" role="menuitem" data-view="paged" data-short="PagedAttention" aria-current="false">
-          <span class="nav-item-title">③ PagedAttention 章</span>
+        <button type="button" role="menuitem" data-view="paged" data-short="Paged" aria-current="false">
+          <span class="nav-item-title">③ PagedAttention</span>
           <span class="nav-item-sub">分页、block table 与 gather</span>
         </button>
       </div>
     </div>
+    <button data-view="net">推理网络</button>
     <div class="nav-group" data-nav-group>
       <button class="nav-trigger" data-nav-trigger aria-haspopup="menu" aria-expanded="false" aria-controls="menu-tools">
-        <span data-nav-label>模型工具</span><span class="caret" aria-hidden="true">▾</span>
+        <span data-nav-label>模型训练</span><span class="caret" aria-hidden="true">▾</span>
       </button>
-      <div class="nav-menu" id="menu-tools" role="menu" aria-label="模型工具" hidden>
+      <div class="nav-menu" id="menu-tools" role="menu" aria-label="模型训练" hidden>
+        <button type="button" role="menuitem" data-view="train" data-short="训练教程" aria-current="false">
+          <span class="nav-item-title">模型训练</span>
+          <span class="nav-item-sub">显存账本 / 并行 / 最小训练脚本</span>
+        </button>
         <button type="button" role="menuitem" data-view="anatomy" data-short="模型解剖" aria-current="false">
           <span class="nav-item-title">模型解剖</span>
           <span class="nav-item-sub">参数 / 结构 / 模型包 / 运行时</span>
@@ -47,14 +52,6 @@
         <button type="button" role="menuitem" data-view="calc" data-short="显存计算器" aria-current="false">
           <span class="nav-item-title">显存计算器</span>
           <span class="nav-item-sub">权重 + KV + 运行时能放下吗</span>
-        </button>
-        <button type="button" role="menuitem" data-view="train" data-short="模型训练" aria-current="false">
-          <span class="nav-item-title">模型训练</span>
-          <span class="nav-item-sub">显存账本 / 并行 / 最小训练脚本</span>
-        </button>
-        <button type="button" role="menuitem" data-view="net" data-short="推理网络" aria-current="false">
-          <span class="nav-item-title">推理网络</span>
-          <span class="nav-item-sub">NCCL / RoCE / PD 分离</span>
         </button>
       </div>
     </div>
@@ -158,19 +155,19 @@
     </div>
   </section>
 
-  <!-- 4c. 模型训练 -->
-  <section class="view scrollable" id="view-train">
-    <div class="tool-layout">
-      <aside class="tool-toc" id="toc-train" aria-label="模型训练小节导航"></aside>
-      <div class="tool-main"><div class="workshop" id="train"></div></div>
+  <!-- 4c. 模型训练（四段式章节） -->
+  <section class="view" id="view-train">
+    <div class="chapter doc-chapter">
+      <aside class="stepnav" id="stepnav-train"></aside>
+      <div class="doc-main" id="train-main"><div class="workshop" id="train-body"></div></div>
     </div>
   </section>
 
-  <!-- 4d. 推理网络 -->
-  <section class="view scrollable" id="view-net">
-    <div class="tool-layout">
-      <aside class="tool-toc" id="toc-net" aria-label="推理网络小节导航"></aside>
-      <div class="tool-main"><div class="workshop" id="net"></div></div>
+  <!-- 4d. 推理网络（四段式章节） -->
+  <section class="view" id="view-net">
+    <div class="chapter doc-chapter">
+      <aside class="stepnav" id="stepnav-net"></aside>
+      <div class="doc-main" id="net-main"><div class="workshop" id="net-body"></div></div>
     </div>
   </section>
 
@@ -198,18 +195,18 @@
 </noscript>
 
 <!-- bump ?v= below whenever web/assets or web/data change (GitHub Pages caches assets) -->
-<script src="data/data.js?v=2026-11-23-5"></script>
-<script src="data/traces.js?v=2026-11-23-5"></script>
-<script src="assets/codeview.js?v=2026-11-23-5"></script>
-<script src="assets/viz/kv.js?v=2026-11-23-5"></script>
-<script src="assets/viz/prefix.js?v=2026-11-23-5"></script>
-<script src="assets/viz/paged.js?v=2026-11-23-5"></script>
-<script src="assets/workshop.js?v=2026-11-23-5"></script>
-<script src="assets/anatomy.js?v=2026-11-23-5"></script>
-<script src="assets/calc.js?v=2026-11-23-5"></script>
-<script src="assets/train.js?v=2026-11-23-5"></script>
-<script src="assets/net.js?v=2026-11-23-5"></script>
-<script src="assets/sectionnav.js?v=2026-11-23-5"></script>
-<script src="assets/app.js?v=2026-11-23-5"></script>
+<script src="data/data.js?v=2026-11-23-6"></script>
+<script src="data/traces.js?v=2026-11-23-6"></script>
+<script src="assets/codeview.js?v=2026-11-23-6"></script>
+<script src="assets/viz/kv.js?v=2026-11-23-6"></script>
+<script src="assets/viz/prefix.js?v=2026-11-23-6"></script>
+<script src="assets/viz/paged.js?v=2026-11-23-6"></script>
+<script src="assets/workshop.js?v=2026-11-23-6"></script>
+<script src="assets/anatomy.js?v=2026-11-23-6"></script>
+<script src="assets/calc.js?v=2026-11-23-6"></script>
+<script src="assets/train.js?v=2026-11-23-6"></script>
+<script src="assets/net.js?v=2026-11-23-6"></script>
+<script src="assets/sectionnav.js?v=2026-11-23-6"></script>
+<script src="assets/app.js?v=2026-11-23-6"></script>
 </body>
 </html>

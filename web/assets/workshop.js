@@ -16,7 +16,7 @@
   /* ============================================ progress + think tests */
 
   const PROGRESS_KEY = "learnkvc.progress.v1";
-  const LEARNING_VIEWS = ["think", "kv", "prefix", "paged", "anatomy"];
+  const LEARNING_VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "train", "net"];
   const EMPTY_PROGRESS = { pre: null, post: null, gpu: "rtx4090", views: [], steps: [] };
 
   function loadProgress() {
@@ -770,7 +770,7 @@
 
   /* =================================================== lesson stages */
 
-  const CHAPTER_LABELS = { kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention" };
+  const CHAPTER_LABELS = { kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention", net: "推理网络", train: "模型训练" };
 
   function lessonOf(chapter) {
     const p = loadProgress();
@@ -844,9 +844,10 @@
       })
       .join("");
 
+    const thinkTitle = chapter === "net" ? "先猜，再去看网络" : chapter === "train" ? "先猜，再算这笔账" : "先猜，再进代码";
     el.innerHTML =
       '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 请回答</div>" +
-      '<h2>先猜，再进代码</h2>' +
+      '<h2>' + thinkTitle + "</h2>" +
       '<p class="hint">不查资料，凭直觉选；选完才出现解释。请回答阶段不计分，目的是带着假设去探索。</p>' +
       '<div class="qprogress"><span>已想 ' + answered + " / " + n + "</span><span>" +
       (answered === n ? "可以进入探索了" : "答完再往下") + "</span></div>" +
@@ -873,7 +874,7 @@
 
   W.renderStageReflect = function (el, chapter, prompts, attribution, onChange, onNext) {
     const saved = lessonOf(chapter).reflectText || {};
-    const filled = prompts.filter((q) => (saved[q.id] || "").trim()).length;
+    const filled = prompts.filter((q, i) => (saved[q.id || i] || "").trim()).length;
     const attr = attribution || [];
     const p = lessonOf(chapter);
     const attrDone = !attr.length || !!p.attributionSubmitted;
@@ -887,8 +888,8 @@
       prompts
         .map(
           (q, i) =>
-            '<div class="rprompt"><label for="ref-' + q.id + '">' + (i + 1) + ". " + esc(q.q) + "</label>" +
-            '<textarea id="ref-' + q.id + '" data-ref="' + q.id + '" rows="3">' + esc(saved[q.id] || "") + "</textarea>" +
+            '<div class="rprompt"><label for="ref-' + (q.id || i) + '">' + (i + 1) + ". " + esc(q.q) + "</label>" +
+            '<textarea id="ref-' + (q.id || i) + '" data-ref="' + (q.id || i) + '" rows="3">' + esc(saved[q.id || i] || "") + "</textarea>" +
             '<details class="thinkbox"><summary>对照参考</summary><p>' + esc(q.ref) + "</p></details></div>"
         )
         .join("") +
@@ -1011,7 +1012,7 @@
     el.innerHTML =
       '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 总结归纳</div>" +
       '<h2>把这一章压缩成你自己的三句话</h2>' +
-      '<p class="hint">先写自己的版本，再展开参考总结对照；写完点「完成本章」，三章都完成后解锁课后作业。</p>' +
+      '<p class="hint">先写自己的版本，再展开参考总结对照；写完点「完成本章」。三章 KV 总结完成后解锁课后作业。</p>' +
       '<div class="summarycard"><b>参考总结 · 概要</b><p>' + esc(summary.brief) + "</p>" +
       '<details><summary>详细描述</summary><p>' + esc(summary.detail) + "</p></details></div>" +
       '<div class="rprompt"><label for="stage-summary">我的总结</label>' +

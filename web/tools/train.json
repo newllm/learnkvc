@@ -1,5 +1,5 @@
 {
-  "kicker": "模型工具 · 训练",
+  "kicker": "学习章节 · 模型训练",
   "title": "模型训练：一次 step 把钱花在哪",
   "lead": "推理只要权重 + KV；训练还要梯度、优化器状态和每一层的激活。一次训练 step 的显存通常是推理的 4–10 倍，并行和显存优化的目的就是把这几笔钱拆到更多卡、更多层、更多时间上。",
   "stepSection": {
@@ -150,6 +150,82 @@
       {
         "q": "激活重算为什么能省显存？代价是什么？",
         "a": "forward 只存每层输入，反向时重算中间激活，省掉大部分激活存储；代价是多一次 forward 计算（约 +30%），所以是拿计算换显存。"
+      }
+    ]
+  },
+  "lesson":   {
+    "think": [
+      {
+        "q": "AdamW + BF16 训练，参数状态大约占多少 B/参数？",
+        "options": [
+          "约 16 B（权重 2 + 梯度 2 + 优化器 12）",
+          "约 4 B",
+          "约 2 B"
+        ],
+        "answer": 0,
+        "why": "权重和梯度各 2 B，AdamW 的 m/v 是 fp32 共 8 B，再加 fp32 master 4 B，合计约 16 B/参数；还没算激活。"
+      },
+      {
+        "q": "ZeRO-3 / FSDP 相比 ZeRO-1 多切了什么？",
+        "options": [
+          "连参数本身也切",
+          "只切优化器状态",
+          "只切 batch"
+        ],
+        "answer": 0,
+        "why": "ZeRO-1 切优化器状态，ZeRO-2 再加梯度，ZeRO-3/FSDP 连参数也分片；代价是前向要 all-gather 参数。"
+      },
+      {
+        "q": "激活重算（checkpointing）省显存，代价是什么？",
+        "options": [
+          "反向时重算 forward，多约 30% 计算",
+          "降低权重精度",
+          "减少并发数"
+        ],
+        "answer": 0,
+        "why": "forward 只存每层输入，反向时重新计算中间激活；用计算换显存，通常多 30% 左右计算量。"
+      }
+    ],
+    "reflect": [
+      {
+        "q": "为什么训练显存常常是推理的 4–10 倍？",
+        "ref": "推理只有权重 + KV；训练还要梯度、优化器状态和反向要用的激活。参数状态一项就约 16 B/参数，是 BF16 权重的 8 倍。"
+      },
+      {
+        "q": "ZeRO-1/2/3 各切什么？通信为什么越来越多？",
+        "ref": "依次切优化器状态、梯度、参数。切得越多，前向 all-gather 参数、反向 reduce-scatter 梯度的频率和量越大，所以通信更重。"
+      },
+      {
+        "q": "什么时候用 TP，什么时候用 PP？",
+        "ref": "单层矩阵大到一张卡放不下/算不动时用 TP，通常限制在单机 NVLink；跨机扩展、层数多时用 PP。TP 通信频繁但延迟低，PP 通信少但有流水线空泡。"
+      },
+      {
+        "q": "你的模型最该先上哪个省显存手段？",
+        "ref": "先看哪笔最大：参数状态超了就 ZeRO/FSDP；激活超了就 checkpointing/减小 micro-batch/序列并行；差一点就 offload。不要同时全开，否则通信和计算开销可能吃掉收益。"
+      }
+    ],
+    "summary": {
+      "brief": "训练显存 = 权重 + 梯度 + 优化器状态 + 激活；AdamW+BF16 参数状态约 16 B/参数，激活随 batch×seq×layers 增长，所以要用 ZeRO/FSDP、TP/PP、激活重算和 offload 把账拆开。",
+      "detail": "一次 step：forward 留激活 → loss → backward 产梯度 → AdamW 更新 m/v 和 fp32 master。参数状态与 N 成正比（约 16 B/参数），激活与 layers×batch×seq×hidden 成正比。ZeRO-1/2/3 分别切优化器、梯度、参数；TP 切单层矩阵（NVLink、延迟敏感）；PP 切层（有气泡）；激活重算用约 30% 计算换显存；offload 走 PCIe、会变慢。"
+    },
+    "attribution": [
+      {
+        "id": "train-m1",
+        "label": "权重、梯度与激活的数学",
+        "bucket": "model",
+        "why": "参数、层数、hidden 和前向/反向公式由模型结构定义；它们决定需要哪些张量。"
+      },
+      {
+        "id": "train-g1",
+        "label": "激活、优化器状态占用的显存",
+        "bucket": "gpu",
+        "why": "显存容量和带宽由 GPU 提供；激活重算、混合精度最终都落在 GPU 的 HBM 上。"
+      },
+      {
+        "id": "train-e1",
+        "label": "ZeRO/FSDP、TP/PP 与 offload 策略",
+        "bucket": "engine",
+        "why": "怎么切、切到哪、何时 all-gather/recompute/offload，是训练框架/引擎的并行策略。"
       }
     ]
   }
