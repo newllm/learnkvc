@@ -1727,3 +1727,7 @@ html[data-theme="light"] .train-run code { color: #1c2530; }
 html[data-theme="light"] .train-code { background: #f6f9fc; }
 html[data-theme="light"] .train-code .ln { color: #1c2530; }
 html[data-theme="light"] .train-code .ln .no { color: #94a6b8; }
+
+/* keep the simulation code + its output in one screen when possible */
+#net-sim-code,
+#train-sim-code { max-height: 360px; }
