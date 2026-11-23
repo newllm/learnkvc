@@ -706,9 +706,10 @@
   }
 
   function updateHash() {
-    let hash = "#" + state.view;
-    if (CHAPTERS.includes(state.view)) {
-      const ch = state.view;
+    const view = VIEWS.includes(state.view) ? state.view : "think";
+    let hash = "#" + view;
+    if (CHAPTERS.includes(view)) {
+      const ch = view;
       const stage = stageOf(ch);
       hash = stage === "explore" ? "#" + ch + "/" + (chapterStepIndex(ch) + 1) : "#" + ch + "/" + stage;
     }
@@ -763,6 +764,7 @@
   /* -------------------------------------------------------------- views */
 
   function setView(view) {
+    if (!VIEWS.includes(view)) view = "think";
     if (state.playing) stopPlay(false);
     state.view = view;
     document.body.dataset.view = view;
@@ -855,6 +857,7 @@
     el.tabs.forEach((tab) => {
       if (tab.disabled) return;
       tab.addEventListener("click", () => {
+        if (!VIEWS.includes(tab.dataset.view)) return;
         setView(tab.dataset.view);
         updateHash();
       });

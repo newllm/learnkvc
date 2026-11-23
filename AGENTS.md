@@ -133,6 +133,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 - **零依赖**：不引 React/Vue、npm 包、CDN、外部字体；只用原生 HTML/CSS/JS。
 - **经典 `<script>`**（不是 ES module），保证 `file://` 直接打开可用；数据用 `window.LK_DATA` / `window.LK_TRACES` 注入，不用 `fetch`。
 - 新页面/新脚本保持顺序加载：`data.js → traces.js → codeview.js → viz/*.js → workshop/anatomy/calc → sectionnav.js → app.js`。
+- **静态资源带版本号**：`web/index.html` 里 CSS/data/JS 的 URL 都带 `?v=YYYY-MM-DD`。改 `web/assets/**` 或 `web/data/**` 后必须同步更新这个版本号，否则 GitHub Pages 缓存会让新旧 HTML/JS 混用（例如旧 app.js 把无 `data-view` 的下拉触发器当 tab，点出 `#undefined`）。
 - 文案中文、代码标识英文；新加的大段说明写进 `web/DESIGN.md` 或 `web/README.md`，不要只藏在代码注释里。
 
 ## 7. 测试与验收（Definition of Done）

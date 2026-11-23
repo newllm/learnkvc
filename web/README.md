@@ -48,6 +48,7 @@ python3 -m http.server 8000
 python3 web/tools/build.py
 ```
 
+- 静态资源带 `?v=YYYY-MM-DD`（见 `web/index.html`）；改了 `assets/` 或 `data/` 后同步更新版本号，避免 GitHub Pages 缓存混用新旧 JS/HTML（曾因此点出 `#undefined`）。
 - 代码：`example/kv_cache.py`（`ast` 解析符号区间）
 - 讲解：`example/KV_CACHE_READING.md`（按 `##` / `###` 切节）
 - 步骤：`web/tools/steps.json`
