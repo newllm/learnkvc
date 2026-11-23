@@ -80,6 +80,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
   - 前/后测分数和答案、所选 GPU、访问记录都在这一个 key 里。
 - `learnkvc.theme`：`dark` / `light`。
 - `learnkvc.stepnav`：`{kv,prefix,paged}` 的导航折叠状态。
+- `learnkvc.sectionnav`：`{anatomy,calc}` 的模型工具小节导航折叠状态。
 - 路由：`#think`、`#kv/N`、`#kv/think|explore|reflect|summary`（prefix/paged 同理）、`#anatomy`、`#calc`、`#feedback`、`#homework`；旧链接 `#reuse` 重定向到 Prefix 章的多次提问步骤，`#reflect` 重定向到 KV 章总结。
 - 所有 `localStorage` 访问必须 try/catch（`file://` 下可能抛错）。
 
@@ -114,7 +115,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 
 - 顶栏：品牌 + 导航 + 主题开关。导航一级是「请回答 · 前测 / 学习反馈 / 课后作业」；三个章节收进「章节」下拉，模型解剖与显存计算器收进「模型工具」下拉。触发按钮显示当前所在项（如「章节 · KV cache」），`aria-expanded` 同步；点外部、Esc、选中任一项都关闭。窄屏（≤980px）导航换行，不再横向滚动，下拉菜单要夹在视口内。章节视图是「左侧步骤导航（可收缩）+ 中间代码 + 右侧讲解/可视化」；底部只保留上一步/下一步和计数器，步骤点不再放底部。
 - 步骤导航：左侧轨道顶部先是「章节」切换（三章标题 + ①/②/③，当前高亮、完成后打勾；点击切章并保留该章上次所处阶段；折叠时只留 ①②③），然后是四阶段（带完成状态与探索进度），探索阶段下面列出全部步骤（标题、进行中/已完成）；折叠按钮把宽度收到 36px 轨道，状态存 `learnkvc.stepnav`；窄屏（≤980px）默认收起，展开后章节为 3 列、阶段为 4 列（隐藏进度文字、保留完成打勾）、步骤列表限高可滚动。非探索阶段仍显示章节与四阶段，只隐藏步骤列表。
-- 模型工具（模型解剖 / 显存计算器）是长页，左侧有独立小节导航（`assets/sectionnav.js`）：自动收集 `h2.sec-title`（9 / 4 节）和 `[data-toc-sub]`（GPU 函数地图的 6 个子节），滚动高亮、点击跳转、页面重渲染后自动重建；≤980px 变成顶部 sticky 横向 chips，窄屏不横向溢出。
+- 模型工具（模型解剖 / 显存计算器）沿用章节导航的轨道语言（`assets/sectionnav.js`）：200px 左栏（面板底色 + 右边框 + 「小节导航 / 当前 / 总数 / 折叠按钮」）、编号 01…、GPU 函数地图下 6 个二级小节（7.1–7.6）；滚动高亮、点击跳转、换预设/拉滑杆后自动重建；折叠到 36px 只留编号，状态存 `learnkvc.sectionnav`；≤980px 默认收起成顶部条，展开后列表限高滚动。
 - 交互优先用「步进 / 滑杆 / 按钮」，不要自动播放惊吓用户；播放到末尾要停止并可重播。
 - 步骤切换要同步：左侧导航高亮 + 代码高亮/自动滚动 + 讲解卡 + 可视化 + 底部计数器 + URL hash。
 - 图表/动画用原生 DOM/SVG/CSS；不做无意义的持续动画。

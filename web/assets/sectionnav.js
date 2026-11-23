@@ -1,10 +1,12 @@
 /* Section navigation for long workshop pages (model anatomy / calculator).
- * Auto-collects h2.sec-title (+ optional [data-toc-sub] groups) from the
- * rendered content, keeps the rail in sync while the content scrolls, and
- * rebuilds when a page re-renders itself (preset / slider changes). */
+ * Same rail language as the chapter navigation: numbered items, collapse
+ * toggle, scroll-spy and localStorage state. Content is auto-collected from
+ * h2.sec-title (+ optional [data-toc-sub] groups) and rebuilt whenever the
+ * page re-renders itself (preset / slider changes). */
 (function () {
   const LK = (window.LK = window.LK || {});
   const S = (LK.sectionnav = LK.sectionnav || {});
+  const STORE = "learnkvc.sectionnav";
   const esc = (s) =>
     String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -21,7 +23,7 @@
     let current = null;
     nodes.forEach((el, i) => {
       const top = el.matches("h2.sec-title");
-      if (!el.id) el.id = (content.id || "sec") + "-sec-" + (i + 1);
+      if (!el.id) el.id = (content.id || "tool") + "-sec-" + (i + 1);
       const p = parts(el, groups.length + 1);
       if (top) {
         current = { el, id: el.id, num: p.num, label: p.label, subs: [] };
@@ -33,15 +35,54 @@
     return groups;
   }
 
+  function readStore() {
+    try {
+      return JSON.parse(localStorage.getItem(STORE) || "{}") || {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveStore(key, collapsed) {
+    try {
+      const all = readStore();
+      all[key] = collapsed;
+      localStorage.setItem(STORE, JSON.stringify(all));
+    } catch (e) {
+      /* localStorage unavailable */
+    }
+  }
+
   function mount(nav, content) {
     if (!nav || !content) return null;
+    const layout = nav.closest(".tool-layout");
     const view = nav.closest(".view") || document.scrollingElement || document.documentElement;
-    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const key = content.id || "tool";
+    const reduce =
+      window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const saved = readStore();
+    let collapsed =
+      typeof saved[key] === "boolean" ? saved[key] : window.innerWidth <= 980;
     let groups = [];
     let flat = [];
     let activeId = "";
     let frame = 0;
     let lock = 0;
+
+    function syncTopbar() {
+      const bar = document.querySelector(".topbar");
+      const h = bar ? Math.round(bar.getBoundingClientRect().height) : 54;
+      document.documentElement.style.setProperty("--topbar-h", h + "px");
+    }
+
+    function applyCollapsed() {
+      if (layout) layout.classList.toggle("nav-collapsed", collapsed);
+      const btn = nav.querySelector(".stepnav-toggle");
+      if (!btn) return;
+      btn.textContent = collapsed ? "›" : "‹";
+      btn.setAttribute("aria-expanded", String(!collapsed));
+      btn.setAttribute("aria-label", collapsed ? "展开小节导航" : "收起小节导航");
+    }
 
     function render() {
       nav.hidden = groups.length === 0;
@@ -50,30 +91,34 @@
         return;
       }
       nav.innerHTML =
-        '<div class="tool-toc-head"><span>本节导航</span><b>' + (groups.length ? "1 / " + groups.length : "") + "</b></div>" +
-        '<div class="tool-toc-list">' +
+        '<div class="stepnav-head"><span>小节导航</span><b>1 / ' + groups.length + "</b>" +
+        '<button class="stepnav-toggle" type="button" aria-expanded="true" aria-label="收起小节导航">‹</button></div>' +
+        '<div class="tool-toc-body">' +
         groups
           .map(
-            (g) =>
-              '<div class="tool-toc-group">' +
-              '<button class="toc-link" type="button" data-target="' + g.id + '" title="' + esc(g.num + " " + g.label) + '">' +
-              '<span class="toc-no">' + esc(g.num) + "</span>" +
-              '<span class="toc-tt">' + esc(g.label) + "</span></button>" +
+            (g, gi) =>
+              '<button class="stage-nav-item tool-sec" type="button" data-target="' + g.id + '" title="' +
+              esc(g.num + " " + g.label) + '">' +
+              '<span class="sid">' + String(gi + 1).padStart(2, "0") + "</span>" +
+              '<span class="stt">' + esc(g.label) + "</span>" +
+              "<em>" + (g.subs.length ? g.subs.length + " 小节" : "") + "</em></button>" +
               (g.subs.length
-                ? '<div class="toc-subs">' +
+                ? '<div class="tool-subs">' +
                   g.subs
                     .map(
                       (s) =>
-                        '<button class="toc-sub" type="button" data-target="' + s.id + '" title="' +
-                        esc(s.num + " " + s.label) + '">' + esc(s.label) + "</button>"
+                        '<button class="stepnav-item tool-sub" type="button" data-target="' + s.id + '" title="' +
+                        esc(s.num + " " + s.label) + '">' +
+                        '<span class="no">' + esc(s.num) + "</span>" +
+                        '<span class="tt">' + esc(s.label) + "</span></button>"
                     )
                     .join("") +
                   "</div>"
-                : "") +
-              "</div>"
+                : "")
           )
           .join("") +
         "</div>";
+      applyCollapsed();
     }
 
     function flatten() {
@@ -92,27 +137,24 @@
     function mark(hit) {
       activeId = hit.id;
       nav.querySelectorAll("[data-target]").forEach((b) => {
+        const top = b.classList.contains("tool-sec");
         const on = b.dataset.target === hit.id;
-        b.classList.toggle("on", on);
+        b.classList.toggle(top ? "on" : "active", on);
         if (on) b.setAttribute("aria-current", "true");
         else b.removeAttribute("aria-current");
       });
-      nav.querySelectorAll(".tool-toc-group").forEach((g, gi) => {
-        g.classList.toggle("on", gi === hit.gi);
-      });
-      const pos = nav.querySelector(".tool-toc-head > b");
+      // keep the parent section highlighted while one of its subsections is active
+      nav.querySelectorAll(".tool-sec").forEach((b, gi) => b.classList.toggle("on", gi === hit.gi));
+      const pos = nav.querySelector(".stepnav-head > b");
       if (pos) pos.textContent = hit.gi + 1 + " / " + groups.length;
 
-      // keep the active chip visible in the horizontal (mobile) rail
-      const list = nav.querySelector(".tool-toc-list");
-      if (list && list.scrollWidth > list.clientWidth + 2) {
-        const link = nav.querySelector('[data-target="' + hit.id + '"]');
-        if (link) {
-          const lr = link.getBoundingClientRect();
-          const rr = list.getBoundingClientRect();
-          if (lr.left < rr.left - 4 || lr.right > rr.right + 4) {
-            list.scrollLeft += lr.left - rr.left - (rr.width - lr.width) / 2;
-          }
+      const body = nav.querySelector(".tool-toc-body");
+      const link = nav.querySelector('[data-target="' + hit.id + '"]');
+      if (body && link && body.scrollHeight > body.clientHeight + 4) {
+        const lr = link.getBoundingClientRect();
+        const br = body.getBoundingClientRect();
+        if (lr.top < br.top || lr.bottom > br.bottom) {
+          body.scrollTop += lr.top - br.top - 8;
         }
       }
     }
@@ -151,13 +193,19 @@
     }
 
     nav.addEventListener("click", (e) => {
+      if (e.target.closest(".stepnav-toggle")) {
+        collapsed = !collapsed;
+        saveStore(key, collapsed);
+        applyCollapsed();
+        return;
+      }
       const btn = e.target.closest("[data-target]");
       if (!btn) return;
       const target = content.querySelector("#" + CSS.escape(btn.dataset.target));
       if (!target) return;
       const hit = flat.find((x) => x.id === btn.dataset.target);
       if (hit) mark(hit);
-      lock = Date.now() + 1200; // let the clicked item stay active while programmatic scroll settles
+      lock = Date.now() + 1200; // keep the clicked item active while the scroll settles
       target.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
     });
 
@@ -166,13 +214,15 @@
     );
     view.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", () => {
-      render();
+      syncTopbar();
+      applyCollapsed();
       update();
     });
 
     const mo = new MutationObserver(schedule);
     mo.observe(content, { childList: true });
 
+    syncTopbar();
     rebuild();
     return { refresh: rebuild, destroy: () => mo.disconnect() };
   }

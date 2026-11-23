@@ -105,7 +105,7 @@
 - 「模型包里除了权重还有什么」：config / safetensors+index / tokenizer / chat template / generation_config / modeling 代码 / 量化 metadata，标明是否参数与归属；
 - 「运行时状态」：常驻（权重、block pool、workspace、CUDA Graph）/ 每请求（block table、KV blocks、seq 状态）/ 每步（hidden、QKV、logits）/ 请求结束后（prefix cache 空闲块）；上下文与并发滑杆实时联动 KV、prefill 激活、常驻杂项与合计；附生命周期表和「模型定义 / GPU 提供 / 引擎管理」分工。
 
-**v2.7 补充**：解剖页与显存计算器左侧增加小节导航（`assets/sectionnav.js`）：从 `h2.sec-title` 自动收集 9 / 4 个 section，GPU 函数地图的 `[data-toc-sub]` 作为二级项；滚动高亮、点击跳转、页面重渲染（换预设 / 拉滑杆）后自动重建，窄屏变成顶部 sticky 横向 chips。解剖页新增「GPU 函数地图」：PyTorch/引擎 → 库/调度 → CUDA kernel → 硬件单元四层；按矩阵计算、归一化/激活、采样、CUDA 运行时、引擎侧分 5 组共 27 条函数；附一次 decode 的 14 步调用链与「常见误区」口径。数据在 `anatomy.json` 的 `gpuFunctions`，`build.py` 透传。
+**v2.7 补充**：解剖页与显存计算器左侧增加小节导航（`assets/sectionnav.js`）：从 `h2.sec-title` 自动收集 9 / 4 个 section，GPU 函数地图的 `[data-toc-sub]` 作为二级项；滚动高亮、点击跳转、页面重渲染（换预设 / 拉滑杆）后自动重建；轨道与章节导航同宽同底色，可折叠到 36px（状态存 `learnkvc.sectionnav`），窄屏默认收起成顶部条。解剖页新增「GPU 函数地图」：PyTorch/引擎 → 库/调度 → CUDA kernel → 硬件单元四层；按矩阵计算、归一化/激活、采样、CUDA 运行时、引擎侧分 5 组共 27 条函数；附一次 decode 的 14 步调用链与「常见误区」口径。数据在 `anatomy.json` 的 `gpuFunctions`，`build.py` 透传。
 
 用户需要先有「模型长什么样」的直觉，否则 KV cache 只是名词。新增第 4 个视图，仍按「先猜 → 证据」组织：
 
@@ -146,7 +146,7 @@
 
 移动端（< 980px）：左侧导航默认收起成 38px 轨道；展开后章节排成 3 列、四阶段排成 4 列（隐藏进度文字、保留完成打勾），步骤列表限高滚动；代码区固定 42vh，可视化与讲解上下堆叠，底部保留前后步与计数器。
 
-模型工具（模型解剖 / 显存计算器）：桌面是 212px 小节导航 + 正文两栏，导航 sticky；≤980px 收成正文顶部的 sticky 横向 chips（本节导航 + 序号/标题），正文表格可横向滚动。
+模型工具（模型解剖 / 显存计算器）：桌面是 200px 小节导航 + 正文两栏，导航 sticky 且可折叠到 36px（与章节左栏同宽、同底色、同折叠按钮）；≤980px 默认收起成正文顶部条，展开后列表限高滚动，正文表格可横向滚动。
 
 ## 5. 交互设计（逐章）
 
