@@ -1,6 +1,6 @@
 # learnkvc
 
-用一个仓库讲清 **LLM 推理与训练**：3 份最小可运行的 KV cache 示例、7 份纯 Python 仿真、1 个零依赖交互式学习页，外加 Docker / macOS 跑真实模型的实操。
+用一个仓库讲清 **LLM 推理与训练**：3 份最小可运行的 KV cache 示例、8 份纯 Python 仿真、1 个零依赖交互式学习页，外加 Docker / macOS 跑真实模型的实操。
 
 每个结论都有可执行代码和断言；不需要模型权重，clone 下来就能跑。
 
@@ -32,6 +32,7 @@ python3 example/net_sim.py               # 推理网络总览：ring / PD
 python3 example/nccl_sim.py              # NCCL：ring/tree / α-β / 拓扑
 python3 example/cuda_sim.py              # CUDA：occupancy / coalescing / roofline / graph
 python3 example/gpu_sim.py               # CPU vs GPU / L1-L2 / 量级对照
+python3 example/npu_sim.py               # GPU / NPU / 国产算力：roofline 与选型
 python3 example/ecn_sim.py               # ECN/DCQCN/PFC：标记、降速、pause
 python3 example/opt_sim.py               # 优化：FlashAttention / 量化 / 投机解码
 ```
@@ -50,11 +51,11 @@ python3 web/tools/build.py
 
 ## 学习地图
 
-交互页分 5 个学习入口 + 前测/后测，共 10 个三段式章节。每章都按「**请回答 → 探索阅读 → 反思与总结**」推进：先猜，再用代码/仿真验证，最后用自己的话总结。
+交互页分 5 个学习入口 + 前测/后测，共 11 个三段式章节。每章都按「**请回答 → 探索阅读 → 反思与总结**」推进：先猜，再用代码/仿真验证，最后用自己的话总结。
 
 | 入口 | 章节 | 核心问题 | 配套 |
 | --- | --- | --- | --- |
-| 认识 GPU | 总览 / CUDA 执行模型 | CPU 与 GPU 怎么分工、L1/L2 与 HBM、decode 为什么 memory-bound | `gpu_sim.py`、`cuda_sim.py` |
+| 认识 GPU | GPU / NPU 与国产算力 / CUDA 执行模型 | CPU 与 GPU 怎么分工、GPU/NPU/ASIC 差异、国产卡与软件栈、decode 为什么 memory-bound | `gpu_sim.py`、`npu_sim.py`、`cuda_sim.py` |
 | 认识 KVCache | 单请求 / Prefix / PagedAttention | 为什么缓存、块怎么共享、逻辑位置怎么映射到物理块 | `kv_cache.py`、`prefix_cache_demo.py`、`paged_attention.py` |
 | 推理网络 | 总览 / NCCL / ECN + DCQCN | TP/EP 怎么通信、ring/tree、RoCE 怎么做到无损 | `net_sim.py`、`nccl_sim.py`、`ecn_sim.py` |
 | 认识模型 | 模型解剖 / 模型训练 / 显存计算器 | 参数与结构、训练账本、这套模型能否跑在某张卡上 | `train_sim.py`、`train_tiny.py`、`anatomy.json` |
@@ -75,7 +76,7 @@ python3 web/tools/build.py
 │   ├── prefix_cache_demo.py  # 多请求共享前缀：块池 + 哈希 + 引用计数 + LRU
 │   ├── paged_attention.py    # PagedAttention：block table + gather
 │   ├── train_tiny.py         # 最小 PyTorch 训练循环（需要 torch）
-│   ├── *_sim.py              # 7 份纯 Python 仿真：net/train/nccl/cuda/gpu/ecn/opt
+│   ├── *_sim.py              # 8 份纯 Python 仿真：net/train/nccl/cuda/gpu/npu/ecn/opt
 │   └── *_READING.md          # KV 三章的逐段阅读导图
 ├── web/                      # 零依赖交互式学习页
 │   ├── index.html
@@ -96,7 +97,7 @@ python3 web/tools/build.py
 | [`example/KV_CACHE_READING.md`](example/KV_CACHE_READING.md) | 无 cache / cached attention、mask 与绝对位置、GQA、滑动窗口、reorder/fork |
 | [`example/PREFIX_CACHE_READING.md`](example/PREFIX_CACHE_READING.md) | 块池、链式哈希、引用计数、LRU + 叶子淘汰、与 vLLM / SGLang 的对应 |
 | [`example/PAGED_ATTENTION_READING.md`](example/PAGED_ATTENTION_READING.md) | block table、gather、内部碎片、与 vLLM 的对应 |
-| [`web/README.md`](web/README.md) | 交互页：前测/后测、10 个三段式章节、图表/仿真、导航与数据管线 |
+| [`web/README.md`](web/README.md) | 交互页：前测/后测、11 个三段式章节、图表/仿真、导航与数据管线 |
 | [`AGENTS.md`](AGENTS.md) | 开发约定：单一事实来源、章节 checklist、UI/验收、数据管线 |
 | [`web/DESIGN.md`](web/DESIGN.md) | 设计稿：信息架构、三段式机制、交互与验收 |
 | [`docker/vllm/README.md`](docker/vllm/README.md) | Docker 跑 vLLM：PagedAttention 参数、块池日志与指标 |

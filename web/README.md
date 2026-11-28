@@ -4,7 +4,7 @@
 
 ```
 请回答（6 个预测题）
-→ 认识 GPU（总览 → CUDA 执行模型，两章三段式）
+→ 认识 GPU（GPU → NPU 与国产算力 → CUDA 执行模型，三章三段式）
 → 认识 KVCache（三章三段式；多次提问在 Prefix 章第 11 步）
 → 推理网络（总览 → NCCL 学习章节 → ECN + DCQCN，三章三段式）
 → 认识模型（模型解剖 / 模型训练 / 显存计算器）
@@ -33,7 +33,8 @@ python3 -m http.server 8000
 | 视图 | 做什么 |
 | --- | --- |
 | 请回答（前测） | 先说明本次学习设定：锚点模型 Qwen3-Coder-30B-A3B + 可选 GPU（4090/3090/5090/A100/M2）的显存、带宽、算力，并列出本次覆盖（认识 GPU / KV 三章 / 推理网络 / 认识模型 / LLM 优化）；10 题前测**评分**（提交后才显示对错），覆盖模型构成 / 一次提问 / 多次提问 / 分页 / 运行时状态 / 三层分工 / GPU 与 CPU / 集合通信 / 无损网络 / 优化技术，每题带概要和详情 |
-| 认识 GPU · 总览 | 三段式章节：请回答 3 题 → 探索 10 节（CPU/GPU/NPU 分工、CPU vs GPU 延迟/吞吐、LLM 为什么适合 GPU、GPU 为什么取代不了 CPU、HBM/L2/L1+shared 显存层级、**GPU 有没有 L1/L2 cache** + 对比 CPU、coalescing/latency hiding、CUDA/ROCm/CANN 昇腾/HCU 生态、仿真代码、自查）→ 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验 |
+| 认识 GPU · GPU | 三段式章节：请回答 3 题 → 探索 10 节（CPU/GPU/NPU 分工、CPU vs GPU 延迟/吞吐、LLM 为什么适合 GPU、GPU 为什么取代不了 CPU、HBM/L2/L1+shared 显存层级、**GPU 有没有 L1/L2 cache** + 对比 CPU、coalescing/latency hiding、CUDA/ROCm/CANN 昇腾/HCU 生态、仿真代码、自查）→ 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验 |
+| 认识 GPU · NPU 与国产算力 | 三段式章节：请回答 3 题 → 探索 8 节（GPU/NPU/ASIC 执行模型、厂商地图、软件栈、LLM 选型、自查）→ 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验 |
 | 认识 GPU · CUDA 执行模型 | 三段式章节：请回答 3 题 → 探索 9 节（kernel 序列、grid/block/warp/SM + **occupancy 计算器**、内存层级、**coalescing stride 选择器**、**roofline 互动**、**CUDA Graph 对比**、decode 字节账、仿真代码、自查）→ 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验 |
 | ① KV cache 章 | **三段式**（请回答 → 探索 → 反思与总结）：14 步代码高亮 + 双栏生成播放 + 缓存网格 + 掩码；请回答 3 题预测、4 个反思问题 + 3 张归因卡、总结与章节测验 |
 | ② Prefix cache 章 | **三段式**：15 步探索 + 三场景（共享前缀 / 池子不足 LRU / 相同 token 不同位置）请求时间线、块池、哈希链、引用计数与淘汰；第 11 步内嵌「多次提问」多轮/多请求模拟器 |
@@ -46,9 +47,9 @@ python3 -m http.server 8000
 | 推理网络 · ECN + DCQCN | 三段式章节：请回答 3 题 → 探索 10 节（ECN/WRED 标记、CNP 与 DCQCN 闭环、**交换机组网与配置**、**服务器侧配置**、PFC 无损与风险、**RDMA 业务优先级/PFC**、**ECN 优先级与阈值**、排障、仿真代码、自查）→ 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验 |
 | 模型训练 | 三段式章节：请回答 3 题 → 探索 6 节（训练 step、显存账本 + 计算器、并行、最小脚本、**Python 仿真代码**、检查清单）→ 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验；模型解剖/显存计算器收在「认识模型」下拉里 |
 | LLM 优化 · 总览 | 三段式章节：请回答 3 题 → 探索 11 节（先找瓶颈、优化地图、**FlashAttention HBM 计算器**、PagedAttention、**量化计算器**、**投机解码加速比**、调度与系统、模型结构、选型决策、仿真代码、自查）→ 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验 |
-| ⑤ 学习反馈 | 学完再做 10 题**后测**（同概念换问法，同样带概要 + 详情，覆盖认识 GPU / KV 三章 / 推理网络 / 认识模型 / LLM 优化）：前测/后测分数、按概念对照（提升/维持/退步）、学习完成度（107 步 / 12 个学习视图）、**各章章节测验得分**、错题回看链接（可直达章节/解剖页）；总结给「概要 + 详细描述」两层 |
+| ⑤ 学习反馈 | 学完再做 10 题**后测**（同概念换问法，同样带概要 + 详情，覆盖认识 GPU / KV 三章 / 推理网络 / 认识模型 / LLM 优化）：前测/后测分数、按概念对照（提升/维持/退步）、学习完成度（115 步 / 13 个学习视图）、**各章章节测验得分**、错题回看链接（可直达章节/解剖页）；总结给「概要 + 详细描述」两层 |
 
-另有：顶栏五个学习内容下拉——「认识 GPU」下拉（总览 / CUDA 执行模型）、「认识 KVCache」下拉（单请求 / Prefix / Paged）、「推理网络」下拉（总览 / NCCL 学习章节 / ECN + DCQCN）、「认识模型」下拉（模型解剖 / 模型训练 / 显存计算器）、「LLM 优化」下拉（总览 / FlashAttention / 模型量化 / 投机解码锚点）；触发按钮显示当前所在项（如「认识 KVCache · KV」「推理网络 · NCCL」「模型训练 · 训练教程」），支持 ↑/↓/Esc/点外部关闭，窄屏导航换行不横向溢出。章节导航统一在**左侧轨道、可收缩**——顶部是「章节」切换（三章标题，当前高亮、完成打勾；折叠时只留 ①②③）与三个阶段（请回答/探索阅读/反思与总结），探索阶段展开步骤列表；折叠状态记忆、窄屏默认收起；非探索阶段只保留章节（如有）与阶段列表。认识 GPU/认识 KVCache/推理网络/认识模型/LLM 优化使用**章节三段式左栏**（三阶段 + 10/9/7/9/10/6/11 个教程小节，点击滚动、滚动高亮）；模型解剖/显存计算器仍是工具，另有一条**小节导航**（与章节导航同款：200px 可折叠左栏，窄屏默认收起成顶部条），由 `h2` 自动生成并在换预设/拉滑杆后重建。亮/暗主题切换、键盘导航（←/→/空格）和 `file://` 离线支持；移动端（≤980px）代码 pane 默认折叠成「展开代码」抽屉。设计见 [`DESIGN.md`](DESIGN.md)。
+另有：顶栏五个学习内容下拉——「认识 GPU」下拉（GPU / NPU 与国产算力 / CUDA 执行模型）、「认识 KVCache」下拉（单请求 / Prefix / Paged）、「推理网络」下拉（总览 / NCCL 学习章节 / ECN + DCQCN）、「认识模型」下拉（模型解剖 / 模型训练 / 显存计算器）、「LLM 优化」下拉（总览 / FlashAttention / 模型量化 / 投机解码锚点）；触发按钮显示当前所在项（如「认识 KVCache · KV」「推理网络 · NCCL」「模型训练 · 训练教程」），支持 ↑/↓/Esc/点外部关闭，窄屏导航换行不横向溢出。章节导航统一在**左侧轨道、可收缩**——顶部是「章节」切换（三章标题，当前高亮、完成打勾；折叠时只留 ①②③）与三个阶段（请回答/探索阅读/反思与总结），探索阶段展开步骤列表；折叠状态记忆、窄屏默认收起；非探索阶段只保留章节（如有）与阶段列表。认识 GPU/认识 KVCache/推理网络/认识模型/LLM 优化使用**章节三段式左栏**（三阶段 + 每章 6–11 个教程小节，点击滚动、滚动高亮）；模型解剖/显存计算器仍是工具，另有一条**小节导航**（与章节导航同款：200px 可折叠左栏，窄屏默认收起成顶部条），由 `h2` 自动生成并在换预设/拉滑杆后重建。亮/暗主题切换、键盘导航（←/→/空格）和 `file://` 离线支持；移动端（≤980px）代码 pane 默认折叠成「展开代码」抽屉。设计见 [`DESIGN.md`](DESIGN.md)。
 
 ## 改内容后重新生成
 
@@ -67,7 +68,8 @@ python3 web/tools/build.py
 - 推理网络 · 总览：`web/tools/net.json`（NCCL/RoCE/PD 文案与表格；章节 lesson 在同文件的 `lesson` 字段；模拟器与计算器在 `assets/net.js`；纯 Python 仿真 `example/net_sim.py`，build 期运行）
 - 推理网络 · NCCL 学习章节：`web/tools/nccl.json`（九节教程 + lesson；渲染器 `assets/nccl.js` + `assets/nccl.css`；仿真 `example/nccl_sim.py`，build 期运行并注入 stdout）
 - 推理网络 · ECN + DCQCN：`web/tools/ecn.json`（十节教程 + lesson；渲染器 `assets/ecn.js` + `assets/ecn.css`；仿真 `example/ecn_sim.py`，build 期运行并注入 stdout）
-- 认识 GPU · 总览：`web/tools/gpu.json`（十节教程 + lesson；渲染器 `assets/gpu.js` + `assets/gpu.css`；仿真 `example/gpu_sim.py`，build 期运行并注入 stdout）
+- 认识 GPU · GPU：`web/tools/gpu.json`（十节教程 + lesson；渲染器 `assets/gpu.js` + `assets/gpu.css`；仿真 `example/gpu_sim.py`，build 期运行并注入 stdout）
+- 认识 GPU · NPU 与国产算力：`web/tools/npu.json`（八节教程 + lesson；渲染器 `assets/npu.js` + `assets/npu.css`；仿真 `example/npu_sim.py`，build 期运行并注入 stdout）
 - 认识 GPU · CUDA 执行模型：`web/tools/cuda.json`（九节教程 + lesson；渲染器 `assets/cuda.js` + `assets/cuda.css`；仿真 `example/cuda_sim.py`，build 期运行并注入 stdout）
 - LLM 优化：`web/tools/opt.json`（十一节教程 + lesson；渲染器 `assets/opt.js` + `assets/opt.css`；仿真 `example/opt_sim.py`，build 期运行并注入 stdout）
 - 模型训练：`web/tools/train.json`（章节 lesson 在同文件的 `lesson` 字段）（步骤/账本/并行/清单）+ `example/train_tiny.py`（build.py 只读源码，不执行）+ `example/train_sim.py`（build 期运行，注入真实输出）
@@ -86,10 +88,10 @@ python3 web/tools/build.py
 ```
 web/
 ├── index.html          # 页面壳（无框架、无 CDN）
-├── DESIGN.md           # 设计稿（信息架构、三段式机制、P0–P11）
+├── DESIGN.md           # 设计稿（信息架构、三段式机制、P0–P12）
 ├── assets/
 │   ├── style.css
-│   ├── app.js          # hash 路由、十个学习章节（含 7 个文档章节）+ 工具视图、步骤/滚动联动
+│   ├── app.js          # hash 路由、十一个学习章节（含 8 个文档章节）+ 工具视图、步骤/滚动联动
 │   ├── codeview.js     # Python 高亮 + 行号 + 代码区滚动
 │   ├── workshop.js     # 请回答 / 归因 / 总结 / 后测反馈 / 学习进度
 │   ├── anatomy.js      # 模型组成 / 层与维度 / 参数→token / GPU 加载 / kernel 表
@@ -98,9 +100,10 @@ web/
 │   ├── nccl.js         # NCCL 学习章节：逐步播放器 / α-β 扫描 / 拓扑 / 仿真代码
 │   ├── cuda.js         # CUDA 执行模型：occupancy / coalescing / roofline / graph / 字节账
 │   ├── gpu.js          # 认识 GPU：CPU/GPU 对比、存储层级、L1/L2、生态、仿真代码
+│   ├── npu.js          # NPU 与国产算力：执行模型、厂商地图、软件栈、选型
 │   ├── ecn.js          # ECN + DCQCN：WRED 阈值、PFC/DCQCN、DSCP→TC、组网、仿真代码
 │   ├── opt.js          # LLM 优化：瓶颈地图、FlashAttention/量化/投机解码计算器、选型
-│   ├── nccl.css / cuda.css / gpu.css / ecn.css / opt.css  # 深造章节的专属样式
+│   ├── nccl.css / cuda.css / gpu.css / npu.css / ecn.css / opt.css  # 深造章节的专属样式
 │   ├── sectionnav.js   # 模型解剖/显存计算器的小节导航
 │   └── viz/kv.js       # 第 1 章的可视化组件
 ├── data/               # 生成物（已生成，双击即用）
@@ -112,6 +115,6 @@ web/
     ├── steps.json
     ├── pedagogy.json
     ├── net.json / train.json
-    ├── nccl.json / cuda.json / ecn.json / gpu.json / opt.json
+    ├── nccl.json / cuda.json / ecn.json / gpu.json / npu.json / opt.json
     └── anatomy.json
 ```

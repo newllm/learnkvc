@@ -16,7 +16,7 @@
   /* ============================================ progress + think tests */
 
   const PROGRESS_KEY = "learnkvc.progress.v1";
-  const LEARNING_VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "train", "net", "nccl", "cuda", "ecn", "gpu", "opt"];
+  const LEARNING_VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "train", "net", "nccl", "cuda", "ecn", "gpu", "npu", "opt"];
   const EMPTY_PROGRESS = { pre: null, post: null, gpu: "rtx4090", views: [], steps: [] };
 
   function loadProgress() {
@@ -95,7 +95,7 @@
       '<div class="learnctx">' +
       '<div class="ctx-title"><span>本次学习设定</span><b>' + esc(preset.name) + "</b></div>" +
       '<p class="note">' + esc(context.note) + "</p>" +
-      '<div class="ctx-chips"><span>认识 GPU（GPU/CPU/显存）</span><span>① KV cache 章</span>' +
+      '<div class="ctx-chips"><span>认识 GPU（GPU / NPU / 国产算力）</span><span>① KV cache 章</span>' +
       "<span>② Prefix 章（含多次提问）</span><span>③ PagedAttention 章</span>" +
       "<span>推理网络（NCCL / 无损）</span><span>认识模型（解剖 / 训练 / 计算器）</span>" +
       "<span>LLM 优化（FlashAttention / 量化 / 投机）</span></div>" +
@@ -803,8 +803,8 @@
 
   /* =================================================== lesson stages */
 
-  const CHAPTER_LABELS = { kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention", net: "推理网络", train: "模型训练", nccl: "NCCL 学习章节", cuda: "CUDA 执行模型", ecn: "ECN + DCQCN", gpu: "认识 GPU", opt: "LLM 优化" };
-  const ALL_CHAPTERS = ["gpu", "cuda", "kv", "prefix", "paged", "net", "nccl", "ecn", "train", "opt"];
+  const CHAPTER_LABELS = { kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention", net: "推理网络", train: "模型训练", nccl: "NCCL 学习章节", cuda: "CUDA 执行模型", ecn: "ECN + DCQCN", gpu: "认识 GPU", npu: "NPU 与国产算力", opt: "LLM 优化" };
+  const ALL_CHAPTERS = ["gpu", "npu", "cuda", "kv", "prefix", "paged", "net", "nccl", "ecn", "train", "opt"];
 
   function lessonOf(chapter) {
     const p = loadProgress();

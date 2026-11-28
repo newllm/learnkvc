@@ -33,7 +33,7 @@
 
 ## 3. 信息架构
 
-当前入口顺序是「请回答 → 认识 GPU（总览 / CUDA 执行模型，两章三段式） → 认识 KVCache（三章三段式） → 推理网络（总览 / NCCL 学习章节 / ECN + DCQCN，三章三段式） → 认识模型（模型解剖 / 模型训练 / 显存计算器） → LLM 优化（三段式） → 后测 → 反馈」；多次提问与归因不再单独成页：
+当前入口顺序是「请回答 → 认识 GPU（GPU / NPU 与国产算力 / CUDA 执行模型，三章三段式） → 认识 KVCache（三章三段式） → 推理网络（总览 / NCCL 学习章节 / ECN + DCQCN，三章三段式） → 认识模型（模型解剖 / 模型训练 / 显存计算器） → LLM 优化（三段式） → 后测 → 反馈」；多次提问与归因不再单独成页：
 
 | 视图 | 作用 | 内容来源 |
 | --- | --- | --- |
@@ -46,7 +46,8 @@
 | ④c 推理网络 · 总览 | 三段式章节：NCCL collectives/ring 模拟、RoCE/RDMA、PD 分离 + KV 传输计算器 | `net.json` + `net.js` |
 | ④d NCCL 学习章节 | 三段式章节：collectives、ring/tree 逐步播放、α-β 扫描与 crossover、拓扑、排查清单 + 仿真代码 | `nccl.json` + `nccl.js` + `nccl_sim.py` |
 | ④e ECN + DCQCN | 三段式章节：ECN/WRED 标记与 CNP、DCQCN 速率收敛、交换机组网/配置、服务器侧 RoCEv2/PFC/ECN、无损策略、RDMA 业务优先级/PFC、ECN 优先级/阈值、排障 | `ecn.json` + `ecn.js` + `ecn_sim.py` |
-| ④f 认识 GPU · 总览 | 三段式章节：CPU/GPU/NPU 分工、CPU vs GPU 延迟/吞吐、LLM 适配、GPU 取代不了 CPU、显存层级与 L1/L2 cache、访存模式、CUDA/ROCm/昇腾/HCU 生态 | `gpu.json` + `gpu.js` + `gpu_sim.py` |
+| ④f 认识 GPU · GPU | 三段式章节：CPU/GPU/NPU 分工、CPU vs GPU 延迟/吞吐、LLM 适配、GPU 取代不了 CPU、显存层级与 L1/L2 cache、访存模式、CUDA/ROCm/昇腾/HCU 生态 | `gpu.json` + `gpu.js` + `gpu_sim.py` |
+| ④f2 认识 GPU · NPU 与国产算力 | 三段式章节：GPU/NPU/ASIC 执行模型、国际/国产厂商地图、软件栈、LLM 选型 | `npu.json` + `npu.js` + `npu_sim.py` |
 | ④g 认识 GPU · CUDA 执行模型 | 三段式章节：grid/block/warp/SM、occupancy 计算器、内存层级、coalescing、roofline、CUDA Graph + 字节账 | `cuda.json` + `cuda.js` + `cuda_sim.py` |
 | ④h LLM 优化（下拉：总览 / FlashAttention / 量化 / 投机解码锚点） | 三段式章节：瓶颈地图、FlashAttention、PagedAttention、量化、投机解码、调度/结构优化、选型决策 + 计算器 | `opt.json` + `opt.js` + `opt_sim.py` |
 | P2 / P3（规划） | Prefix cache、PagedAttention 沿用同一套「请回答 → 证据」结构 | 后续 |
@@ -186,9 +187,11 @@
 
 互动：ECN/WRED 阈值滑杆（标记概率曲线 + 队列/标记率/速率收敛）、PFC/ECN 组合场景选择（仅 PFC / ECN+DCQCN / 二者结合）、DSCP→TC→PFC/ECN 映射表（按业务类型看配置）、leaf-spine vs rail-optimized 组网示意。
 
-### 3.9 认识 GPU（下拉：总览 + CUDA 执行模型）
+### 3.9 认识 GPU（下拉：GPU + NPU 与国产算力 + CUDA 执行模型）
 
-「认识 GPU」是独立于「推理网络」的一组章节（`#gpu` 总览 + `#cuda` CUDA 执行模型，顶栏下拉）：把「CUDA / GPU / HCU / 昇腾」放到同一张认知地图上，回答四个问题——CPU 与 GPU 是什么关系、为什么 CPU 在 LLM 领域无法比拟 GPU、为什么 GPU 无法取代 CPU、GPU 的显存访问是否也有 L1/L2 cache。三段式：请回答 3 题 → 探索 10 节 → 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验。
+「认识 GPU」是独立于「推理网络」的一组章节（`#gpu` GPU + `#npu` NPU 与国产算力 + `#cuda` CUDA 执行模型，顶栏下拉）：把「CUDA / GPU / HCU / 昇腾」放到同一张认知地图上，回答四个问题——CPU 与 GPU 是什么关系、为什么 CPU 在 LLM 领域无法比拟 GPU、为什么 GPU 无法取代 CPU、GPU 的显存访问是否也有 L1/L2 cache。三段式：请回答 3 题 → 探索 10 节 → 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验。
+
+**NPU 与国产算力**（`#npu`）：把 GPU/NPU/ASIC 的执行模型差异、厂商地图（NVIDIA/AMD/昇腾/寒武纪/海光/壁仞/摩尔线程/沐曦/燧原/昆仑芯/天数）、软件栈（CUDA/ROCm/CANN/Neuware/DTK/MUSA…）和 LLM 选型放进一张地图；探索 8 节 + 厂商筛选 + roofline 仿真。
 
 探索 10 节：
 - **CPU/GPU/NPU 分工**：CPU 是 host、GPU/NPU 是 device；CPU 负责 OS/调度/IO/数据搬运，device 负责吞吐型并行；GPU 不是「更强的 CPU」。
@@ -254,7 +257,7 @@
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-顶栏五个学习内容下拉：「认识 GPU」下拉（总览 / CUDA 执行模型）、「认识 KVCache」下拉（三个 KV 子章）、「推理网络」下拉（总览 / NCCL 学习章节 / ECN + DCQCN）、「认识模型」下拉（模型解剖 / 模型训练 / 显存计算器）、「LLM 优化」下拉（总览 / FlashAttention / 模型量化 / 投机解码）；一级还有「请回答 · 前测」「学习反馈」。触发按钮会把当前所在项写进标签（如「认识 KVCache · KV」「模型训练 · 训练教程」），并给菜单项加 `aria-current`；打开/关闭用 `aria-expanded` 同步，选中、点外部、Esc 都关闭；菜单宽度在窄屏用 JS 夹在视口内，导航整体换行而不是横向滚动。
+顶栏五个学习内容下拉：「认识 GPU」下拉（GPU / NPU 与国产算力 / CUDA 执行模型）、「认识 KVCache」下拉（三个 KV 子章）、「推理网络」下拉（总览 / NCCL 学习章节 / ECN + DCQCN）、「认识模型」下拉（模型解剖 / 模型训练 / 显存计算器）、「LLM 优化」下拉（总览 / FlashAttention / 模型量化 / 投机解码）；一级还有「请回答 · 前测」「学习反馈」。触发按钮会把当前所在项写进标签（如「认识 KVCache · KV」「模型训练 · 训练教程」），并给菜单项加 `aria-current`；打开/关闭用 `aria-expanded` 同步，选中、点外部、Esc 都关闭；菜单宽度在窄屏用 JS 夹在视口内，导航整体换行而不是横向滚动。
 
 移动端（< 980px）：左侧导航默认收起成 38px 轨道；展开后章节排成 3 列、三阶段排成 3 列（隐藏进度文字、保留完成打勾），步骤列表限高滚动；KV 代码区默认折叠成抽屉（header 45px，展开 42vh），可视化与讲解上下堆叠；`net`/`train` 是导航在上、教程内容占剩余高度（`auto minmax(0,1fr)`），底部无 timeline。
 
@@ -388,6 +391,7 @@ web/
 │   ├── cuda.js / cuda.css # CUDA 执行模型
 │   ├── ecn.js / ecn.css   # ECN + DCQCN 无损网络
 │   ├── gpu.js / gpu.css   # 认识 GPU
+│   ├── npu.js / npu.css   # NPU 与国产算力
 │   ├── opt.js / opt.css   # LLM 优化
 │   ├── train.js           # 模型训练章节
 │   └── viz/               # KV 三章的代码步骤可视化（kv.js / prefix.js / paged.js）
@@ -436,6 +440,7 @@ web/
 | P9 ✅ | ECN + DCQCN 无损网络（`ecn.json` + `ecn.js` + `ecn_sim.py`）：ECN/WRED、CNP/DCQCN、交换机/服务器配置、组网、PFC、优先级与阈值 | 已完成：10 节、4 个互动、三段式可完成 |
 | P10 ✅ | LLM 优化（`opt.json` + `opt.js` + `opt_sim.py`）：瓶颈地图、FlashAttention、PagedAttention、量化、投机解码、调度与结构、选型 | 已完成：11 节、4 个互动、三段式可完成 |
 | P11 ✅ | 章节测验（每章 2 题计分）+ Markdown 导出（总结/整章）+ 移动端代码抽屉 | 已完成：测验计分与反馈汇总、导出 `.md`、980px 以下抽屉 |
+| P12 ✅ | NPU 与国产算力（`npu.json` + `npu.js` + `npu_sim.py`）：GPU/NPU/ASIC、厂商地图、软件栈、选型 | 已完成：8 节、厂商筛选、三段式可完成 |
 
 每阶段独立可交付：P0 完成就能替代「纯 Markdown 阅读」，后续只是加交互。
 

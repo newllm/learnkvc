@@ -12,7 +12,7 @@
 
   const kv = D.kv;
   const MAX_GEN = TR.generated.length;
-  const VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "calc", "train", "net", "nccl", "cuda", "ecn", "gpu", "opt", "feedback"];
+  const VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "calc", "train", "net", "nccl", "cuda", "ecn", "gpu", "npu", "opt", "feedback"];
   const state = { view: "think", step: 0, genStep: MAX_GEN, playing: false, timer: null };
 
   const $ = (sel) => document.querySelector(sel);
@@ -29,6 +29,7 @@
     cuda: $("#view-cuda"),
     ecn: $("#view-ecn"),
     gpu: $("#view-gpu"),
+    npu: $("#view-npu"),
     opt: $("#view-opt"),
     feedback: $("#view-feedback"),
     tabs: Array.from(document.querySelectorAll("#tabs [data-view]")),
@@ -52,6 +53,7 @@
       cuda: $("#stepnav-cuda"),
       ecn: $("#stepnav-ecn"),
       gpu: $("#stepnav-gpu"),
+      npu: $("#stepnav-npu"),
       opt: $("#stepnav-opt"),
     },
     doc: $("#doc-card"),
@@ -69,6 +71,7 @@
     cudaBody: $("#cuda-body"),
     ecnBody: $("#ecn-body"),
     gpuBody: $("#gpu-body"),
+    npuBody: $("#npu-body"),
     optBody: $("#opt-body"),
     trainMain: $("#train-main"),
     netMain: $("#net-main"),
@@ -76,6 +79,7 @@
     cudaMain: $("#cuda-main"),
     ecnMain: $("#ecn-main"),
     gpuMain: $("#gpu-main"),
+    npuMain: $("#npu-main"),
     optMain: $("#opt-main"),
     feedbackBody: $("#feedback"),
     ovWhy: $("#ov-why"),
@@ -99,7 +103,7 @@
   state.prefix = { step: 0, scenario: "shared", snap: 0, playing: false, timer: null };
   state.paged = { step: 0, snap: 0, sel: "seq-b", playing: false, timer: null };
   const CHAPTERS = ["kv", "prefix", "paged"];
-  const DOC_CHAPTERS = ["net", "train", "nccl", "cuda", "ecn", "gpu", "opt"];
+  const DOC_CHAPTERS = ["net", "train", "nccl", "cuda", "ecn", "gpu", "npu", "opt"];
   const ALL_CHAPTERS = CHAPTERS.concat(DOC_CHAPTERS);
   const DOC_SECTIONS = {
     net: ["why", "nccl", "sim", "roce", "pd", "codeSection", "check"],
@@ -108,17 +112,18 @@
     cuda: ["why", "exec", "memory", "coalesce", "roofline", "graph", "kv", "codeSection", "check"],
     ecn: ["why", "layers", "switch", "server", "lossless", "priority", "ecn", "tuning", "codeSection", "check"],
     gpu: ["why", "compare", "llm", "replace", "memory", "cache", "access", "eco", "codeSection", "check"],
+    npu: ["why", "compare", "vendors", "stack", "llm", "select", "codeSection", "check"],
     opt: ["why", "map", "flash", "paged", "quant", "decode", "schedule", "model", "choose", "codeSection", "check"],
   };
-  const DOC_RENDERERS = { net: "net", train: "train", nccl: "nccl", cuda: "cuda", ecn: "ecn", gpu: "gpu", opt: "opt" };
-  const DOC_MODULES = { net: () => LK.net, train: () => LK.train, nccl: () => LK.nccl, cuda: () => LK.cuda, ecn: () => LK.ecn, gpu: () => LK.gpu, opt: () => LK.opt };
+  const DOC_RENDERERS = { net: "net", train: "train", nccl: "nccl", cuda: "cuda", ecn: "ecn", gpu: "gpu", npu: "npu", opt: "opt" };
+  const DOC_MODULES = { net: () => LK.net, train: () => LK.train, nccl: () => LK.nccl, cuda: () => LK.cuda, ecn: () => LK.ecn, gpu: () => LK.gpu, npu: () => LK.npu, opt: () => LK.opt };
   const CH_NUMS = ["①", "②", "③"];
   const CH_SHORT = ["KV cache", "Prefix cache", "PagedAttention"];
   const STAGE_NAMES = ["think", "explore", "reflect"];
   state.stages = {};
-  state.docStep = { net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, opt: 0 };
-  state.docLock = { net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, opt: 0 };
-  state.navCollapsed = { kv: false, prefix: false, paged: false, net: false, train: false, nccl: false, cuda: false, ecn: false, gpu: false, opt: false };
+  state.docStep = { net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, npu: 0, opt: 0 };
+  state.docLock = { net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, npu: 0, opt: 0 };
+  state.navCollapsed = { kv: false, prefix: false, paged: false, net: false, train: false, nccl: false, cuda: false, ecn: false, gpu: false, npu: false, opt: false };
   const world = { presets: D.anatomy.presets, gpus: D.anatomy.context.gpus };
 
   const esc = (s) =>

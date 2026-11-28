@@ -1,0 +1,475 @@
+{
+  "kicker": "学习章节 · 异构算力",
+  "title": "GPU、NPU 与国产算力：把名字和边界说清楚",
+  "lead": "GPU 不是唯一答案。NPU、GPGPU、ASIC 各自把「通用」和「专用」做了不同的取舍；国产芯片的差异往往不在峰值，而在软件栈、算子覆盖和集群能力。本章不站队，只给一张可以继续查证的地图。",
+  "why": {
+    "title": "为什么会有 NPU、GPGPU、ASIC 这些名字？",
+    "lead": "它们都在做矩阵乘，但「可编程性 ↔ 效率」的取舍不同。名字背后是执行模型和工具链，不是单纯的峰值排名。",
+    "cards": [
+      {
+        "name": "CPU",
+        "tag": "延迟 / 控制",
+        "does": "少量大核、乱序执行、大缓存，适合分支、调度、I/O。"
+      },
+      {
+        "name": "GPU",
+        "tag": "SIMT / 吞吐",
+        "does": "大量 SIMT lane + Tensor Core，同一套指令跑很多数据；CUDA/ROCm 把通用并行暴露给框架。"
+      },
+      {
+        "name": "NPU",
+        "tag": "DSA / 专用",
+        "does": "为矩阵/卷积/向量定制的数据流与片上缓存，算子效率高；代价是依赖编译器与算子库覆盖。"
+      },
+      {
+        "name": "ASIC / TPU",
+        "tag": "极致专用",
+        "does": "只服务少数负载，能效最高；模型或算子一变，适配成本最高。"
+      }
+    ],
+    "note": "判断一块芯片「能不能用」，先问：PyTorch 的算子有没有？集合通信库有没有？推理引擎支不支持？峰值只是第三问。"
+  },
+  "compare": {
+    "title": "GPU、NPU、ASIC 不是同一种机器",
+    "lead": "同为 AI 加速器，执行模型、内存系统和可编程性决定了它们的适用边界。",
+    "rows": [
+      {
+        "dim": "执行模型",
+        "gpu": "SIMT：同一指令多线程，靠 warp/lane 隐藏延迟",
+        "npu": "DSA：矩阵/向量数据流，编译器排算子与片上缓存",
+        "asic": "固定数据流，专用指令",
+        "note": "GPU 更适合「算子经常变」，NPU/ASIC 更适合「算子稳定」"
+      },
+      {
+        "dim": "算力来源",
+        "gpu": "CUDA Core + Tensor Core",
+        "npu": "矩阵单元 / 向量单元 / 片上 SRAM",
+        "asic": "脉动阵列等专用阵列",
+        "note": "峰值口径不同，不能只比 TFLOPS"
+      },
+      {
+        "dim": "内存",
+        "gpu": "HBM + 大 L2，追求高带宽",
+        "npu": "HBM + 大片上缓存，追求数据复用",
+        "asic": "片上/近存，尽量少搬",
+        "note": "decode 仍然看 HBM 带宽"
+      },
+      {
+        "dim": "可编程性",
+        "gpu": "CUDA/ROCm/HIP，生态最成熟",
+        "npu": "CANN/Neuware 等专用栈，算子覆盖是关键",
+        "asic": "通常只通过框架/编译器使用",
+        "note": "迁移成本经常比硬件差价更大"
+      },
+      {
+        "dim": "典型任务",
+        "gpu": "训练、通用推理、科学计算",
+        "npu": "推理、训练加速、视频/视觉",
+        "asic": "固定模型的大规模推理",
+        "note": "先看负载是否稳定"
+      },
+      {
+        "dim": "生态",
+        "gpu": "NVIDIA CUDA 事实标准；AMD ROCm 追赶",
+        "npu": "华为 CANN、寒武纪 Neuware 等",
+        "asic": "厂商私有工具链",
+        "note": "Triton / PyTorch PrivateUse1 正在降低迁移成本"
+      }
+    ],
+    "note": "GPGPU（如海光 DCU、壁仞、摩尔线程、沐曦）本质仍是通用 GPU 路线，只是软件栈不是 CUDA；「国产 GPU」和「NPU」不是同义词。"
+  },
+  "vendors": {
+    "title": "一张图：国际 GPU 与国产算力",
+    "lead": "按「通用 GPU / NPU / 国产」筛选。型号只列代表系列，具体规格与供货以厂商官方为准。",
+    "filters": [
+      {
+        "id": "all",
+        "label": "全部"
+      },
+      {
+        "id": "gpu",
+        "label": "GPU / GPGPU"
+      },
+      {
+        "id": "npu",
+        "label": "NPU / ASIC"
+      },
+      {
+        "id": "cn",
+        "label": "国产"
+      }
+    ],
+    "cards": [
+      {
+        "name": "NVIDIA H100 / H200 / B200",
+        "kind": "gpu",
+        "region": "intl",
+        "stack": "CUDA / TensorRT / NCCL",
+        "arch": "SIMT + Tensor Core",
+        "note": "训练与推理的事实标准，生态最完整；价格与供给是主要约束。"
+      },
+      {
+        "name": "NVIDIA A100 / L40S / RTX 4090",
+        "kind": "gpu",
+        "region": "intl",
+        "stack": "CUDA",
+        "arch": "Ampere / Ada",
+        "note": "A100 仍是常见训练卡；4090 适合单机推理与小规模微调。"
+      },
+      {
+        "name": "AMD MI300X / MI325X",
+        "kind": "gpu",
+        "region": "intl",
+        "stack": "ROCm / HIP / RCCL",
+        "arch": "CDNA",
+        "note": "大显存 + 高带宽，推理性价比路线；ROCm 算子覆盖在持续补齐。"
+      },
+      {
+        "name": "华为昇腾 910B / 910C",
+        "kind": "npu",
+        "region": "cn",
+        "stack": "CANN / HCCL / MindSpore / MindIE",
+        "arch": "达芬奇 NPU",
+        "note": "国内训练/推理集群的主力之一；重点验证算子、框架和集合通信。"
+      },
+      {
+        "name": "寒武纪 MLU370 / MLU590",
+        "kind": "npu",
+        "region": "cn",
+        "stack": "Neuware / BANG",
+        "arch": "MLU",
+        "note": "推理与训练加速；算子库和框架适配要逐模型确认。"
+      },
+      {
+        "name": "海光 DCU（深算）",
+        "kind": "gpu",
+        "region": "cn",
+        "stack": "DTK / HIP",
+        "arch": "GPGPU",
+        "note": "兼容 x86 服务器生态，HIP 路线迁移成本相对低；具体型号看代际。"
+      },
+      {
+        "name": "壁仞 BR100 / BR104",
+        "kind": "gpu",
+        "region": "cn",
+        "stack": "BIRENSUPA",
+        "arch": "GPGPU",
+        "note": "通用 GPU 路线；关注编译器和算子覆盖。"
+      },
+      {
+        "name": "摩尔线程 MTT S4000 / S5000",
+        "kind": "gpu",
+        "region": "cn",
+        "stack": "MUSA / KUAE",
+        "arch": "MUSA GPU",
+        "note": "图形 + 计算双路线；MUSA 提供 CUDA 风格接口。"
+      },
+      {
+        "name": "沐曦 曦云 C500",
+        "kind": "gpu",
+        "region": "cn",
+        "stack": "MXMACA",
+        "arch": "GPGPU",
+        "note": "通用 GPU；重点关注框架适配与集群方案。"
+      },
+      {
+        "name": "燧原 云燧 T20 / T21",
+        "kind": "npu",
+        "region": "cn",
+        "stack": "TopsRider",
+        "arch": "GC 系列",
+        "note": "训练/推理加速卡；看模型迁移与算子支持。"
+      },
+      {
+        "name": "昆仑芯 P800",
+        "kind": "npu",
+        "region": "cn",
+        "stack": "XPU / 飞桨",
+        "arch": "XPU",
+        "note": "与飞桨生态结合紧密；通用框架适配要看版本。"
+      },
+      {
+        "name": "天数智芯 天垓 / 智铠",
+        "kind": "gpu",
+        "region": "cn",
+        "stack": "Iluvatar CoreX",
+        "arch": "GPGPU",
+        "note": "训练与推理两条产品线；关注软件栈成熟度。"
+      }
+    ],
+    "note": "不是穷举。判断国产卡时，先问「我的模型/算子/并行策略能不能原样跑」，再问峰值和价格。"
+  },
+  "stack": {
+    "title": "软件栈才是第二道护城河",
+    "lead": "硬件决定上限，软件决定你能不能到上限。CUDA 的护城河不只是 API，而是库、调试器、社区和多年算子积累。",
+    "rows": [
+      {
+        "vendor": "NVIDIA",
+        "hardware": "GPU",
+        "stack": "CUDA / cuBLAS / cuDNN / NCCL / TensorRT / Triton",
+        "base": "CUDA",
+        "note": "最完整；PyTorch/Triton/vLLM 默认路径"
+      },
+      {
+        "vendor": "AMD",
+        "hardware": "GPU",
+        "stack": "ROCm / HIP / rocBLAS / RCCL",
+        "base": "HIP",
+        "note": "HIP 与 CUDA 语法接近，但算子与库仍有差异"
+      },
+      {
+        "vendor": "华为",
+        "hardware": "昇腾 NPU",
+        "stack": "CANN / HCCL / MindSpore / MindIE",
+        "base": "CANN",
+        "note": "Ascend 版 PyTorch/vLLM 需要专用适配"
+      },
+      {
+        "vendor": "寒武纪",
+        "hardware": "MLU",
+        "stack": "Neuware / BANG / CNNL",
+        "base": "BANG",
+        "note": "逐模型确认算子；推理引擎需厂商版本"
+      },
+      {
+        "vendor": "海光",
+        "hardware": "DCU",
+        "stack": "DTK / HIP / rocBLAS 兼容层",
+        "base": "HIP",
+        "note": "HIP 路线，迁移工作量相对可控"
+      },
+      {
+        "vendor": "壁仞",
+        "hardware": "BR 系列",
+        "stack": "BIRENSUPA / BIREN 库",
+        "base": "自有",
+        "note": "编译器与框架插件是关键"
+      },
+      {
+        "vendor": "摩尔线程",
+        "hardware": "MTT",
+        "stack": "MUSA / MUSIFY",
+        "base": "MUSA",
+        "note": "CUDA 风格 API，迁移需验证算子"
+      },
+      {
+        "vendor": "沐曦",
+        "hardware": "曦云",
+        "stack": "MXMACA",
+        "base": "自有",
+        "note": "关注 PyTorch 适配和集合通信"
+      },
+      {
+        "vendor": "燧原 / 昆仑芯 / 天数",
+        "hardware": "NPU / GPGPU",
+        "stack": "TopsRider / XPU / CoreX",
+        "base": "自有",
+        "note": "优先确认推理引擎与量化支持"
+      }
+    ],
+    "note": "迁移时先跑三件事：单卡算子覆盖、单机多卡集合通信、推理引擎端到端。任何一项不过，峰值再高也落不了地。"
+  },
+  "llm": {
+    "title": "LLM 场景怎么选：先分阶段，再看芯片",
+    "lead": "prefill、decode、训练、推理引擎对硬件的要求不同；同一块卡在不同阶段可能是完全不同的瓶颈。",
+    "rows": [
+      {
+        "phase": "prefill（长 prompt）",
+        "bottleneck": "算力 / Tensor Core 利用率",
+        "prefer": "GPU 或高算力 NPU",
+        "why": "一次处理很多 token，compute-bound；看有效算力与 attention kernel"
+      },
+      {
+        "phase": "decode（逐 token）",
+        "bottleneck": "HBM 带宽 / KV 读取",
+        "prefer": "高带宽 GPU（HBM）",
+        "why": "batch=1 时算力闲置；带宽决定 tok/s，NPU 也要看 HBM"
+      },
+      {
+        "phase": "训练",
+        "bottleneck": "算力 + 集合通信 + 显存",
+        "prefer": "NVIDIA / AMD / 昇腾集群",
+        "why": "NCCL/HCCL/RCCL、拓扑、故障恢复比单卡峰值更重要"
+      },
+      {
+        "phase": "推理引擎",
+        "bottleneck": "算子覆盖 + 调度 + 量化",
+        "prefer": "厂商/社区已适配的卡",
+        "why": "vLLM/SGLang/TensorRT-LLM 的 fork 与 kernel 决定能不能跑"
+      }
+    ],
+    "note": "一个常见误区：拿峰值 TFLOPS 选推理卡。decode 阶段更该看 HBM 带宽、KV 量化支持和引擎的 continuous batching。"
+  },
+  "select": {
+    "title": "选型清单：把问题问对",
+    "lead": "不要从「哪块卡跑分高」开始，从「我的模型、框架、集群、团队」开始。",
+    "items": [
+      {
+        "scene": "大模型训练 / 多机多卡",
+        "choice": "优先看集合通信与集群方案",
+        "why": "NCCL/HCCL/RCCL、RDMA、拓扑、故障恢复；单卡峰值只是一项"
+      },
+      {
+        "scene": "通用推理 / 快速上线",
+        "choice": "NVIDIA GPU 或成熟云服务",
+        "why": "vLLM/TensorRT-LLM 默认路径最顺，排障资料最多"
+      },
+      {
+        "scene": "信创 / 国产替代",
+        "choice": "昇腾、海光、国产 GPGPU 逐模型验证",
+        "why": "先过算子、框架、引擎三关，再谈性价比与供货"
+      },
+      {
+        "scene": "预算有限 / 中小团队",
+        "choice": "先用云 GPU 验证，再决定自建",
+        "why": "迁移和运维成本经常高于硬件差价"
+      },
+      {
+        "scene": "只做固定模型推理",
+        "choice": "可以评估 NPU/ASIC 专用方案",
+        "why": "算子稳定时效率优势明显；模型一变就要重新适配"
+      }
+    ],
+    "conclusion": "一句话：GPU 赢在通用和生态，NPU/ASIC 赢在稳定负载下的效率；国产卡的关键变量是软件栈与算子覆盖，而不是 PPT 峰值。"
+  },
+  "codeSection": {
+    "title": "算一笔账：同样的 roofline，不同加速器",
+    "lead": "用 7B 模型和 4K 上下文做量级估算：decode 看带宽、prefill 看算力、拐点看两者比值。",
+    "file": "example/npu_sim.py",
+    "run": "python3 example/npu_sim.py",
+    "notes": [
+      "数字是公开资料量级示意，不是 benchmark；不同代际、功耗、精度口径都会变。",
+      "decode 时间 ≈ (权重 + KV) / HBM 带宽；prefill 时间 ≈ 2 × 参数 × token / 有效算力。",
+      "同样的峰值，带宽不同会直接改变 decode tok/s；同样的带宽，算子效率不同会改变实际利用率。"
+    ]
+  },
+  "check": {
+    "title": "自查：别把名字当结论",
+    "lead": "能回答下面几条，再去看具体型号的参数表。",
+    "checklist": [
+      "能说清 GPU（SIMT）、NPU（DSA）、ASIC 的执行模型差异",
+      "知道 decode 看 HBM 带宽、prefill 看有效算力",
+      "知道 CUDA / ROCm / CANN / Neuware 分别属于哪家",
+      "能列出至少 5 家国产 GPU/NPU 厂商及其软件栈",
+      "迁移国产卡时，会先验证算子覆盖、集合通信、推理引擎",
+      "知道峰值 TFLOPS 不能直接代表 LLM 推理吞吐"
+    ],
+    "questions": [
+      {
+        "q": "为什么 NPU 的峰值很高，实际推理却可能跑不满？",
+        "a": "算子覆盖、编译器调度、片上缓存和 HBM 带宽都会限制实际利用率；峰值只是理想上限。"
+      },
+      {
+        "q": "国产 GPU 与 NPU 的核心区别是什么？",
+        "a": "GPU/GPGPU 走通用 SIMT 路线（如海光 DCU、壁仞、摩尔线程、沐曦）；NPU 走专用数据流路线（如昇腾、寒武纪）。软件栈和编程模型不同。"
+      },
+      {
+        "q": "decode 阶段为什么更该看带宽？",
+        "a": "batch=1 时每步只算 1 个 token，却要读全量权重和历史 KV；时间 ≈ 字节 / 带宽，算力大量闲置。"
+      },
+      {
+        "q": "迁移到国产卡，第一件事做什么？",
+        "a": "先跑通目标模型的算子与推理引擎端到端，再验证单机/多机集合通信，最后才比较性能和成本。"
+      }
+    ]
+  },
+  "lesson": {
+    "quiz": [
+      {
+        "q": "GPU 与 NPU 最核心的设计差异更接近哪一种？",
+        "options": [
+          "GPU 是 SIMT 通用并行，NPU 是面向矩阵/向量的专用数据流",
+          "GPU 没有缓存，NPU 有缓存",
+          "NPU 只能做推理，不能训练",
+          "GPU 的峰值一定低于 NPU"
+        ],
+        "answer": 0,
+        "why": "GPU 用大量 SIMT lane + Tensor Core 保持通用可编程性；NPU 用专用数据流/片上缓存换效率，代价是算子覆盖与编译器依赖。"
+      },
+      {
+        "q": "把模型迁移到国产 GPU/NPU，最先应该验证什么？",
+        "options": [
+          "算子覆盖 + 推理引擎端到端 + 集合通信",
+          "只看峰值 TFLOPS",
+          "只看价格",
+          "只看显存容量"
+        ],
+        "answer": 0,
+        "why": "硬件峰值只是上限；算子、引擎适配和集合通信决定模型能不能跑、多卡能不能扩。任何一项不过，峰值再高也落不了地。"
+      }
+    ],
+    "think": [
+      {
+        "q": "如果一块国产卡峰值很高，但 vLLM 跑不起来，它对你还有用吗？",
+        "options": [
+          "基本没用：算子/引擎适配决定能不能落地",
+          "有用：峰值高就能跑",
+          "有用：换一个模型就行"
+        ],
+        "answer": 0,
+        "why": "推理不是只有矩阵乘；算子覆盖、KV 管理、调度和量化都要引擎支持。跑不起来时峰值只是纸面数字。"
+      },
+      {
+        "q": "为什么「国产 GPU」和「NPU」不是同一类东西？",
+        "options": [
+          "GPU/GPGPU 走通用 SIMT，NPU 走专用数据流，软件栈不同",
+          "两者完全一样",
+          "NPU 只能做图像"
+        ],
+        "answer": 0,
+        "why": "海光 DCU、壁仞、摩尔线程、沐曦等是通用 GPU/GPGPU 路线；昇腾、寒武纪是专用 NPU 路线。编程模型、算子库和迁移方式都不同。"
+      },
+      {
+        "q": "decode 阶段，NPU 的 HBM 带宽为什么仍然重要？",
+        "options": [
+          "每步要读全量权重和历史 KV，时间≈字节/带宽",
+          "因为 NPU 没有缓存",
+          "因为 decode 是 compute-bound"
+        ],
+        "answer": 0,
+        "why": "无论 GPU 还是 NPU，batch=1 的 decode 都要把权重与 KV 从 HBM 搬到计算单元；带宽决定下限，算力大量闲置。"
+      }
+    ],
+    "reflect": [
+      {
+        "id": "npu-r1",
+        "q": "用一句话区分 GPU、NPU、ASIC 的取舍。",
+        "ref": "GPU 用通用并行换生态和可编程性；NPU 用专用数据流换效率；ASIC 把某类负载做到极致，但适配成本最高。"
+      },
+      {
+        "id": "npu-r2",
+        "q": "为什么软件栈会决定国产卡能不能落地？",
+        "ref": "框架、算子库、集合通信、推理引擎任何一层缺适配，模型就跑不起来；迁移成本经常高于硬件差价。"
+      },
+      {
+        "id": "npu-r3",
+        "q": "选训练卡和选推理卡，关注点有什么不同？",
+        "ref": "训练看算力、显存、集合通信、集群稳定性；推理看 HBM 带宽、量化、引擎调度与单价。"
+      }
+    ],
+    "attribution": [
+      {
+        "id": "npu-a1",
+        "label": "decode 阶段 HBM 带宽不够，tok/s 上不去",
+        "bucket": "gpu",
+        "why": "每步读全量权重 + KV，时间由带宽决定；这是加速器的物理属性。"
+      },
+      {
+        "id": "npu-a2",
+        "label": "目标模型有算子厂商尚未实现，需要等编译器更新",
+        "bucket": "engine",
+        "why": "算子库、编译器和推理引擎决定了模型能不能跑；属于软件栈/引擎侧。"
+      },
+      {
+        "id": "npu-a3",
+        "label": "MoE 模型专家数太多，单卡显存放不下",
+        "bucket": "model",
+        "why": "专家数、层数、hidden 和精度决定权重与 KV 体积；先由模型结构决定。"
+      }
+    ],
+    "summary": {
+      "brief": "GPU 赢在通用与生态，NPU/ASIC 赢在稳定负载下的效率；国产卡的关键变量是软件栈、算子覆盖和集群能力，不是峰值数字。",
+      "detail": "GPU 用 SIMT + Tensor Core 保持通用可编程性；NPU 用专用数据流和片上缓存换效率；ASIC 更专用。对 LLM：prefill 偏算力、decode 偏 HBM 带宽、训练偏集合通信与显存。选型先过算子覆盖、推理引擎、集合通信三关，再看峰值与价格；国产 GPU（海光、壁仞、摩尔线程、沐曦等）与 NPU（昇腾、寒武纪等）路线不同，迁移成本主要在软件栈。"
+    }
+  }
+}
