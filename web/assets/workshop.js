@@ -523,6 +523,18 @@
     const totalSteps = data.totalSteps || 14;
     const doneSteps = p.steps.length;
     const when = (t) => (t ? new Date(t).toLocaleString() : "—");
+    const lessonsContent = (window.LK_DATA && LK_DATA.lessons) || {};
+    const chapterQuizRows = ALL_CHAPTERS.filter((ch) => (lessonsContent[ch] && (lessonsContent[ch].quiz || []).length))
+      .map((ch) => {
+        const qs = lessonsContent[ch].quiz;
+        const l = (p.lessons || {})[ch] || {};
+        const done = !!l.quizSubmitted;
+        const sc = done ? (l.quizScore || 0) : null;
+        return "<tr><td>" + esc(CHAPTER_LABELS[ch]) + "</td><td>" +
+          (done ? sc + " / " + qs.length : "未做") + "</td><td>" +
+          (done ? (sc === qs.length ? "全对" : "可回看") : "—") + "</td></tr>";
+      })
+      .join("");
 
     el.innerHTML = head +
       '<div class="compare">' +
@@ -540,6 +552,11 @@
       "<div><b>" + doneSteps + " / " + totalSteps + "</b><span>探索过的步骤</span></div>" +
       "<div><b>" + visitedViews + " / " + LEARNING_VIEWS.length + "</b><span>访问过的学习视图</span></div>" +
       "</div>" +
+      (chapterQuizRows
+        ? '<h3 class="sec-title">章节测验</h3>' +
+          '<div class="table-wrap"><table class="tagtable"><thead><tr>' +
+          "<th>章节</th><th>得分</th><th>状态</th></tr></thead><tbody>" + chapterQuizRows + "</tbody></table></div>"
+        : "") +
       '<h3 class="sec-title">建议回看</h3>' +
       (suggestions
         ? '<div class="suggestions">' + suggestions + "</div>"
@@ -787,6 +804,7 @@
   /* =================================================== lesson stages */
 
   const CHAPTER_LABELS = { kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention", net: "推理网络", train: "模型训练", nccl: "NCCL 学习章节", cuda: "CUDA 执行模型", ecn: "ECN + DCQCN", gpu: "认识 GPU", opt: "LLM 优化" };
+  const ALL_CHAPTERS = ["gpu", "cuda", "kv", "prefix", "paged", "net", "nccl", "ecn", "train", "opt"];
 
   function lessonOf(chapter) {
     const p = loadProgress();
@@ -799,6 +817,9 @@
       summary: false,
       summaryText: "",
       summaryAt: null,
+      quizAnswers: {},
+      quizScore: null,
+      quizSubmitted: false,
     };
     return Object.assign(base, ((p.lessons || {})[chapter]) || {});
   }
@@ -1010,9 +1031,236 @@
     }
   };
 
+  /* ======================================= chapter quiz / markdown export */
+
+  function inlineMd(node) {
+    if (!node) return "";
+    if (node.nodeType === 3) return String(node.nodeValue).replace(/\s+/g, " ");
+    if (node.nodeType !== 1) return "";
+    const tag = node.tagName.toLowerCase();
+    const inner = () => Array.from(node.childNodes).map(inlineMd).join("");
+    if (tag === "strong" || tag === "b") return "**" + inner().trim() + "**";
+    if (tag === "em" || tag === "i") return "*" + inner().trim() + "*";
+    if (tag === "code") return "`" + node.textContent + "`";
+    if (tag === "a") return "[" + inner().trim() + "](" + (node.getAttribute("href") || "") + ")";
+    if (tag === "br") return "  \n";
+    if (tag === "img") return "![" + (node.getAttribute("alt") || "") + "](" + (node.getAttribute("src") || "") + ")";
+    return inner();
+  }
+
+  function blockMd(node, out) {
+    if (!node) return;
+    if (node.nodeType === 3) {
+      const t = String(node.nodeValue).replace(/\s+/g, " ").trim();
+      if (t) out.push(t);
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    const tag = node.tagName.toLowerCase();
+    if (["script", "style", "svg", "button", "select", "input"].includes(tag)) return;
+    if (tag === "h1" || tag === "h2" || tag === "h3" || tag === "h4") {
+      out.push("\n" + "#".repeat(+tag[1]) + " " + inlineMd(node).trim() + "\n");
+      return;
+    }
+    if (tag === "p") {
+      const t = inlineMd(node).trim();
+      if (t) out.push(t + "\n");
+      return;
+    }
+    if (tag === "ul" || tag === "ol") {
+      out.push("");
+      Array.from(node.children).forEach((li, i) => {
+        if (li.tagName && li.tagName.toLowerCase() === "li") {
+          out.push((tag === "ol" ? i + 1 + ". " : "- ") + inlineMd(li).trim());
+        }
+      });
+      out.push("");
+      return;
+    }
+    if (tag === "pre") {
+      out.push("\n```\n" + node.textContent.replace(/\n+$/, "") + "\n```\n");
+      return;
+    }
+    if (tag === "table") {
+      const rows = Array.from(node.querySelectorAll("tr"));
+      if (!rows.length) return;
+      out.push("");
+      rows.forEach((tr, ri) => {
+        const cells = Array.from(tr.children).map((td) => inlineMd(td).trim().replace(/\|/g, "\\|"));
+        out.push("| " + cells.join(" | ") + " |");
+        if (ri === 0) out.push("| " + cells.map(() => "---").join(" | ") + " |");
+      });
+      out.push("");
+      return;
+    }
+    if (tag === "blockquote") {
+      const tmp = [];
+      Array.from(node.childNodes).forEach((c) => blockMd(c, tmp));
+      out.push(tmp.join("\n").split("\n").map((l) => (l ? "> " + l : ">")).join("\n"));
+      return;
+    }
+    if (tag === "hr") {
+      out.push("\n---\n");
+      return;
+    }
+    if (tag === "details") {
+      const sum = node.querySelector("summary");
+      if (sum) out.push("\n**" + inlineMd(sum).trim() + "**\n");
+      Array.from(node.childNodes).forEach((c) => { if (c !== sum) blockMd(c, out); });
+      return;
+    }
+    Array.from(node.childNodes).forEach((c) => blockMd(c, out));
+  }
+
+  function htmlToMarkdown(html) {
+    const box = document.createElement("div");
+    box.innerHTML = html;
+    const out = [];
+    Array.from(box.childNodes).forEach((c) => blockMd(c, out));
+    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  function pruneExport(root) {
+    root.querySelectorAll(
+      "button,select,input,svg,script,style,.train-code,.train-run,.code-scroll,.sim-controls,.viz,.reuse-actions,.test-actions,.qopts,.stage-nav,.stepnav,.mode-tabs,.exprange"
+    ).forEach((n) => n.remove());
+  }
+
+  function chapterContentMarkdown(chapter) {
+    const data = window.LK_DATA && LK_DATA[chapter];
+    if (!data) return "";
+    if (data.steps) {
+      return data.steps
+        .map((s, i) => "### " + (i + 1) + ". " + s.title + "\n\n" + (s.hint ? "> " + s.hint + "\n\n" : "") + htmlToMarkdown(s.bodyHTML) + "\n")
+        .join("\n");
+    }
+    const mod = window.LK && LK[chapter];
+    if (mod && typeof mod.render === "function") {
+      const holder = document.createElement("div");
+      try {
+        mod.render(holder, data, {
+          presets: LK_DATA.anatomy.presets,
+          gpus: LK_DATA.anatomy.context.gpus,
+        });
+        pruneExport(holder);
+        return htmlToMarkdown(holder.innerHTML);
+      } catch (e) {
+        return "（本章内容导出失败，请在交互页查看完整教程。）";
+      }
+    }
+    return "";
+  }
+
+  function downloadMarkdown(filename, text) {
+    try {
+      const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      /* file:// 或浏览器限制 */
+    }
+  }
+
+  function exportChapterMarkdown(chapter) {
+    const content = ((window.LK_DATA && LK_DATA.lessons) || {})[chapter] || {};
+    const p = lessonOf(chapter);
+    const label = CHAPTER_LABELS[chapter] || chapter;
+    const parts = [
+      "# " + label,
+      "",
+      "> 来自 learnkvc 交互式学习页 · " + new Date().toLocaleString(),
+      "",
+      "## 参考总结",
+      "",
+      (content.summary && content.summary.brief) || "",
+      "",
+      (content.summary && content.summary.detail) || "",
+      "",
+      "## 我的总结",
+      "",
+      (p.summaryText || "").trim() || "（还没写）",
+      "",
+      "## 反思与归因",
+      "",
+    ];
+    (content.reflect || []).forEach((q) => {
+      parts.push("- **" + q.q + "**");
+      parts.push("  " + ((p.reflectText || {})[q.id] || "（未填写）"));
+    });
+    (content.attribution || []).forEach((c) => {
+      parts.push("- " + c.label + " → " + ((p.attribution || {})[c.id] || "未归类"));
+    });
+    parts.push("");
+    if ((content.quiz || []).length) {
+      parts.push("## 章节测验", "");
+      content.quiz.forEach((q, i) => {
+        const chosen = (p.quizAnswers || {})[i];
+        parts.push(i + 1 + ". " + q.q);
+        q.options.forEach((o, k) => parts.push("   - " + String.fromCharCode(65 + k) + ". " + o));
+        if (p.quizSubmitted) {
+          parts.push(
+            "   - 你的答案：" + (chosen === undefined ? "未选" : String.fromCharCode(65 + chosen)) +
+            "；正确：" + String.fromCharCode(65 + q.answer) +
+            "；" + (chosen === q.answer ? "✓" : "✗") + " " + (q.why || "")
+          );
+        }
+        parts.push("");
+      });
+      if (p.quizSubmitted) parts.push("得分：" + (p.quizScore || 0) + " / " + content.quiz.length, "");
+    }
+    parts.push("## 本章内容", "", chapterContentMarkdown(chapter), "");
+    downloadMarkdown("learnkvc-" + chapter + ".md", parts.join("\n"));
+  }
+
   W.renderStageSummary = function (el, chapter, summary, onChange) {
     const p = lessonOf(chapter);
     const complete = p.summary;
+    const content = ((window.LK_DATA && LK_DATA.lessons) || {})[chapter] || {};
+    const quiz = content.quiz || [];
+    const answers = p.quizAnswers || {};
+    const submitted = !!p.quizSubmitted;
+    const score = p.quizScore || 0;
+    const answered = quiz.filter((q, i) => answers[i] !== undefined).length;
+
+    const quizHTML = quiz.length
+      ? '<h3 class="sec-title">章节测验 · ' + quiz.length + " 题</h3>" +
+        '<p class="hint">读完后用两题检查是否真的掌握；提交后显示得分与解释。</p>' +
+        '<div class="quiz">' +
+        quiz.map((q, i) => {
+          const chosen = answers[i];
+          const done = submitted;
+          const opts = q.options.map((opt, k) => {
+            let cls = "qopt";
+            if (chosen === k) cls += " chosen";
+            if (done) {
+              if (k === q.answer) cls += " correct";
+              else if (chosen === k) cls += " wrong";
+            }
+            return '<button class="' + cls + '" data-cq="' + i + '" data-ci="' + k + '"' +
+              (done ? " disabled" : "") + ">" + String.fromCharCode(65 + k) + ". " + esc(opt) + "</button>";
+          }).join("");
+          return '<article class="qcard' + (done ? " answered" : "") + '">' +
+            '<div class="qhead"><span class="qtag">章节测验</span><span class="qnum">Q' + (i + 1) + "</span></div>" +
+            '<p class="qtext">' + esc(q.q) + "</p>" +
+            '<div class="qopts">' + opts + "</div>" +
+            (done ? '<div class="qwhy"><b>' + (chosen === q.answer ? "✓" : "✗") + "</b> " + esc(q.why || "") + "</div>" : "") +
+            "</article>";
+        }).join("") +
+        "</div>" +
+        '<div class="test-actions">' +
+        (submitted
+          ? '<span class="tool-note">得分 ' + score + " / " + quiz.length + '</span><button class="btn ghost" id="chapter-quiz-reset">重做章节测验</button>'
+          : '<button class="btn primary" id="chapter-quiz-submit" ' + (answered < quiz.length ? "disabled" : "") +
+            ">提交章节测验（" + answered + " / " + quiz.length + "）</button>" +
+            '<span class="tool-note">提交后显示得分与解释</span>') +
+        "</div>"
+      : "";
 
     el.innerHTML =
       '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 总结归纳</div>" +
@@ -1022,8 +1270,10 @@
       '<details><summary>详细描述</summary><p>' + esc(summary.detail) + "</p></details></div>" +
       '<div class="rprompt"><label for="stage-summary">我的总结</label>' +
       '<textarea id="stage-summary" rows="5">' + esc(p.summaryText || "") + "</textarea></div>" +
+      quizHTML +
       '<div class="reuse-actions"><button class="btn primary" id="stage-summary-done">' +
       (complete ? "已完成的章 · 重新标记" : "完成本章 →") + "</button>" +
+      '<button class="btn ghost" id="stage-export-md">导出 Markdown</button>' +
       (complete ? '<span class="tool-note">完成于 ' + new Date(p.summaryAt).toLocaleString() + "</span>" : "") +
       "</div>";
 
@@ -1034,6 +1284,38 @@
       if (onChange) onChange();
       W.renderStageSummary(el, chapter, summary, onChange);
     });
+    el.querySelector("#stage-export-md").addEventListener("click", () => {
+      saveLesson(chapter, { summaryText: ta.value });
+      exportChapterMarkdown(chapter);
+    });
+    el.querySelectorAll("[data-cq]").forEach((b) =>
+      b.addEventListener("click", () => {
+        if (submitted) return;
+        const next = Object.assign({}, lessonOf(chapter).quizAnswers || {});
+        next[b.dataset.cq] = +b.dataset.ci;
+        saveLesson(chapter, { quizAnswers: next });
+        if (onChange) onChange();
+        W.renderStageSummary(el, chapter, summary, onChange);
+      })
+    );
+    const submit = el.querySelector("#chapter-quiz-submit");
+    if (submit) {
+      submit.addEventListener("click", () => {
+        const finalAnswers = lessonOf(chapter).quizAnswers || {};
+        const got = quiz.filter((q, i) => finalAnswers[i] === q.answer).length;
+        saveLesson(chapter, { quizSubmitted: true, quizScore: got });
+        if (onChange) onChange();
+        W.renderStageSummary(el, chapter, summary, onChange);
+      });
+    }
+    const reset = el.querySelector("#chapter-quiz-reset");
+    if (reset) {
+      reset.addEventListener("click", () => {
+        saveLesson(chapter, { quizAnswers: {}, quizSubmitted: false, quizScore: null });
+        if (onChange) onChange();
+        W.renderStageSummary(el, chapter, summary, onChange);
+      });
+    }
   };
 
 

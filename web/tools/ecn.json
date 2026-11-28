@@ -503,6 +503,28 @@
     ]
   },
   "lesson": {
+    "quiz": [
+      {
+        "q": "要让交换机对 RDMA 流量做 ECN 标记，host 侧首先要把报文标成什么？",
+        "options": [
+          "Not-ECT",
+          "ECT（可标记）",
+          "CE（已拥塞）"
+        ],
+        "answer": 1,
+        "why": "ECN 的两位里，Not-ECT 不参与标记，ECT(0)/ECT(1) 表示可标记；交换机只对 ECT 流量按队列 WRED 打 CE。host 还要配合 DSCP/TC 映射。"
+      },
+      {
+        "q": "为什么 PFC 只应对必要的 lossless 队列开启？",
+        "options": [
+          "PFC 暂停会向上游扩散，开太多易导致 PFC storm、死锁和 HOL",
+          "PFC 会占用 GPU 显存",
+          "PFC 只支持 InfiniBand"
+        ],
+        "answer": 0,
+        "why": "PFC 是链路级暂停，可能连锁传播；全队列开启会把局部拥塞放大成全局暂停甚至 deadlock，还会 HOL 阻塞同端口业务。只保护 RDMA lossless 队列，并靠 ECN/DCQCN 提前降速。"
+      }
+    ],
     "think": [
       {
         "q": "PFC 和 ECN/DCQCN 的分工是什么？",

@@ -52,7 +52,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 | 代码展示 | `example/*.py`（AST 解析符号区间，**不要在示例里加 web 标记注释**） |
 | 讲解卡 | `example/*_READING.md`（按 `##`/`###` 切节） |
 | 步骤映射 | `web/tools/steps.json`、`steps.prefix.json`、`steps.paged.json` |
-| 题目/前测/后测/归因/反思 | `web/tools/pedagogy.json`；`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 的 lesson 随各自的 `<chapter>.json`，`build.py` 合并进 `data.lessons` |
+| 题目/前测/后测/章节测验/归因/反思 | `web/tools/pedagogy.json`；`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 的 lesson 随各自的 `<chapter>.json`，`build.py` 合并进 `data.lessons` |
 | 模型预设/流水线/GPU 档位/模型包/运行时 | `web/tools/anatomy.json` |
 | 训练教程 / 训练计算器 / 章节 lesson | `web/tools/train.json` + `example/train_tiny.py` + `example/train_sim.py` |
 | 推理网络总览 / NCCL 模拟 / PD 分离 / 章节 lesson | `web/tools/net.json` + `example/net_sim.py` |
@@ -76,13 +76,13 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
    - 请回答：3 道预测题，选完才揭示，不计分；
    - 探索阅读：现有 steps 代码 ↔ 讲解 ↔ 可视化联动；
    - 反思与归因：2–4 个开放问题 + 可折叠参考；再对 3 张卡做「模型 / GPU / 引擎」归因，提交归因后才能完成本阶段；
-   - 总结归纳：参考总结（概要 + 详细）+ 用户自己的总结（textarea）+「完成本章」按钮。
+   - 总结归纳：参考总结（概要 + 详细）+ 用户自己的总结（textarea）+ 2 题章节测验（提交后计分并显示解释）+「导出 Markdown」+「完成本章」按钮；导出内容包含总结、反思、归因、测验和整章教程内容。
    - 章节导航统一在左侧轨道（可收缩）：KV 三章顶部是「章节」切换（三章标题 + ①②③，当前高亮、完成打勾，点击切章并保留各章阶段）；`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu` 是文档型章节，不显示三章切换。下面是四阶段（请回答/探索阅读/反思与归因/总结归纳），探索阶段下面列出步骤（KV 是代码步骤，文档章节是教程小节）；非探索阶段仍显示章节（KV）与四阶段，隐藏步骤列表、代码 pane、可视化、底部控制条；
    - **多次提问不单独成页**：作为 Prefix 章「探索阅读」中的一个步骤（内嵌多轮/多请求模拟器）；
    - `net`/`train`/`nccl`/`cuda`/`ecn`/`gpu` 的请回答/反思/总结内容在各自主 JSON 的 `lesson` 字段，构建时合并；探索阶段保留 NCCL 模拟器、PD 计算器、训练计算器、NCCL 逐步播放器、CUDA occupancy/coalescing/roofline/graph 互动、ECN/WRED 阈值与 PFC/DCQCN 场景互动、认识 GPU 的 CPU/GPU 对比与存储层级互动，以及 `example/<chapter>_sim.py` 仿真代码与 build 期输出；
-   - **三层归因不单独成页**：并入每章「反思与归因」阶段；「总结归纳」只保留参考总结、用户总结与完成本章；跨章综合放在学习反馈的「按概念对照」里。
+   - **三层归因不单独成页**：并入每章「反思与归因」阶段；「总结归纳」包含参考总结、用户总结、章节测验与 Markdown 导出；跨章综合放在学习反馈的「按概念对照」里。
 4. **后测**：10 题同概念换问法、评分；提交后生成反馈。
-5. **反馈**：前测/后测分数、变化、按概念对照（提升/维持/退步/仍需复习）、学习完成度（步骤/视图）、错题回看按钮；10 个概念覆盖认识 GPU、KV 三章、推理网络、认识模型与 LLM 优化，学习视图覆盖 12 个入口；自测总步数为三章 45 + 推理网络 7 + NCCL 9 + CUDA 9 + ECN 10 + 认识 GPU 10 + 模型训练 6 + LLM 优化 11 = 107。
+5. **反馈**：前测/后测分数、变化、按概念对照（提升/维持/退步/仍需复习）、学习完成度（步骤/视图）、章节测验得分表、错题回看按钮；10 个概念覆盖认识 GPU、KV 三章、推理网络、认识模型与 LLM 优化，学习视图覆盖 12 个入口；自测总步数为三章 45 + 推理网络 7 + NCCL 9 + CUDA 9 + ECN 10 + 认识 GPU 10 + 模型训练 6 + LLM 优化 11 = 107。
 6. **问题两层**：每道题必须有 `summary`（一句话「考什么」）和 `detail`（可展开的「背景 / 怎么想」，不泄露答案）。
 7. **总结两层**：反馈页总结必须是 `brief`（一句话） + `detail`（详细描述）可折叠；用户先写自己的总结，再点开对照。
 8. **方向**：先形成假设 → 用代码/状态验证 → 归因到「模型 / GPU / 引擎」→ 用自己的话总结。禁止把文档内容直接当课文投喂。
@@ -90,7 +90,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 ### localStorage 与路由
 
 - `learnkvc.progress.v1`：`{ pre, post, gpu, views[], steps[], lessons }`。
-  - `lessons.<chapter>`：`{think, thinkAnswers, exploreMax, reflect, reflectText, attribution, attributionSubmitted, summary, summaryText, summaryAt}`；
+  - `lessons.<chapter>`：`{think, thinkAnswers, exploreMax, reflect, reflectText, attribution, attributionSubmitted, summary, summaryText, summaryAt, quizAnswers, quizScore, quizSubmitted}`；
   - 前/后测分数和答案、所选 GPU、访问记录都在这一个 key 里。
 - `learnkvc.theme`：`dark` / `light`。
 - `learnkvc.stepnav`：`{kv,prefix,paged,net,train,nccl,cuda,ecn,gpu,opt}` 的章节导航折叠状态。
@@ -112,7 +112,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 5. `app.js`：`VIEWS`、元素、`state.<chapter>`、`render<Chapter>Step/Viz/Counters`、hash route、`navStep`、键盘、timeline 显隐。
 6. `style.css`：章节专属样式 + `body[data-view="<chapter>"] .timeline { display:flex }`。
 7. 验收：`build.py` 通过、`node --check` 通过、CDP 遍历无 error、`file://` 可开、760px 布局可用；文档章节还要检查 `#<chapter>/N`、`#<chapter>/<stage>` 深链，以及离开章节时对应渲染器 `stop()` 不留定时器；
-8. 四段式验收：每章左侧导航有 4 个阶段按钮（请回答/探索阅读/反思与归因/总结归纳）、请回答阶段答完出 CTA、反思可写、总结完成写 `lessons.<chapter>.summary`；`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 也要能完成四阶段。
+8. 四段式验收：每章左侧导航有 4 个阶段按钮（请回答/探索阅读/反思与归因/总结归纳）、请回答阶段答完出 CTA、反思可写、总结完成写 `lessons.<chapter>.summary`；每章 2 题章节测验可提交/重做并写入 `quizScore`；「导出 Markdown」能下载含本章内容的 `.md`；`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 也要能完成四阶段。
 
 **文档型章节（net / train / nccl / cuda / ecn / gpu / opt）不走上面的 steps/viz 流程**：没有 `steps.<chapter>.json`、没有 trace、没有代码 pane；探索步骤由教程的 `h2.sec-title` 派生，lesson（think/reflect/attribution/summary）写在对应 `<chapter>.json` 的 `lesson` 字段；`app.js` 用 `DOC_CHAPTERS` + `DOC_SECTIONS` + `DOC_MODULES` + `renderDocStage`，rail 用 `.doc-chapter` / `.doc-main`。新增文档章节要同步 `DOC_CHAPTERS` / `DOC_SECTIONS` / `DOC_MODULES`、`docBody/docMainEl` 的 el、`VIEWS`、`index.html` 视图与 `?v=`，以及 `build.py` 的 `build_doc_sim()`。
 
@@ -129,7 +129,7 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 
 ### 布局与交互
 
-- 顶栏：品牌 + 导航 + 主题开关。五个学习内容下拉：「认识 GPU」下拉（总览 / CUDA 执行模型）、「认识 KVCache」下拉（单请求 KV / Prefix / Paged）、「推理网络」下拉（总览 / NCCL 学习章节 / ECN + DCQCN）、「认识模型」下拉（模型解剖 / 模型训练 / 显存计算器）、「LLM 优化」下拉（总览 / FlashAttention / 模型量化 / 投机解码）；一级还有「请回答 · 前测 / 学习反馈」。触发按钮显示当前所在项（如「认识 KVCache · KV」「模型训练 · 训练教程」），`aria-expanded` 同步；点外部、Esc、选中任一项都关闭。窄屏（≤980px）导航换行，不再横向滚动，下拉菜单要夹在视口内。KV 章节视图是「左侧步骤导航（可收缩）+ 中间代码 + 右侧讲解/可视化」；`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 是「左侧步骤导航（可收缩）+ 右侧整篇教程」，没有代码 pane；底部只保留上一步/下一步和计数器，步骤点不再放底部。
+- 顶栏：品牌 + 导航 + 主题开关。五个学习内容下拉：「认识 GPU」下拉（总览 / CUDA 执行模型）、「认识 KVCache」下拉（单请求 KV / Prefix / Paged）、「推理网络」下拉（总览 / NCCL 学习章节 / ECN + DCQCN）、「认识模型」下拉（模型解剖 / 模型训练 / 显存计算器）、「LLM 优化」下拉（总览 / FlashAttention / 模型量化 / 投机解码）；一级还有「请回答 · 前测 / 学习反馈」。触发按钮显示当前所在项（如「认识 KVCache · KV」「模型训练 · 训练教程」），`aria-expanded` 同步；点外部、Esc、选中任一项都关闭。窄屏（≤980px）导航换行，不再横向滚动，下拉菜单要夹在视口内；KV 代码 pane 在 ≤980px 默认折叠成「展开代码」抽屉，点 header 切换。KV 章节视图是「左侧步骤导航（可收缩）+ 中间代码 + 右侧讲解/可视化」；`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 是「左侧步骤导航（可收缩）+ 右侧整篇教程」，没有代码 pane；底部只保留上一步/下一步和计数器，步骤点不再放底部。
 - 步骤导航：左侧轨道顶部先是「章节」切换（三章标题 + ①/②/③，当前高亮、完成后打勾；点击切章并保留该章上次所处阶段；折叠时只留 ①②③），然后是四阶段（带完成状态与探索进度），探索阶段下面列出全部步骤（标题、进行中/已完成）；折叠按钮把宽度收到 36px 轨道，状态存 `learnkvc.stepnav`；窄屏（≤980px）默认收起，展开后章节为 3 列、阶段为 4 列（隐藏进度文字、保留完成打勾）、步骤列表限高可滚动。非探索阶段仍显示章节与四阶段，只隐藏步骤列表。
 - `net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 已是章节，使用章节左栏：四阶段 + 教程小节列表（7 / 6 / 9 / 9 / 10 / 10 / 11 节）；探索阶段点击小节滚动到对应 `h2`，滚动时同步高亮/计数；折叠状态与 KV 章共用一个 `learnkvc.stepnav`。
 - 模型解剖 / 显存计算器仍是工具，沿用章节导航的轨道语言（`assets/sectionnav.js`）：200px 左栏（面板底色 + 右边框 + 「小节导航 / 当前 / 总数 / 折叠按钮」）、编号 01…、GPU 函数地图下 6 个二级小节（7.1–7.6）；滚动高亮、点击跳转、换预设/拉滑杆后自动重建；折叠到 36px 只留编号，状态存 `learnkvc.sectionnav`；≤980px 默认收起成顶部条，展开后列表限高滚动。
@@ -173,10 +173,8 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 
 ## 9. 当前状态与路线
 
-- 已完成：P0/P1（KV 章、前测/后测/反馈/学习设定）、P2（Prefix 章）、P3（Paged 章）、P4（显存计算器 + 亮色主题 + 响应式 + 无障碍基础）、P5（根 README 入口 + GitHub Pages workflow）、每章四段式、多次提问并入 Prefix 章、反思与归因合并、GPU 函数地图、模型训练与推理网络的四段式章节（NCCL ring 模拟 / RoCE / PD 分离计算器 / 训练计算器 / `net_sim.py` / `train_sim.py` 仿真代码）；推理网络深化两章——NCCL 学习章节（collectives / ring-tree 播放器 / α-β 扫描 / 拓扑 / `nccl_sim.py`，9 节）与 ECN + DCQCN（交换机/服务器配置、leaf-spine/rail-optimized 组网、PFC/ECN 无损、优先级与阈值 / `ecn_sim.py`，10 节）；「认识 GPU」下拉两章——总览（CPU/GPU/NPU 分工、LLM 适配、显存与 L1/L2 cache、CUDA/ROCm/昇腾/HCU 生态 / `gpu_sim.py`，10 节）与 CUDA 执行模型（occupancy / coalescing / roofline / CUDA Graph / `cuda_sim.py`，9 节）；LLM 优化（FlashAttention / PagedAttention / 量化 / 投机解码 / 调度与结构优化 / 选型 / `opt_sim.py`，11 节）；模型解剖与显存计算器归入「认识模型」菜单。
+- 已完成：P0/P1（KV 章、前测/后测/反馈/学习设定）、P2（Prefix 章）、P3（Paged 章）、P4（显存计算器 + 亮色主题 + 响应式 + 无障碍基础）、P5（根 README 入口 + GitHub Pages workflow）、每章四段式、多次提问并入 Prefix 章、反思与归因合并、GPU 函数地图、模型训练与推理网络的四段式章节（NCCL ring 模拟 / RoCE / PD 分离计算器 / 训练计算器 / `net_sim.py` / `train_sim.py` 仿真代码）；推理网络深化两章——NCCL 学习章节（collectives / ring-tree 播放器 / α-β 扫描 / 拓扑 / `nccl_sim.py`，9 节）与 ECN + DCQCN（交换机/服务器配置、leaf-spine/rail-optimized 组网、PFC/ECN 无损、优先级与阈值 / `ecn_sim.py`，10 节）；「认识 GPU」下拉两章——总览（CPU/GPU/NPU 分工、LLM 适配、显存与 L1/L2 cache、CUDA/ROCm/昇腾/HCU 生态 / `gpu_sim.py`，10 节）与 CUDA 执行模型（occupancy / coalescing / roofline / CUDA Graph / `cuda_sim.py`，9 节）；LLM 优化（FlashAttention / PagedAttention / 量化 / 投机解码 / 调度与结构优化 / 选型 / `opt_sim.py`，11 节）；模型解剖与显存计算器归入「认识模型」菜单；每章 2 题章节测验 + 总结页 Markdown 导出 + 移动端代码抽屉。
 - 已知缺口（可继续做）：
-  - 章节级前测/后测目前是全局一套；如需更细，可给每章 2–3 题并复用 `pedagogy.json` 结构；
-  - GitHub Pages 需要在仓库 Settings → Pages 选择 “GitHub Actions” 才会真正部署；
-  - 各章总结可以进一步做「导出 Markdown」；
-  - 移动端代码 pane 可折叠成抽屉（目前固定 42vh）。
+  - 全局前测/后测仍是跨章 10 题；每章已有 2 题章节测验，如需更细可扩到 3 题/章；
+  - GitHub Pages 需要在仓库 Settings → Pages 选择 “GitHub Actions” 才会真正部署。
 - 改动这些内容时，优先补测试、补文档，再动 UI。

@@ -227,6 +227,28 @@
     ]
   },
   "lesson": {
+    "quiz": [
+      {
+        "q": "PD 分离在什么情况下可能不划算？",
+        "options": [
+          "prefill 和 decode 必须放同一张卡才能跑",
+          "prompt 很短、网络慢，KV 迁移的开销可能盖过收益",
+          "decode 不需要读权重"
+        ],
+        "answer": 1,
+        "why": "PD 的收益来自 prefill/decode 独立扩缩容与资源隔离，代价是每请求把 KV 从 prefill 池搬到 decode 池；prompt 短或网络慢时，迁移时间会抵消收益。"
+      },
+      {
+        "q": "同样大小的 all-reduce，小消息时 tree 往往比 ring 快，主要原因是？",
+        "options": [
+          "tree 每步都传整块，所以带宽更高",
+          "ring 不能做 all-reduce",
+          "tree 的步数 O(log N)，小消息以固定延迟为主"
+        ],
+        "answer": 2,
+        "why": "ring 需要 2(N−1) 步，每步 α + S/(N·BW)；小消息时 α 占主导，tree 的 O(log N) 步数更少。大消息时 ring 每步只传 S/N，带宽利用率更高。"
+      }
+    ],
     "think": [
       {
         "q": "decode 时 TP 的 all-reduce 消息很小，为什么不能忽略？",

@@ -165,6 +165,29 @@
     ]
   },
   "lesson": {
+    "quiz": [
+      {
+        "q": "训练显存里，哪一项通常随 batch × seq × layers 增长，而不是只随参数量增长？",
+        "options": [
+          "激活",
+          "优化器状态",
+          "权重",
+          "梯度"
+        ],
+        "answer": 0,
+        "why": "权重/梯度/优化器状态与参数量 N 成正比；激活与 layers × batch × seq × hidden 成正比，长上下文/大 batch 时可能成为最大项。"
+      },
+      {
+        "q": "为什么 TP 一般限制在单机 NVLink 域内？",
+        "options": [
+          "因为 TP 只能切分 2 张卡",
+          "因为 TP 会减少显存占用",
+          "每层两次 all-reduce，消息频繁且延迟敏感，跨机后通信容易成为瓶颈"
+        ],
+        "answer": 2,
+        "why": "TP 把每层矩阵切开，attention/MLP 后各一次 all-reduce，频率高、消息相对小；NVLink 的带宽和延迟远好于跨机 IB/RoCE，所以通常限制在单机并优先保证低延迟。"
+      }
+    ],
     "think": [
       {
         "q": "AdamW + BF16 训练，参数状态大约占多少 B/参数？",

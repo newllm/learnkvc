@@ -7,6 +7,8 @@
 - **开始学习**：[在线交互页（前测）](https://newllm.github.io/learnkvc/web/#think) · [本地打开](web/index.html#think)（双击即可，离线可用）
 - **分章入口**：[认识 GPU](web/index.html#gpu) · [认识 KVCache](web/index.html#kv) · [推理网络](web/index.html#net) · [认识模型](web/index.html#anatomy) · [LLM 优化](web/index.html#opt) · [学习反馈](web/index.html#feedback)
 
+[![learnkvc 交互式学习页：KV cache 探索页](docs/images/reader.png)](https://newllm.github.io/learnkvc/web/#kv/explore)
+
 ## 为什么需要 KV Cache
 
 自回归生成时，第 `t` 个 token 的 attention 需要前 `t-1` 个 token 的 K/V。不缓存，每生成一个 token 都要把整段前缀的 K/V 重算一遍，总计算量随生成长度平方增长；缓存后每步只算新 token，总计算量线性增长。
@@ -59,6 +61,8 @@ python3 web/tools/build.py
 | LLM 优化 | 优化地图（FlashAttention / 量化 / 投机解码 / 调度 / 选型） | 先找瓶颈，再选 2–3 个高杠杆技术 | `opt_sim.py` |
 
 - 前测 10 题：提交前不显示对错；学完做后测，得到按概念对照、学习完成度与错题回看。
+- 每章「总结归纳」内嵌 2 题**章节测验**（提交后计分、显示解释），学习反馈页汇总各章得分；「导出 Markdown」会把参考总结、你的总结/反思/归因/测验和整章内容写成一个 `.md` 文件。
+- 移动端（≤980px）代码 pane 默认折叠为「展开代码」抽屉，不占正文空间。
 - 路由：`#think`、`#gpu`、`#kv`、`#net`、`#anatomy`、`#train`、`#opt`、`#feedback`；章节内可深链到步骤，如 `#cuda/3`、`#ecn/7`。
 - 页面零依赖、经典 `<script>`，双击 `web/index.html` 即可离线使用。
 
@@ -78,6 +82,7 @@ python3 web/tools/build.py
 │   ├── assets/               # app / workshop / 各章渲染器 / 样式
 │   ├── data/                 # build.py 生成的 data.js / traces.js（提交）
 │   └── tools/                # build.py、collect_traces.py、章节 JSON、题库
+├── docs/images/              # README 截图
 ├── docker/                   # 用 Docker 跑 Ollama / vLLM
 ├── macos/                    # macOS 原生跑 Ollama / llama.cpp（Metal）
 ├── README.md                 # 本文件

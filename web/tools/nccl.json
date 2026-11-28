@@ -433,6 +433,29 @@
     }
   },
   "lesson": {
+    "quiz": [
+      {
+        "q": "在 NCCL 的 α-β 模型里，判断 ring 和 tree 谁更快，关键看什么？",
+        "options": [
+          "GPU 数量必须是 2 的幂",
+          "消息大小与链路延迟/带宽的相对关系（crossover 点）",
+          "模型参数量"
+        ],
+        "answer": 1,
+        "why": "T = steps × (α + S/BW)。小消息时 α 主导，tree 步数少占优；大消息时每步带宽项主导，ring 的 S/N 分块更省带宽。crossover 由 α、BW、N 共同决定。"
+      },
+      {
+        "q": "N=8、S=128 MiB 的 ring all-reduce，每卡大约要发出多少字节？",
+        "options": [
+          "128 MiB（S）",
+          "112 MiB（(N−1)/N × S）",
+          "256 MiB（2S）",
+          "224 MiB（2(N−1)/N × S）"
+        ],
+        "answer": 3,
+        "why": "ring all-reduce 每卡发出 2(N−1)/N × S = 2×7/8×128 = 224 MiB；其中 reduce-scatter 和 all-gather 各贡献 (N−1)/N×S。"
+      }
+    ],
     "think": [
       {
         "q": "N=8 的 ring all-reduce 一共要走多少步？",

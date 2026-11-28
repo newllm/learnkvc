@@ -477,6 +477,28 @@
     ]
   },
   "lesson": {
+    "quiz": [
+      {
+        "q": "下面哪种说法最准确地描述 CPU 与 GPU 的关系？",
+        "options": [
+          "CPU 是 host，负责 OS/调度/IO/控制流；GPU 是 device，执行被下发的并行计算",
+          "GPU 是更强的 CPU，最终会取代 CPU",
+          "CPU 和 GPU 没有分工，谁快就用谁"
+        ],
+        "answer": 0,
+        "why": "GPU 不能 boot、不处理中断/IO/DMA，也不擅长分支和小任务；它需要 CPU 下发 kernel。两者是异构分工，不是替代关系。"
+      },
+      {
+        "q": "GPU 明明有 L1/L2 cache，为什么很多 kernel 还是卡在 HBM 带宽上？",
+        "options": [
+          "GPU 没有 L1/L2 cache，只有寄存器",
+          "L1/L2 容量小，装不下权重和长上下文 KV；memory-bound kernel 每步必须搬的字节由 HBM 决定",
+          "因为 HBM 的延迟比 L2 低"
+        ],
+        "answer": 1,
+        "why": "L1/L2 只能减少重复访问的事务，不能改变「每步要读多少字节」；H100 L2 只有 50 MiB，而 7B 权重 14 GB、长上下文 KV 更大。coalescing 差时连 128 B line 都用不满。"
+      }
+    ],
     "think": [
       {
         "q": "GPU 有 L1 / L2 cache 吗？",

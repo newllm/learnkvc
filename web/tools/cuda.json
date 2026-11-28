@@ -264,6 +264,29 @@
     ]
   },
   "lesson": {
+    "quiz": [
+      {
+        "q": "block=1024（32 warps）、regs/thread=32、shared/block=16 KiB 时，为什么每 SM 只能常驻 2 个 block？",
+        "options": [
+          "每个 block 占 32 warps，64 个 warp slot 只够 2 个；寄存器也刚好只够 2 个",
+          "因为 shared memory 只够 2 个 block",
+          "因为 HBM 带宽不够"
+        ],
+        "answer": 0,
+        "why": "1024 线程 = 32 warps，warp slot 64/32 = 2；每个 block 需要 32×1024=32768 个寄存器，65536/32768=2。shared 16 KiB 不是限制（228/16=14）。"
+      },
+      {
+        "q": "CUDA Graph 主要优化什么？",
+        "options": [
+          "减少 HBM 字节数",
+          "减少 attention 的 FLOPs",
+          "减少 CPU 侧 kernel launch 开销与 GPU 空转",
+          "提高 GPU 时钟频率"
+        ],
+        "answer": 2,
+        "why": "graph 把多次 launch 录成一张图、一次提交，省 CPU 开销与 GPU 等待；它不改变 kernel 计算、HBM 字节和 FLOPs，瓶颈移到 GPU 后收益就到顶。"
+      }
+    ],
     "think": [
       {
         "q": "一个 block 最多能被调度到几个 SM 上？",

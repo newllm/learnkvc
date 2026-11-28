@@ -625,6 +625,30 @@
           "bucket": "engine",
           "why": "缓存多大、什么时候释放、是否量化，都是引擎/部署层的策略。"
         }
+      ],
+      "quiz": [
+        {
+          "q": "decode 第 t 步时，Q 和 K/V 分别怎么来？",
+          "options": [
+            "Q 重新投影，K/V 从缓存读",
+            "Q 和 K/V 都重新投影",
+            "Q 从缓存读，K/V 重新投影",
+            "Q 和 K/V 都从缓存读"
+          ],
+          "answer": 0,
+          "why": "历史 token 的 K/V 已在 prefill/decode 时写入缓存；新 token 只需投影自己的 Q/K/V，再用 Q 去读全部历史 K/V。"
+        },
+        {
+          "q": "有 KV cache 时，mask 为什么不能只写简单的下三角？",
+          "options": [
+            "滑动窗口可能丢弃最早的 key，key 下标不再等于绝对位置",
+            "因为 GQA 改变了头数",
+            "因为 softmax 必须用 float32",
+            "因为 KV cache 只能存一层"
+          ],
+          "answer": 0,
+          "why": "截断后缓存里的第 0 个 key 可能对应绝对位置 first_key_position；mask 要按 first_key_position + 绝对位置构造，而不是从 0 开始的下三角。"
+        }
       ]
     },
     "prefix": {
@@ -697,6 +721,30 @@
           "bucket": "engine",
           "why": "前缀匹配、共享记账、淘汰策略全是引擎的缓存管理。"
         }
+      ],
+      "quiz": [
+        {
+          "q": "块的身份为什么是 hash(父块, 本块 token)，而不是只哈希这 4 个 token？",
+          "options": [
+            "相同 token 在不同上下文里 K/V 不同，必须把前缀路径编进身份",
+            "为了让哈希更快",
+            "为了减少块池容量",
+            "因为 token 数必须是 4"
+          ],
+          "answer": 0,
+          "why": "只哈希本块会把不同上下文里的相同片段误认为同一块，导致错误复用；带上父哈希，前缀匹配就是沿哈希链走。"
+        },
+        {
+          "q": "prefix cache 满了时，为什么只能淘汰「没有引用且没有孩子」的叶子块？",
+          "options": [
+            "有引用的块被请求占着；有孩子的块被淘汰会让孩子的链断掉",
+            "因为叶子块一定最旧",
+            "因为非叶子块不能读",
+            "因为 GPU 只能释放叶子块"
+          ],
+          "answer": 0,
+          "why": "ref_count > 0 的块不能动；父块是子块哈希链的一部分，淘汰父块会让子块不可达、无法再复用。"
+        }
       ]
     },
     "paged": {
@@ -768,6 +816,30 @@
           "label": "free list 与 block table 的维护",
           "bucket": "engine",
           "why": "分配/释放/映射由引擎的 block manager 维护。"
+        }
+      ],
+      "quiz": [
+        {
+          "q": "append 一个 token 时，写到哪个物理块的哪个 slot 是怎么定的？",
+          "options": [
+            "slot = length % block_size；slot=0 时分配新物理块",
+            "slot = length / block_size；总是写第一块",
+            "slot 由哈希决定",
+            "slot = token id % block_size"
+          ],
+          "answer": 0,
+          "why": "每个请求维护 length 和 block table；块内槽位由 length 对 block_size 取模决定，跨块时分配新块并追加到块表。"
+        },
+        {
+          "q": "block table 里存的是什么？",
+          "options": [
+            "逻辑块号 → 物理块号的映射",
+            "每个 token 的 K/V 值",
+            "模型权重",
+            "采样参数"
+          ],
+          "answer": 0,
+          "why": "K/V 本身在物理块池里；block table 是 per-sequence 的索引，告诉 kernel 第 i 个逻辑块应该去哪个物理块取数。"
         }
       ]
     }

@@ -392,6 +392,29 @@
     ]
   },
   "lesson": {
+    "quiz": [
+      {
+        "q": "PagedAttention 主要解决什么问题？",
+        "options": [
+          "减少 attention 的 FLOPs",
+          "把权重压到 4 bit",
+          "KV 的显存管理与碎片/共享，是引擎层优化",
+          "替代 continuous batching"
+        ],
+        "answer": 2,
+        "why": "它用 block table 把逻辑 token 映射到物理 block，减少内部碎片、支持跨请求共享/回收，并支撑不同长度请求的 continuous batching；它不减少 KV 字节或 attention FLOPs。"
+      },
+      {
+        "q": "投机解码在什么情况下可能不划算？",
+        "options": [
+          "接受率 α 低或草稿成本 c 高，加速比可能小于 1",
+          "模型参数越多越不划算",
+          "只要 GPU 显存够大就一定划算"
+        ],
+        "answer": 0,
+        "why": "speedup=(1−α^(γ+1))/((1−α)(1+cγ))。α 低时接受 token 少，c 高或 γ 大时草稿成本超过收益，加速比 <1；适合低并发、decode-bound、接受率高的场景。"
+      }
+    ],
     "think": [
       {
         "q": "做 LLM 优化时，第一步应该做什么？",

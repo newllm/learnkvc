@@ -1226,6 +1226,36 @@
     window.addEventListener("hashchange", route);
   }
 
+  /* ------------------------------------------------------- code drawer */
+
+  function initCodeDrawers() {
+    const views = [el.kv, el.prefix, el.paged];
+    let mobile = window.innerWidth <= 980;
+    const apply = (chapter, btn, collapsed) => {
+      chapter.classList.toggle("code-collapsed", collapsed);
+      btn.setAttribute("aria-expanded", String(!collapsed));
+      btn.textContent = collapsed ? "展开代码 ▾" : "收起代码 ▴";
+    };
+    const entries = views
+      .map((view) => {
+        if (!view) return null;
+        const chapter = view.querySelector(".chapter");
+        const btn = view.querySelector(".code-toggle");
+        return chapter && btn ? { chapter, btn } : null;
+      })
+      .filter(Boolean);
+    entries.forEach(({ chapter, btn }) => {
+      apply(chapter, btn, mobile);
+      btn.addEventListener("click", () => apply(chapter, btn, !chapter.classList.contains("code-collapsed")));
+    });
+    window.addEventListener("resize", () => {
+      const now = window.innerWidth <= 980;
+      if (now === mobile) return;
+      mobile = now;
+      entries.forEach(({ chapter, btn }) => apply(chapter, btn, now));
+    });
+  }
+
   /* --------------------------------------------------------------- theme */
 
   function applyTheme(theme) {
@@ -1265,6 +1295,7 @@
   initTheme();
   initStages();
   initNav();
+  initCodeDrawers();
   buildDots();
   if (LK.sectionnav) {
     LK.sectionnav.mount($("#toc-anatomy"), el.anatomyBody);
