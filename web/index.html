@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>whykvc · 启发式阅读器</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="assets/style.css?v=2026-11-28-41">
-<link rel="stylesheet" href="assets/nccl.css?v=2026-11-28-41">
-<link rel="stylesheet" href="assets/cuda.css?v=2026-11-28-41">
-<link rel="stylesheet" href="assets/gpu.css?v=2026-11-28-41">
-<link rel="stylesheet" href="assets/npu.css?v=2026-11-28-41">
-<link rel="stylesheet" href="assets/transformer.css?v=2026-11-28-41">
-<link rel="stylesheet" href="assets/ecn.css?v=2026-11-28-41">
-<link rel="stylesheet" href="assets/opt.css?v=2026-11-28-41">
+<link rel="stylesheet" href="assets/style.css?v=2026-11-28-58">
+<link rel="stylesheet" href="assets/nccl.css?v=2026-11-28-58">
+<link rel="stylesheet" href="assets/cuda.css?v=2026-11-28-58">
+<link rel="stylesheet" href="assets/gpu.css?v=2026-11-28-58">
+<link rel="stylesheet" href="assets/npu.css?v=2026-11-28-58">
+<link rel="stylesheet" href="assets/transformer.css?v=2026-11-28-58">
+<link rel="stylesheet" href="assets/ecn.css?v=2026-11-28-58">
+<link rel="stylesheet" href="assets/opt.css?v=2026-11-28-58">
 </head>
 <body data-view="think">
 <a class="skip" href="#main">跳到正文</a>
@@ -158,6 +158,7 @@
     <div class="chapter">
       <aside class="stepnav" id="stepnav-kv"></aside>
       <div class="kv-main">
+      <div class="kv-flow"></div>
       <aside class="code-pane">
         <div class="pane-head">
           <span class="file">example/kv_cache.py</span>
@@ -169,6 +170,7 @@
       <div class="right-pane" id="right-pane">
         <article class="doc-card" id="doc-card"></article>
         <div class="viz" id="viz"></div>
+        <div class="step-next-host" id="kv-step-next"></div>
       </div>
       </div>
     </div>
@@ -179,6 +181,7 @@
     <div class="chapter">
       <aside class="stepnav" id="stepnav-prefix"></aside>
       <div class="kv-main">
+      <div class="kv-flow"></div>
       <aside class="code-pane">
         <div class="pane-head">
           <span class="file">example/prefix_cache_demo.py</span>
@@ -190,6 +193,7 @@
       <div class="right-pane" id="prefix-right">
         <article class="doc-card" id="prefix-doc"></article>
         <div class="viz" id="prefix-viz"></div>
+        <div class="step-next-host" id="prefix-step-next"></div>
       </div>
       </div>
     </div>
@@ -200,6 +204,7 @@
     <div class="chapter">
       <aside class="stepnav" id="stepnav-paged"></aside>
       <div class="kv-main">
+      <div class="kv-flow"></div>
       <aside class="code-pane">
         <div class="pane-head">
           <span class="file">example/paged_attention.py</span>
@@ -211,6 +216,7 @@
       <div class="right-pane" id="paged-right">
         <article class="doc-card" id="paged-doc"></article>
         <div class="viz" id="paged-viz"></div>
+        <div class="step-next-host" id="paged-step-next"></div>
       </div>
       </div>
     </div>
@@ -325,25 +331,25 @@
 </noscript>
 
 <!-- bump ?v= below whenever web/assets or web/data change (GitHub Pages caches assets) -->
-<script src="data/data.js?v=2026-11-28-41"></script>
-<script src="data/traces.js?v=2026-11-28-41"></script>
-<script src="assets/codeview.js?v=2026-11-28-41"></script>
-<script src="assets/viz/kv.js?v=2026-11-28-41"></script>
-<script src="assets/viz/prefix.js?v=2026-11-28-41"></script>
-<script src="assets/viz/paged.js?v=2026-11-28-41"></script>
-<script src="assets/workshop.js?v=2026-11-28-41"></script>
-<script src="assets/anatomy.js?v=2026-11-28-41"></script>
-<script src="assets/calc.js?v=2026-11-28-41"></script>
-<script src="assets/transformer.js?v=2026-11-28-41"></script>
-<script src="assets/train.js?v=2026-11-28-41"></script>
-<script src="assets/net.js?v=2026-11-28-41"></script>
-<script src="assets/nccl.js?v=2026-11-28-41"></script>
-<script src="assets/cuda.js?v=2026-11-28-41"></script>
-<script src="assets/gpu.js?v=2026-11-28-41"></script>
-<script src="assets/npu.js?v=2026-11-28-41"></script>
-<script src="assets/opt.js?v=2026-11-28-41"></script>
-<script src="assets/ecn.js?v=2026-11-28-41"></script>
-<script src="assets/sectionnav.js?v=2026-11-28-41"></script>
-<script src="assets/app.js?v=2026-11-28-41"></script>
+<script src="data/data.js?v=2026-11-28-58"></script>
+<script src="data/traces.js?v=2026-11-28-58"></script>
+<script src="assets/codeview.js?v=2026-11-28-58"></script>
+<script src="assets/viz/kv.js?v=2026-11-28-58"></script>
+<script src="assets/viz/prefix.js?v=2026-11-28-58"></script>
+<script src="assets/viz/paged.js?v=2026-11-28-58"></script>
+<script src="assets/workshop.js?v=2026-11-28-58"></script>
+<script src="assets/anatomy.js?v=2026-11-28-58"></script>
+<script src="assets/calc.js?v=2026-11-28-58"></script>
+<script src="assets/transformer.js?v=2026-11-28-58"></script>
+<script src="assets/train.js?v=2026-11-28-58"></script>
+<script src="assets/net.js?v=2026-11-28-58"></script>
+<script src="assets/nccl.js?v=2026-11-28-58"></script>
+<script src="assets/cuda.js?v=2026-11-28-58"></script>
+<script src="assets/gpu.js?v=2026-11-28-58"></script>
+<script src="assets/npu.js?v=2026-11-28-58"></script>
+<script src="assets/opt.js?v=2026-11-28-58"></script>
+<script src="assets/ecn.js?v=2026-11-28-58"></script>
+<script src="assets/sectionnav.js?v=2026-11-28-58"></script>
+<script src="assets/app.js?v=2026-11-28-58"></script>
 </body>
 </html>

@@ -1091,6 +1091,30 @@ textarea::-webkit-scrollbar-thumb,
 
 body[data-view="paged"] .timeline { display: flex; }
 
+/* KV 三章：连续长页（每个小节内联代码 / 讲解 / 可视化） */
+.kv-flow { display: none; min-width: 0; }
+.kv-main.flow-active .kv-flow { display: block; }
+.kv-main.flow-active > .code-pane,
+.kv-main.flow-active > .right-pane { display: none !important; }
+.kv-page { max-width: 1000px; margin: 0 auto; padding: 34px 28px 72px; }
+.read-pos { position: sticky; top: 0; z-index: 8; padding: 8px 0; background: var(--bg); border-bottom: 1px solid var(--line); color: var(--accent); font: 11px var(--mono); letter-spacing: .08em; }
+.sec-pos { margin: 30px 0 4px; color: var(--faint); font: 11px var(--mono); letter-spacing: .08em; }
+.sec-pos + h2.sec-title { margin-top: 4px; }
+.kv-sec { padding: 0; border: 0; margin: 0; }
+.kv-sec h2 { margin: 4px 0 8px; font-size: 20px; letter-spacing: -.01em; }
+.kv-sec .kv-sec-code { margin: 14px 0 16px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--panel-2); }
+.kv-sec .kv-sec-code .pane-head { border-bottom: 1px solid var(--line); }
+.kv-sec .kv-sec-code .code-scroll { max-height: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 8px; }
+.kv-sec .kv-sec-viz { margin: 16px 0 8px; }
+.kv-sec .doc-body { max-width: none; }
+.kv-sec .doc-foot { margin-top: 14px; }
+@media (max-width: 980px) {
+  .kv-page { padding: 20px 16px 60px; }
+  .read-pos { padding: 8px 0; }
+  .kv-sec { padding: 0; }
+  .kv-sec h2 { font-size: 20px; }
+}
+
 /* KV 三章：左侧步骤导航 + 右侧单列展开（代码 → 讲解/可视化） */
 @media (min-width: 981px) {
   #view-kv .chapter,

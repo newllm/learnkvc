@@ -62,10 +62,12 @@
     prefixCodeMeta: $("#prefix-code-meta"),
     prefixDoc: $("#prefix-doc"),
     prefixViz: $("#prefix-viz"),
+    prefixStepNext: $("#prefix-step-next"),
     pagedCode: $("#paged-code"),
     pagedCodeMeta: $("#paged-code-meta"),
     pagedDoc: $("#paged-doc"),
     pagedViz: $("#paged-viz"),
+    pagedStepNext: $("#paged-step-next"),
     stepNavs: {
       kv: $("#stepnav-kv"),
       prefix: $("#stepnav-prefix"),
@@ -83,6 +85,7 @@
     },
     doc: $("#doc-card"),
     viz: $("#viz"),
+    kvStepNext: $("#kv-step-next"),
     dots: $("#dots"),
     counters: $("#counters"),
     prev: $("#prev"),
@@ -136,6 +139,21 @@
     "gpu", "npu", "cuda", "transformer", "anatomy", "train",
     "kv", "prefix", "paged", "net", "nccl", "ecn", "opt",
   ];
+  const CHAPTER_LABELS = {
+    transformer: "Transformer 与 LLM",
+    anatomy: "LLM 结构",
+    gpu: "认识 GPU",
+    npu: "NPU 与国产算力",
+    cuda: "CUDA 执行模型",
+    kv: "单请求 KV cache",
+    prefix: "Prefix cache",
+    paged: "PagedAttention",
+    net: "推理网络",
+    nccl: "NCCL 学习章节",
+    ecn: "ECN + DCQCN",
+    train: "LLM 训练",
+    opt: "LLM 优化",
+  };
   const DOC_CHAPTERS = ["transformer", "anatomy", "net", "train", "nccl", "cuda", "ecn", "gpu", "npu", "opt"];
   const ALL_CHAPTERS = CHAPTERS.concat(DOC_CHAPTERS);
   const DOC_SECTIONS = {
@@ -238,6 +256,7 @@
     }
     renderViz();
     renderCounters();
+    renderStepNext("kv");
     updateDots();
     renderChapterNav("kv");
     if (window.LK && LK.progress) {
@@ -248,10 +267,15 @@
   }
 
   function setStep(i) {
-    if (state.playing) stopPlay(false);
     state.step = clamp(i);
-    renderStep();
-    updateHash();
+    const view = el.kv;
+    const main = view && view.querySelector(".kv-main");
+    if (stageOf("kv") === "explore" && main && main.classList.contains("flow-active")) {
+      scrollKvTo("kv", state.step);
+    } else {
+      renderStep();
+      updateHash();
+    }
   }
 
   function setGenStep(g) {
@@ -392,6 +416,7 @@
     }
     renderPrefixViz();
     renderPrefixCounters();
+    renderStepNext("prefix");
     updatePrefixDots();
     renderChapterNav("prefix");
     if (window.LK && LK.progress) {
@@ -404,10 +429,15 @@
   }
 
   function setPrefixStep(i) {
-    stopPrefixPlay();
     state.prefix.step = Math.max(0, Math.min(LK_DATA.prefix.steps.length - 1, i));
-    renderPrefixStep();
-    updateHash();
+    const view = el.prefix;
+    const main = view && view.querySelector(".kv-main");
+    if (stageOf("prefix") === "explore" && main && main.classList.contains("flow-active")) {
+      scrollKvTo("prefix", state.prefix.step);
+    } else {
+      renderPrefixStep();
+      updateHash();
+    }
   }
 
   function buildPrefixDots() {
@@ -530,6 +560,7 @@
     }
     renderPagedViz();
     renderPagedCounters();
+    renderStepNext("paged");
     updatePagedDots();
     renderChapterNav("paged");
     if (window.LK && LK.progress) {
@@ -542,10 +573,15 @@
   }
 
   function setPagedStep(i) {
-    stopPagedPlay();
     state.paged.step = Math.max(0, Math.min(LK_DATA.paged.steps.length - 1, i));
-    renderPagedStep();
-    updateHash();
+    const view = el.paged;
+    const main = view && view.querySelector(".kv-main");
+    if (stageOf("paged") === "explore" && main && main.classList.contains("flow-active")) {
+      scrollKvTo("paged", state.paged.step);
+    } else {
+      renderPagedStep();
+      updateHash();
+    }
   }
 
   function buildPagedDots() {
@@ -693,9 +729,10 @@
   function docSectionSteps(ch) {
     const d = D[ch];
     const meta = d.sections || {};
-    return DOC_SECTIONS[ch].map((key) => ({
-      title: (meta[key] && meta[key].title) || (d[key] && d[key].title) || key,
-    }));
+    return DOC_SECTIONS[ch].map((key) => {
+      const raw = (meta[key] && meta[key].title) || (d[key] && d[key].title) || key;
+      return { title: String(raw).replace(/^\d+\s*[·.]?\s*/, "") };
+    });
   }
 
   function chapterSteps(ch) {
@@ -745,6 +782,304 @@
     updateHash();
   }
 
+  /* ------------------------------------------------- KV continuous flow */
+
+  const kvFlowStops = {};
+
+  function kvFlowCfg(ch) {
+    const d = ch === "kv" ? kv : ch === "prefix" ? LK_DATA.prefix : LK_DATA.paged;
+    return { d, steps: d.steps, n: d.steps.length, codeFile: d.codeFile, docFile: d.docFile };
+  }
+
+  function setFlowStepState(ch, i) {
+    if (ch === "kv") state.step = i;
+    else if (ch === "prefix") state.prefix.step = i;
+    else state.paged.step = i;
+  }
+
+  function pad2(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  function kvFlowSectionHTML(ch, step, i, cfg) {
+    const ranges = step.codeRanges || [];
+    const rangeLabel = ranges.length
+      ? "本节代码 " + ranges.slice().sort((a, b) => a.start - b.start)
+        .map((r) => r.start + "–" + r.end).join(" · ") + " 行"
+      : "";
+    const code = ranges.length
+      ? '<div class="kv-sec-code"><div class="pane-head"><span class="file">' + esc(cfg.codeFile) +
+        '</span><span class="pane-meta">' + rangeLabel + '</span></div>' +
+        '<div class="code-scroll" data-kv-code="' + i + '"></div></div>'
+      : "";
+    const think = step.think
+      ? '<details class="thinkbox step-think"><summary>请回答：' + esc(step.think.q) +
+        "</summary><p>" + esc(step.think.a) + "</p></details>"
+      : "";
+    const viz = step.viz && step.viz !== "none"
+      ? '<div class="kv-sec-viz" data-kv-viz="' + i + '"></div>'
+      : "";
+    return '<section class="kv-sec" data-kv-sec="' + i + '" id="' + ch + '-sec-' + i + '">' +
+      '<div class="sec-pos">' + pad2(i + 1) + " / " + pad2(cfg.n) + "</div>" +
+      "<h2>" + esc(step.title) + "</h2>" +
+      '<p class="hint">' + esc(step.hint) + "</p>" +
+      think +
+      code +
+      '<div class="doc-body">' + step.bodyHTML + "</div>" +
+      '<div class="doc-foot">讲解：<a href="../' + esc(cfg.docFile) + '" target="_blank" rel="noopener">' +
+      esc(cfg.docFile) + '</a> · 代码：<a href="../' + esc(cfg.codeFile) +
+      '" target="_blank" rel="noopener">' + esc(cfg.codeFile) + "</a></div>" +
+      viz +
+      "</section>";
+  }
+
+  function stopKvFlowViz(ch) {
+    const arr = kvFlowStops[ch];
+    if (!arr) return;
+    arr.forEach((fn) => fn());
+    kvFlowStops[ch] = [];
+  }
+
+  function registerKvVizStop(ch, fn) {
+    if (!kvFlowStops[ch]) kvFlowStops[ch] = [];
+    kvFlowStops[ch].push(fn);
+  }
+
+  function mountKvFlowViz(ch, i, slot, step) {
+    if (!slot || !step.viz || step.viz === "none") return;
+
+    if (ch === "kv") {
+      let genStep = MAX_GEN;
+      let playing = false;
+      let timer = null;
+      let ctx = null;
+      const rerender = () => LK.viz.render(slot, step, ctx);
+      const stop = () => {
+        if (timer) { clearInterval(timer); timer = null; }
+        if (playing) { playing = false; if (slot.isConnected) rerender(); }
+      };
+      ctx = {
+        trace: TR,
+        get genStep() { return genStep; },
+        get playing() { return playing; },
+        setGenStep(v) {
+          genStep = Math.max(0, Math.min(MAX_GEN, v));
+          rerender();
+        },
+        togglePlay() {
+          if (playing) { stop(); return; }
+          if (genStep >= MAX_GEN) genStep = 0;
+          playing = true;
+          rerender();
+          timer = setInterval(() => {
+            if (genStep >= MAX_GEN) { stop(); return; }
+            genStep += 1;
+            rerender();
+          }, 420);
+        },
+      };
+      registerKvVizStop(ch, stop);
+      rerender();
+      return;
+    }
+
+    if (ch === "prefix") {
+      if (step.viz === "reuse") {
+        LK.workshop.renderReuse(slot, LK_TRACES.kv.reuse, { compact: true });
+        return;
+      }
+      const local = {
+        scenario: step.scenario || "shared",
+        snap: 0,
+      };
+      if (!LK_TRACES.prefix.scenarios[local.scenario]) local.scenario = "shared";
+      let playing = false;
+      let timer = null;
+      let ctx = null;
+      const data = () => LK_TRACES.prefix.scenarios[local.scenario];
+      const rerender = () => LK.vizPrefix.render(slot, step, ctx);
+      const stop = () => {
+        if (timer) { clearInterval(timer); timer = null; }
+        if (playing) { playing = false; if (slot.isConnected) rerender(); }
+      };
+      ctx = {
+        trace: LK_TRACES.prefix,
+        state: local,
+        get playing() { return playing; },
+        setScenario(sc) {
+          local.scenario = LK_TRACES.prefix.scenarios[sc] ? sc : "shared";
+          local.snap = 0;
+          stop();
+          rerender();
+        },
+        setSnap(snap) {
+          local.snap = Math.max(0, Math.min(data().snapshots.length - 1, snap));
+          stop();
+          rerender();
+        },
+        togglePlay() {
+          if (playing) { stop(); return; }
+          if (local.snap >= data().snapshots.length - 1) local.snap = 0;
+          playing = true;
+          rerender();
+          timer = setInterval(() => {
+            if (local.snap >= data().snapshots.length - 1) { stop(); return; }
+            local.snap += 1;
+            rerender();
+          }, 420);
+        },
+      };
+      registerKvVizStop(ch, stop);
+      rerender();
+      return;
+    }
+
+    const local = { snap: 0, sel: "seq-b", block: null };
+    let playing = false;
+    let timer = null;
+    let ctx = null;
+    const snaps = () => LK_TRACES.paged.snapshots;
+    const rerender = () => LK.vizPaged.render(slot, step, ctx);
+    const stop = () => {
+      if (timer) { clearInterval(timer); timer = null; }
+      if (playing) { playing = false; if (slot.isConnected) rerender(); }
+    };
+    ctx = {
+      trace: LK_TRACES.paged,
+      state: local,
+      get playing() { return playing; },
+      setSnap(snap) {
+        local.snap = Math.max(0, Math.min(snaps().length - 1, snap));
+        stop();
+        rerender();
+      },
+      setSel(sel) {
+        local.sel = sel;
+        stop();
+        rerender();
+      },
+      setBlock(block) {
+        local.block = block;
+        stop();
+        rerender();
+      },
+      togglePlay() {
+        if (playing) { stop(); return; }
+        local.snap = 0;
+        playing = true;
+        rerender();
+        timer = setInterval(() => {
+          if (local.snap >= snaps().length - 1) { stop(); return; }
+          local.snap += 1;
+          rerender();
+        }, 420);
+      },
+    };
+    registerKvVizStop(ch, stop);
+    rerender();
+  }
+
+  function buildKvFlow(ch) {
+    const view = el[ch];
+    const main = view && view.querySelector(".kv-main");
+    const flow = main && main.querySelector(".kv-flow");
+    if (!flow) return;
+    stopKvFlowViz(ch);
+    const cfg = kvFlowCfg(ch);
+    const d = cfg.d;
+    flow.innerHTML = '<div class="kv-page">' +
+      '<div class="read-pos" data-flow-pos>' + docPosText(ch, chapterStepIndex(ch), cfg.n) + "</div>" +
+      '<div class="doc-kicker">学习章节 · ' + esc(d.title) + "</div>" +
+      '<h1 class="page-title">' + esc(d.title) + "</h1>" +
+      '<p class="page-lead">连续长页：向下滚动查看全部小节；左侧步骤导航定位，顶部显示当前进度。</p>' +
+      cfg.steps.map((step, i) => kvFlowSectionHTML(ch, step, i, cfg)).join("") +
+      "</div>";
+    flow.querySelectorAll("[data-kv-code]").forEach((slot) => {
+      const i = +slot.dataset.kvCode;
+      const step = cfg.steps[i];
+      if (step && step.codeRanges && step.codeRanges.length) {
+        LK.codeview.mountRanges(slot, cfg.d.lines, step.codeRanges);
+      }
+    });
+    cfg.steps.forEach((step, i) => {
+      const slot = flow.querySelector('[data-kv-viz="' + i + '"]');
+      if (slot) mountKvFlowViz(ch, i, slot, step);
+    });
+    flow.dataset.built = "1";
+    initKvFlowScroll(ch);
+  }
+
+  function initKvFlowScroll(ch) {
+    const view = el[ch];
+    const main = view && view.querySelector(".kv-main");
+    if (!main || main.dataset.flowBound === "1") return;
+    main.dataset.flowBound = "1";
+    main.addEventListener("scroll", () => {
+      if (state.view !== ch || stageOf(ch) !== "explore" || !main.classList.contains("flow-active")) return;
+      const flow = main.querySelector(".kv-flow");
+      if (!flow) return;
+      const secs = Array.from(flow.querySelectorAll(".kv-sec"));
+      if (!secs.length) return;
+      const top = main.getBoundingClientRect().top + 96;
+      let idx = 0;
+      secs.forEach((sec, i) => {
+        if (sec.getBoundingClientRect().top <= top) idx = i;
+      });
+      if (main.scrollTop + main.clientHeight >= main.scrollHeight - 4) idx = secs.length - 1;
+      if (idx === chapterStepIndex(ch)) return;
+      setFlowStepState(ch, idx);
+      const pos = flow.querySelector("[data-flow-pos]");
+      if (pos) pos.textContent = docPosText(ch, idx, secs.length);
+      if (LK.progress) {
+        LK.progress.recordStep(ch + ":" + (idx + 1));
+        const lesson = LK.progress.lesson(ch);
+        if ((lesson.exploreMax || 0) < idx + 1) LK.progress.saveLesson(ch, { exploreMax: idx + 1 });
+      }
+      renderChapterNav(ch);
+      updateHash();
+    }, { passive: true });
+  }
+
+  function scrollKvTo(ch, i) {
+    const cfg = kvFlowCfg(ch);
+    const idx = Math.max(0, Math.min(cfg.n - 1, i));
+    setFlowStepState(ch, idx);
+    const view = el[ch];
+    const main = view && view.querySelector(".kv-main");
+    const flow = main && main.querySelector(".kv-flow");
+    const sec = flow && flow.querySelector('[data-kv-sec="' + idx + '"]');
+    if (main && idx === 0) {
+      main.scrollTo({ top: 0, behavior: "auto" });
+    } else if (main && sec) {
+      const posEl = flow.querySelector("[data-flow-pos]");
+      const offset = (posEl ? posEl.offsetHeight : 0) + 10;
+      const top = sec.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop;
+      main.scrollTo({ top: Math.max(0, top - offset), behavior: "auto" });
+    }
+    const pos = flow && flow.querySelector("[data-flow-pos]");
+    if (pos) pos.textContent = docPosText(ch, idx, cfg.n);
+    if (LK.progress) {
+      LK.progress.recordStep(ch + ":" + (idx + 1));
+      const lesson = LK.progress.lesson(ch);
+      if ((lesson.exploreMax || 0) < idx + 1) LK.progress.saveLesson(ch, { exploreMax: idx + 1 });
+    }
+    renderChapterNav(ch);
+    updateHash();
+  }
+
+  function renderKvFlowStage(ch) {
+    const view = el[ch];
+    const main = view && view.querySelector(".kv-main");
+    const flow = main && main.querySelector(".kv-flow");
+    if (!main || !flow) return;
+    main.classList.add("flow-active");
+    const timeline = document.querySelector(".timeline");
+    if (timeline) timeline.style.display = "none";
+    if (!flow.dataset.built) buildKvFlow(ch);
+    renderChapterNav(ch);
+    scrollKvTo(ch, chapterStepIndex(ch));
+  }
+
   function renderChapterStage(ch) {
     if (DOC_CHAPTERS.includes(ch)) {
       renderDocStage(ch);
@@ -759,21 +1094,22 @@
     const vizEl = ch === "kv" ? el.viz : ch === "prefix" ? el.prefixViz : el.pagedViz;
     const kvMain = view.querySelector(".kv-main");
     if (kvMain) kvMain.scrollTop = 0;
-
     if (stageOf(ch) === "explore") {
-      if (timeline) timeline.style.display = "flex";
-      if (ch === "kv") renderStep();
-      else if (ch === "prefix") renderPrefixStep();
-      else renderPagedStep();
+      renderKvFlowStage(ch);
       return;
     }
+    if (kvMain) kvMain.classList.remove("flow-active");
+    stopKvFlowViz(ch);
+    const nextHost = stepNextHost(ch);
+    if (nextHost) nextHost.innerHTML = "";
     if (timeline) timeline.style.display = "none";
     if (vizEl) vizEl.innerHTML = "";
     const lesson = LK_DATA.lessons[ch];
     if (stageOf(ch) === "think") {
-      LK.workshop.renderStageThink(docEl, ch, lesson.think, () => renderChapterNav(ch), () =>
-        setStage(ch, "explore")
-      );
+      LK.workshop.renderStageThink(docEl, ch, lesson.think, () => renderChapterNav(ch), () => {
+        setChapterStep(ch, 0);
+        setStage(ch, "explore");
+      });
     } else {
       LK.workshop.renderStageReview(
         docEl, ch, lesson.reflect, lesson.attribution, lesson.summary,
@@ -793,6 +1129,31 @@
     return el[ch + "Main"];
   }
 
+  function docPosText(ch, idx, total) {
+    return "探索阅读 · " + String(idx + 1).padStart(2, "0") + " / " + String(total).padStart(2, "0");
+  }
+
+  function injectDocSectionNav(ch, body) {
+    body.querySelectorAll(".doc-sec-next, .sec-pos, .read-pos").forEach((n) => n.remove());
+    const secs = Array.from(body.querySelectorAll("h2.sec-title"));
+    if (!secs.length) return;
+    const pos = document.createElement("div");
+    pos.className = "read-pos";
+    pos.dataset.docPos = "1";
+    pos.textContent = docPosText(ch, chapterStepIndex(ch), secs.length);
+    body.insertBefore(pos, body.firstChild);
+    secs.forEach((h2, i) => {
+      const first = h2.firstChild;
+      if (first && first.nodeType === 3) {
+        first.nodeValue = first.nodeValue.replace(/^\s*\d+\s*[·.]\s*/, "");
+      }
+      const badge = document.createElement("div");
+      badge.className = "sec-pos";
+      badge.textContent = String(i + 1).padStart(2, "0") + " / " + String(secs.length).padStart(2, "0");
+      h2.parentNode.insertBefore(badge, h2);
+    });
+  }
+
   function renderDocStage(ch) {
     const view = el[ch];
     if (!view) return;
@@ -806,6 +1167,7 @@
 
     if (stage === "explore") {
       renderDocChapter(ch, body);
+      injectDocSectionNav(ch, body);
       bindDocScroll(ch);
       main.scrollTop = 0;
       const i = chapterStepIndex(ch);
@@ -817,9 +1179,10 @@
 
     const lesson = D.lessons[ch];
     if (stage === "think") {
-      LK.workshop.renderStageThink(body, ch, lesson.think, () => renderChapterNav(ch), () =>
-        setStage(ch, "explore")
-      );
+      LK.workshop.renderStageThink(body, ch, lesson.think, () => renderChapterNav(ch), () => {
+        setChapterStep(ch, 0);
+        setStage(ch, "explore");
+      });
     } else {
       LK.workshop.renderStageReview(
         body, ch, lesson.reflect, lesson.attribution, lesson.summary,
@@ -890,6 +1253,8 @@
     const head = nav.querySelector(".stepnav-head > b");
     if (head) head.textContent = idx + 1 + " / " + steps.length;
     const em = nav.querySelector('[data-nav-stage="explore"] em');
+    const pos = docBody(ch) && docBody(ch).querySelector("[data-doc-pos]");
+    if (pos) pos.textContent = docPosText(ch, idx, steps.length);
     const lesson = LK.progress.lesson(ch);
     const max = Math.max(lesson.exploreMax || 0, idx + 1);
     if (max !== (lesson.exploreMax || 0)) LK.progress.saveLesson(ch, { exploreMax: max });
@@ -900,7 +1265,9 @@
   function scrollMainToSection(ch, sec) {
     const main = docMainEl(ch);
     if (!main || !sec) return;
-    const top = main.scrollTop + sec.getBoundingClientRect().top - main.getBoundingClientRect().top - 12;
+    const posEl = main.querySelector(".read-pos");
+    const offset = (posEl ? posEl.offsetHeight : 0) + 10;
+    const top = main.scrollTop + sec.getBoundingClientRect().top - main.getBoundingClientRect().top - offset;
     main.scrollTo({ top: Math.max(0, top), behavior: "auto" });
   }
 
@@ -935,11 +1302,54 @@
 
   /* ---------------------------------------------------------- dots/hash */
 
+  function goPrevChapter(ch) {
+    const i = LEARNING_ORDER.indexOf(ch);
+    if (i <= 0) return;
+    const prev = LEARNING_ORDER[i - 1];
+    state.stages[prev] = "explore";
+    setChapterStep(prev, chapterSteps(prev).length - 1);
+    setView(prev);
+    updateHash();
+  }
+
   function navStep(delta) {
-    if (!CHAPTERS.includes(state.view) || stageOf(state.view) !== "explore") return;
-    if (state.view === "kv") setStep(state.step + delta);
-    else if (state.view === "prefix") setPrefixStep(state.prefix.step + delta);
-    else if (state.view === "paged") setPagedStep(state.paged.step + delta);
+    const view = state.view;
+    if (!ALL_CHAPTERS.includes(view)) return;
+    const stage = stageOf(view);
+    const steps = chapterSteps(view);
+    const idx = chapterStepIndex(view);
+
+    if (delta > 0) {
+      if (stage === "think") {
+        setChapterStep(view, 0);
+        setStage(view, "explore");
+      } else if (stage === "reflect") {
+        goNextChapter(view);
+      } else if (idx < steps.length - 1) {
+        if (DOC_CHAPTERS.includes(view)) scrollDocTo(view, idx + 1);
+        else if (view === "kv") setStep(idx + 1);
+        else if (view === "prefix") setPrefixStep(idx + 1);
+        else setPagedStep(idx + 1);
+      } else {
+        goNextChapter(view);
+      }
+      return;
+    }
+
+    if (stage === "think") {
+      goPrevChapter(view);
+    } else if (stage === "reflect") {
+      state.stages[view] = "explore";
+      setChapterStep(view, steps.length - 1);
+      setStage(view, "explore");
+    } else if (idx > 0) {
+      if (DOC_CHAPTERS.includes(view)) scrollDocTo(view, idx - 1);
+      else if (view === "kv") setStep(idx - 1);
+      else if (view === "prefix") setPrefixStep(idx - 1);
+      else setPagedStep(idx - 1);
+    } else {
+      setStage(view, "think");
+    }
   }
 
   function buildDots() {
@@ -1051,6 +1461,7 @@
     if (!VIEWS.includes(view)) view = "think";
     DOC_CHAPTERS.forEach((ch) => stopDocChapter(ch));
     if (state.playing) stopPlay(false);
+    if (CHAPTERS.includes(state.view) && state.view !== view) stopKvFlowViz(state.view);
     state.view = view;
     document.body.dataset.view = view;
     const timeline = document.querySelector(".timeline");
@@ -1297,6 +1708,40 @@
     });
   }
 
+  /* ------------------------------------------------------ next buttons */
+
+  function nextChapterId(ch) {
+    const i = LEARNING_ORDER.indexOf(ch);
+    return i >= 0 ? LEARNING_ORDER[i + 1] || null : null;
+  }
+
+  function stepNextHost(ch) {
+    return ch === "kv" ? el.kvStepNext : ch === "prefix" ? el.prefixStepNext : el.pagedStepNext;
+  }
+
+  function renderStepNext(ch) {
+    const host = stepNextHost(ch);
+    if (!host) return;
+    if (stageOf(ch) !== "explore") {
+      host.innerHTML = "";
+      return;
+    }
+    const steps = ch === "kv" ? kv.steps : ch === "prefix" ? LK_DATA.prefix.steps : LK_DATA.paged.steps;
+    const idx = ch === "kv" ? state.step : ch === "prefix" ? state.prefix.step : state.paged.step;
+    const last = idx >= steps.length - 1;
+    const nextId = nextChapterId(ch);
+    const label = last
+      ? (nextId ? "下一章：" + (CHAPTER_LABELS[nextId] || nextId) : "学习反馈")
+      : "下一个小节：" + steps[idx + 1].title;
+    host.innerHTML = '<button type="button" class="btn ' + (last ? "primary" : "ghost") +
+      ' step-next-btn" data-step-next="' + (last ? "chapter" : "step") + '">' +
+      esc(label) + " →</button>";
+    host.querySelector("button").addEventListener("click", () => {
+      if (last) goNextChapter(ch);
+      else navStep(1);
+    });
+  }
+
   /* ------------------------------------------------------ auto advance */
 
   function goNextChapter(ch) {
@@ -1313,46 +1758,6 @@
     setChapterStep(next, 0);
     setView(next);
     updateHash();
-  }
-
-  function initKvAutoAdvance() {
-    const mains = document.querySelectorAll(
-      "#view-kv .kv-main, #view-prefix .kv-main, #view-paged .kv-main"
-    );
-    mains.forEach((main) => {
-      let locked = false;
-      main.addEventListener("scroll", () => {
-        if (locked) return;
-        const view = main.closest("section.view");
-        const ch = view && view.id.startsWith("view-") ? view.id.slice(5) : "";
-        if (!CHAPTERS.includes(ch) || state.view !== ch || stageOf(ch) !== "explore") return;
-        const gap = main.scrollHeight - main.scrollTop - main.clientHeight;
-        if (gap > 12) return;
-        const steps = ch === "kv" ? kv.steps : ch === "prefix" ? LK_DATA.prefix.steps : LK_DATA.paged.steps;
-        const index = ch === "kv" ? state.step : ch === "prefix" ? state.prefix.step : state.paged.step;
-        locked = true;
-        if (index >= steps.length - 1) goNextChapter(ch);
-        else navStep(1);
-        setTimeout(() => { locked = false; }, 600);
-      }, { passive: true });
-    });
-  }
-
-  function initDocAutoAdvance() {
-    document.querySelectorAll(".doc-main").forEach((main) => {
-      let locked = false;
-      main.addEventListener("scroll", () => {
-        if (locked) return;
-        const view = main.closest("section.view");
-        const ch = view && view.id.startsWith("view-") ? view.id.slice(5) : "";
-        if (!DOC_CHAPTERS.includes(ch) || state.view !== ch || stageOf(ch) !== "explore") return;
-        const gap = main.scrollHeight - main.scrollTop - main.clientHeight;
-        if (gap > 12) return;
-        locked = true;
-        goNextChapter(ch);
-        setTimeout(() => { locked = false; }, 600);
-      }, { passive: true });
-    });
   }
 
   /* --------------------------------------------------------------- theme */
@@ -1395,8 +1800,7 @@
   initStages();
   initNav();
   initCodeDrawers();
-  initKvAutoAdvance();
-  initDocAutoAdvance();
+  LK.nextChapter = goNextChapter;
   buildDots();
   if (LK.sectionnav) {
     LK.sectionnav.mount($("#toc-calc"), el.calcBody);

@@ -971,9 +971,8 @@
       '<div class="qprogress"><span>已想 ' + answered + " / " + n + "</span><span>" +
       (answered === n ? "可以进入探索了" : "答完再往下") + "</span></div>" +
       '<div class="quiz">' + cards + "</div>" +
-      (answered === n
-        ? '<div class="reuse-actions"><button class="btn primary" id="stage-explore">进入探索阅读 →</button></div>'
-        : "");
+      '<div class="reuse-actions"><button class="btn ' + (answered === n ? "primary" : "ghost") +
+      '" id="stage-explore">' + (answered === n ? "进入探索阅读 →" : "跳过预测，进入探索阅读 →") + "</button></div>";
 
     el.querySelectorAll("[data-stage-q]").forEach((b) =>
       b.addEventListener("click", () => {
@@ -1084,6 +1083,7 @@
       (gateOpen || complete ? "" : "disabled") + ">" +
       (complete ? "已完成的章 · 重新标记" : "完成本章 →") + "</button>" +
       '<button class="btn ghost" id="stage-export-md">导出 Markdown</button>' +
+      '<button class="btn ghost" id="stage-next-chapter">下一章 →</button>' +
       (complete
         ? '<span class="tool-note">完成于 ' + new Date(p.summaryAt).toLocaleString() + "</span>"
         : '<span class="tool-note" id="stage-gate-note">' +
@@ -1186,6 +1186,9 @@
     el.querySelector("#stage-export-md").addEventListener("click", () => {
       saveLesson(chapter, { summaryText: ta.value });
       exportChapterMarkdown(chapter);
+    });
+    el.querySelector("#stage-next-chapter").addEventListener("click", () => {
+      if (LK.nextChapter) LK.nextChapter(chapter);
     });
   };
 

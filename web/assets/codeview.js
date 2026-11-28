@@ -138,5 +138,35 @@
 
       return { highlight: highlightRanges, showOnly, scrollToLine };
     },
+
+    // Render only the source lines that belong to one section; original line
+    // numbers are kept so the snippet stays traceable to the file.
+    mountRanges(container, sourceLines, ranges) {
+      const html = highlight(sourceLines.join("\n"));
+      const keep = [];
+      const seen = new Set();
+      (ranges || []).slice().sort((a, b) => a.start - b.start).forEach((r) => {
+        for (let n = Math.max(1, r.start); n <= Math.min(html.length, r.end); n++) {
+          if (!seen.has(n)) { seen.add(n); keep.push(n); }
+        }
+      });
+      const frag = document.createDocumentFragment();
+      for (const n of keep) {
+        const row = document.createElement("div");
+        row.className = "ln";
+        row.dataset.line = String(n);
+        const no = document.createElement("span");
+        no.className = "no";
+        no.textContent = String(n);
+        const src = document.createElement("span");
+        src.className = "src";
+        src.innerHTML = html[n - 1] || " ";
+        row.appendChild(no);
+        row.appendChild(src);
+        frag.appendChild(row);
+      }
+      container.innerHTML = "";
+      container.appendChild(frag);
+    },
   };
 })();
