@@ -560,7 +560,7 @@
       '<h3 class="sec-title">建议回看</h3>' +
       (suggestions
         ? '<div class="suggestions">' + suggestions + "</div>"
-        : '<p class="note">后测全对，没有必须回看的概念。可以回到各章「总结归纳」把理解写下来。</p>') +
+        : '<p class="note">后测全对，没有必须回看的概念。可以回到各章「总结」把理解写下来。</p>') +
       '<div class="summarycard"><b>概要</b><p>' +
       esc((data.summary && data.summary.brief) || data.takeaway || "") + "</p>" +
       (data.summary && data.summary.detail
@@ -898,35 +898,84 @@
     if (go) go.addEventListener("click", onExplore);
   };
 
-  W.renderStageReflect = function (el, chapter, prompts, attribution, onChange, onNext) {
-    const saved = lessonOf(chapter).reflectText || {};
-    const filled = prompts.filter((q, i) => (saved[q.id || i] || "").trim()).length;
-    const attr = attribution || [];
+  W.renderStageReview = function (el, chapter, prompts, attribution, summary, onChange) {
     const p = lessonOf(chapter);
+    const saved = p.reflectText || {};
+    const promptList = prompts || [];
+    const filled = promptList.filter((q, i) => (saved[q.id || i] || "").trim()).length;
+    const attr = attribution || [];
     const attrDone = !attr.length || !!p.attributionSubmitted;
-    const complete = !!p.reflect;
+    const complete = !!p.summary;
+    const content = ((window.LK_DATA && LK_DATA.lessons) || {})[chapter] || {};
+    const quiz = content.quiz || [];
+    const answers = p.quizAnswers || {};
+    const submitted = !!p.quizSubmitted;
+    const score = p.quizScore || 0;
+    const answered = quiz.filter((q, i) => answers[i] !== undefined).length;
+    const rerender = () => W.renderStageReview(el, chapter, prompts, attribution, summary, onChange);
+
+    const quizHTML = quiz.length
+      ? '<h3 class="sec-title">章节测验 · ' + quiz.length + " 题</h3>" +
+        '<p class="hint">读完后用两题检查是否真的掌握；提交后显示得分与解释。</p>' +
+        '<div class="quiz">' +
+        quiz.map((q, i) => {
+          const chosen = answers[i];
+          const done = submitted;
+          const opts = q.options.map((opt, k) => {
+            let cls = "qopt";
+            if (chosen === k) cls += " chosen";
+            if (done) {
+              if (k === q.answer) cls += " correct";
+              else if (chosen === k) cls += " wrong";
+            }
+            return '<button class="' + cls + '" data-cq="' + i + '" data-ci="' + k + '"' +
+              (done ? " disabled" : "") + ">" + String.fromCharCode(65 + k) + ". " + esc(opt) + "</button>";
+          }).join("");
+          return '<article class="qcard' + (done ? " answered" : "") + '">' +
+            '<div class="qhead"><span class="qtag">章节测验</span><span class="qnum">Q' + (i + 1) + "</span></div>" +
+            '<p class="qtext">' + esc(q.q) + "</p>" +
+            '<div class="qopts">' + opts + "</div>" +
+            (done ? '<div class="qwhy"><b>' + (chosen === q.answer ? "✓" : "✗") + "</b> " + esc(q.why || "") + "</div>" : "") +
+            "</article>";
+        }).join("") +
+        "</div>" +
+        '<div class="test-actions">' +
+        (submitted
+          ? '<span class="tool-note">得分 ' + score + " / " + quiz.length + '</span><button class="btn ghost" id="chapter-quiz-reset">重做章节测验</button>'
+          : '<button class="btn primary" id="chapter-quiz-submit" ' + (answered < quiz.length ? "disabled" : "") +
+            ">提交章节测验（" + answered + " / " + quiz.length + "）</button>" +
+            '<span class="tool-note">提交后显示得分与解释</span>') +
+        "</div>"
+      : "";
 
     el.innerHTML =
-      '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 反思与归因</div>" +
+      '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 反思与总结</div>" +
       '<h2>先用自己的话回答，再判断这是谁的工作</h2>' +
-      '<p class="hint">反思写不出来，说明刚才的探索还没闭环；归因是把「模型 / GPU / 引擎」的分工说清楚。参考默认折叠，先写再看。</p>' +
-      '<div class="qprogress"><span>已写 ' + filled + " / " + prompts.length + "</span><span>保存到本地</span></div>" +
-      prompts
-        .map(
-          (q, i) =>
-            '<div class="rprompt"><label for="ref-' + (q.id || i) + '">' + (i + 1) + ". " + esc(q.q) + "</label>" +
-            '<textarea id="ref-' + (q.id || i) + '" data-ref="' + (q.id || i) + '" rows="3">' + esc(saved[q.id || i] || "") + "</textarea>" +
-            '<details class="thinkbox"><summary>对照参考</summary><p>' + esc(q.ref) + "</p></details></div>"
-        )
-        .join("") +
+      '<p class="hint">反思写不出来，说明探索还没闭环；归因把「模型 / GPU / 引擎」的分工说清楚；最后用三句话收束整章。参考默认折叠，先写再看。</p>' +
+      '<div class="qprogress"><span>反思已写 ' + filled + " / " + promptList.length + "</span><span>保存到本地</span></div>" +
+      promptList.map(
+        (q, i) =>
+          '<div class="rprompt"><label for="ref-' + (q.id || i) + '">' + (i + 1) + ". " + esc(q.q) + "</label>" +
+          '<textarea id="ref-' + (q.id || i) + '" data-ref="' + (q.id || i) + '" rows="3">' + esc(saved[q.id || i] || "") + "</textarea>" +
+          '<details class="thinkbox"><summary>对照参考</summary><p>' + esc(q.ref) + "</p></details></div>"
+      ).join("") +
       '<h3 class="sec-title">归因：这一步是谁的工作？</h3>' +
       '<div id="stage-attr"></div>' +
-      '<div class="reuse-actions"><button class="btn primary" id="stage-reflect-done" ' +
+      '<h3 class="sec-title">总结：参考 vs 我的版本</h3>' +
+      '<div class="summarycard"><b>参考总结 · 概要</b><p>' + esc(summary.brief) + "</p>" +
+      '<details><summary>详细描述</summary><p>' + esc(summary.detail) + "</p></details></div>" +
+      '<div class="rprompt"><label for="stage-summary">我的总结</label>' +
+      '<textarea id="stage-summary" rows="5">' + esc(p.summaryText || "") + "</textarea></div>" +
+      quizHTML +
+      '<div class="reuse-actions"><button class="btn primary" id="stage-review-done" ' +
       (attrDone ? "" : "disabled") + ">" +
-      (!attrDone ? "先提交归因" : complete ? "已完成的反思 · 重新标记" : "完成反思 →") + "</button>" +
-      (complete && attrDone
-        ? '<span class="tool-note">反思与归因已完成</span>'
-        : '<span class="tool-note">提交归因后才能完成本阶段</span>') +
+      (complete ? "已完成的章 · 重新标记" : "完成本章 →") + "</button>" +
+      '<button class="btn ghost" id="stage-export-md">导出 Markdown</button>' +
+      (!attrDone
+        ? '<span class="tool-note">先提交归因才能完成本章</span>'
+        : complete
+          ? '<span class="tool-note">完成于 ' + new Date(p.summaryAt).toLocaleString() + "</span>"
+          : '<span class="tool-note">完成本章后会标记整章进度</span>') +
       "</div>";
 
     el.querySelectorAll("[data-ref]").forEach((ta) =>
@@ -938,19 +987,54 @@
       })
     );
     W.renderStageAttribution(el.querySelector("#stage-attr"), chapter, attr, () => {
-      W.renderStageReflect(el, chapter, prompts, attribution, onChange, onNext);
+      rerender();
       if (onChange) onChange();
     });
-    const done = el.querySelector("#stage-reflect-done");
-    if (done) {
-      done.addEventListener("click", () => {
-        saveLesson(chapter, { reflect: true });
+    const ta = el.querySelector("#stage-summary");
+    ta.addEventListener("input", () => saveLesson(chapter, { summaryText: ta.value }));
+    el.querySelectorAll("[data-cq]").forEach((b) =>
+      b.addEventListener("click", () => {
+        if (submitted) return;
+        const next = Object.assign({}, lessonOf(chapter).quizAnswers || {});
+        next[b.dataset.cq] = +b.dataset.ci;
+        saveLesson(chapter, { quizAnswers: next });
         if (onChange) onChange();
-        if (onNext) onNext();
+        rerender();
+      })
+    );
+    const quizSubmit = el.querySelector("#chapter-quiz-submit");
+    if (quizSubmit) {
+      quizSubmit.addEventListener("click", () => {
+        const finalAnswers = lessonOf(chapter).quizAnswers || {};
+        const got = quiz.filter((q, i) => finalAnswers[i] === q.answer).length;
+        saveLesson(chapter, { quizSubmitted: true, quizScore: got });
+        if (onChange) onChange();
+        rerender();
       });
     }
+    const quizReset = el.querySelector("#chapter-quiz-reset");
+    if (quizReset) {
+      quizReset.addEventListener("click", () => {
+        saveLesson(chapter, { quizAnswers: {}, quizSubmitted: false, quizScore: null });
+        if (onChange) onChange();
+        rerender();
+      });
+    }
+    el.querySelector("#stage-review-done").addEventListener("click", () => {
+      saveLesson(chapter, {
+        reflect: true,
+        summary: true,
+        summaryText: ta.value,
+        summaryAt: Date.now(),
+      });
+      if (onChange) onChange();
+      rerender();
+    });
+    el.querySelector("#stage-export-md").addEventListener("click", () => {
+      saveLesson(chapter, { summaryText: ta.value });
+      exportChapterMarkdown(chapter);
+    });
   };
-
 
   W.renderStageAttribution = function (el, chapter, cards, onChange) {
     if (!el) return;
@@ -1186,7 +1270,7 @@
       "",
       (p.summaryText || "").trim() || "（还没写）",
       "",
-      "## 反思与归因",
+      "## 反思与总结",
       "",
     ];
     (content.reflect || []).forEach((q) => {
@@ -1218,105 +1302,6 @@
     downloadMarkdown("learnkvc-" + chapter + ".md", parts.join("\n"));
   }
 
-  W.renderStageSummary = function (el, chapter, summary, onChange) {
-    const p = lessonOf(chapter);
-    const complete = p.summary;
-    const content = ((window.LK_DATA && LK_DATA.lessons) || {})[chapter] || {};
-    const quiz = content.quiz || [];
-    const answers = p.quizAnswers || {};
-    const submitted = !!p.quizSubmitted;
-    const score = p.quizScore || 0;
-    const answered = quiz.filter((q, i) => answers[i] !== undefined).length;
-
-    const quizHTML = quiz.length
-      ? '<h3 class="sec-title">章节测验 · ' + quiz.length + " 题</h3>" +
-        '<p class="hint">读完后用两题检查是否真的掌握；提交后显示得分与解释。</p>' +
-        '<div class="quiz">' +
-        quiz.map((q, i) => {
-          const chosen = answers[i];
-          const done = submitted;
-          const opts = q.options.map((opt, k) => {
-            let cls = "qopt";
-            if (chosen === k) cls += " chosen";
-            if (done) {
-              if (k === q.answer) cls += " correct";
-              else if (chosen === k) cls += " wrong";
-            }
-            return '<button class="' + cls + '" data-cq="' + i + '" data-ci="' + k + '"' +
-              (done ? " disabled" : "") + ">" + String.fromCharCode(65 + k) + ". " + esc(opt) + "</button>";
-          }).join("");
-          return '<article class="qcard' + (done ? " answered" : "") + '">' +
-            '<div class="qhead"><span class="qtag">章节测验</span><span class="qnum">Q' + (i + 1) + "</span></div>" +
-            '<p class="qtext">' + esc(q.q) + "</p>" +
-            '<div class="qopts">' + opts + "</div>" +
-            (done ? '<div class="qwhy"><b>' + (chosen === q.answer ? "✓" : "✗") + "</b> " + esc(q.why || "") + "</div>" : "") +
-            "</article>";
-        }).join("") +
-        "</div>" +
-        '<div class="test-actions">' +
-        (submitted
-          ? '<span class="tool-note">得分 ' + score + " / " + quiz.length + '</span><button class="btn ghost" id="chapter-quiz-reset">重做章节测验</button>'
-          : '<button class="btn primary" id="chapter-quiz-submit" ' + (answered < quiz.length ? "disabled" : "") +
-            ">提交章节测验（" + answered + " / " + quiz.length + "）</button>" +
-            '<span class="tool-note">提交后显示得分与解释</span>') +
-        "</div>"
-      : "";
-
-    el.innerHTML =
-      '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 总结归纳</div>" +
-      '<h2>把这一章压缩成你自己的三句话</h2>' +
-      '<p class="hint">先写自己的版本，再展开参考总结对照；写完点「完成本章」，进度会保存在本地。</p>' +
-      '<div class="summarycard"><b>参考总结 · 概要</b><p>' + esc(summary.brief) + "</p>" +
-      '<details><summary>详细描述</summary><p>' + esc(summary.detail) + "</p></details></div>" +
-      '<div class="rprompt"><label for="stage-summary">我的总结</label>' +
-      '<textarea id="stage-summary" rows="5">' + esc(p.summaryText || "") + "</textarea></div>" +
-      quizHTML +
-      '<div class="reuse-actions"><button class="btn primary" id="stage-summary-done">' +
-      (complete ? "已完成的章 · 重新标记" : "完成本章 →") + "</button>" +
-      '<button class="btn ghost" id="stage-export-md">导出 Markdown</button>' +
-      (complete ? '<span class="tool-note">完成于 ' + new Date(p.summaryAt).toLocaleString() + "</span>" : "") +
-      "</div>";
-
-    const ta = el.querySelector("#stage-summary");
-    ta.addEventListener("input", () => saveLesson(chapter, { summaryText: ta.value }));
-    el.querySelector("#stage-summary-done").addEventListener("click", () => {
-      saveLesson(chapter, { summary: true, summaryText: ta.value, summaryAt: Date.now() });
-      if (onChange) onChange();
-      W.renderStageSummary(el, chapter, summary, onChange);
-    });
-    el.querySelector("#stage-export-md").addEventListener("click", () => {
-      saveLesson(chapter, { summaryText: ta.value });
-      exportChapterMarkdown(chapter);
-    });
-    el.querySelectorAll("[data-cq]").forEach((b) =>
-      b.addEventListener("click", () => {
-        if (submitted) return;
-        const next = Object.assign({}, lessonOf(chapter).quizAnswers || {});
-        next[b.dataset.cq] = +b.dataset.ci;
-        saveLesson(chapter, { quizAnswers: next });
-        if (onChange) onChange();
-        W.renderStageSummary(el, chapter, summary, onChange);
-      })
-    );
-    const submit = el.querySelector("#chapter-quiz-submit");
-    if (submit) {
-      submit.addEventListener("click", () => {
-        const finalAnswers = lessonOf(chapter).quizAnswers || {};
-        const got = quiz.filter((q, i) => finalAnswers[i] === q.answer).length;
-        saveLesson(chapter, { quizSubmitted: true, quizScore: got });
-        if (onChange) onChange();
-        W.renderStageSummary(el, chapter, summary, onChange);
-      });
-    }
-    const reset = el.querySelector("#chapter-quiz-reset");
-    if (reset) {
-      reset.addEventListener("click", () => {
-        saveLesson(chapter, { quizAnswers: {}, quizSubmitted: false, quizScore: null });
-        if (onChange) onChange();
-        W.renderStageSummary(el, chapter, summary, onChange);
-      });
-    }
-  };
 
 
 })();

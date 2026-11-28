@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>learnkvc · 启发式阅读器</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="assets/style.css?v=2026-11-28-7">
-<link rel="stylesheet" href="assets/nccl.css?v=2026-11-28-7">
-<link rel="stylesheet" href="assets/cuda.css?v=2026-11-28-7">
-<link rel="stylesheet" href="assets/gpu.css?v=2026-11-28-7">
-<link rel="stylesheet" href="assets/ecn.css?v=2026-11-28-7">
-<link rel="stylesheet" href="assets/opt.css?v=2026-11-28-7">
+<link rel="stylesheet" href="assets/style.css?v=2026-11-28-10">
+<link rel="stylesheet" href="assets/nccl.css?v=2026-11-28-10">
+<link rel="stylesheet" href="assets/cuda.css?v=2026-11-28-10">
+<link rel="stylesheet" href="assets/gpu.css?v=2026-11-28-10">
+<link rel="stylesheet" href="assets/ecn.css?v=2026-11-28-10">
+<link rel="stylesheet" href="assets/opt.css?v=2026-11-28-10">
 </head>
 <body data-view="think">
 <a class="skip" href="#main">跳到正文</a>
@@ -28,7 +28,7 @@
       </button>
       <div class="nav-menu" id="menu-gpu" role="menu" aria-label="认识 GPU" hidden>
         <button type="button" role="menuitem" data-view="gpu" data-short="总览" aria-current="false">
-          <span class="nav-item-title">认识 GPU · 总览</span>
+          <span class="nav-item-title">总览</span>
           <span class="nav-item-sub">CPU/GPU/NPU 分工、显存与 L1/L2、生态</span>
         </button>
         <button type="button" role="menuitem" data-view="cuda" data-short="CUDA" aria-current="false">
@@ -43,15 +43,15 @@
       </button>
       <div class="nav-menu" id="menu-chapters" role="menu" aria-label="认识 KVCache" hidden>
         <button type="button" role="menuitem" data-view="kv" data-short="KV" aria-current="false">
-          <span class="nav-item-title">① 单请求 KV cache</span>
+          <span class="nav-item-title">单请求 KV cache</span>
           <span class="nav-item-sub">一次生成：重算 vs 缓存</span>
         </button>
         <button type="button" role="menuitem" data-view="prefix" data-short="Prefix" aria-current="false">
-          <span class="nav-item-title">② Prefix cache</span>
+          <span class="nav-item-title">Prefix cache</span>
           <span class="nav-item-sub">多请求共享前缀与块池</span>
         </button>
         <button type="button" role="menuitem" data-view="paged" data-short="Paged" aria-current="false">
-          <span class="nav-item-title">③ PagedAttention</span>
+          <span class="nav-item-title">PagedAttention</span>
           <span class="nav-item-sub">分页、block table 与 gather</span>
         </button>
       </div>
@@ -62,7 +62,7 @@
       </button>
       <div class="nav-menu" id="menu-network" role="menu" aria-label="推理网络" hidden>
         <button type="button" role="menuitem" data-view="net" data-short="总览" aria-current="false">
-          <span class="nav-item-title">推理网络 · 总览</span>
+          <span class="nav-item-title">总览</span>
           <span class="nav-item-sub">NCCL / RoCE / PD 分离</span>
         </button>
         <button type="button" role="menuitem" data-view="nccl" data-short="NCCL" aria-current="false">
@@ -100,7 +100,7 @@
       </button>
       <div class="nav-menu" id="menu-opt" role="menu" aria-label="LLM 优化" hidden>
         <button type="button" role="menuitem" data-view="opt" data-step="1" data-short="总览" aria-current="false">
-          <span class="nav-item-title">LLM 优化 · 总览</span>
+          <span class="nav-item-title">总览</span>
           <span class="nav-item-sub">先找瓶颈，再选技术</span>
         </button>
         <button type="button" role="menuitem" data-view="opt" data-step="3" data-short="FlashAttention" aria-current="false">
@@ -219,7 +219,7 @@
     </div>
   </section>
 
-  <!-- 4c. 模型训练（四段式章节） -->
+  <!-- 4c. 模型训练（三段式章节） -->
   <section class="view" id="view-train">
     <div class="chapter doc-chapter">
       <aside class="stepnav" id="stepnav-train"></aside>
@@ -227,7 +227,7 @@
     </div>
   </section>
 
-  <!-- 4d. 推理网络（四段式章节） -->
+  <!-- 4d. 推理网络（三段式章节） -->
   <section class="view" id="view-net">
     <div class="chapter doc-chapter">
       <aside class="stepnav" id="stepnav-net"></aside>
@@ -236,7 +236,7 @@
   </section>
 
 
-  <!-- 4e. NCCL 学习章节（四段式章节） -->
+  <!-- 4e. NCCL 学习章节（三段式章节） -->
   <section class="view" id="view-nccl">
     <div class="chapter doc-chapter">
       <aside class="stepnav" id="stepnav-nccl"></aside>
@@ -244,7 +244,7 @@
     </div>
   </section>
 
-  <!-- 4f. CUDA 执行模型（四段式章节） -->
+  <!-- 4f. CUDA 执行模型（三段式章节） -->
   <section class="view" id="view-cuda">
     <div class="chapter doc-chapter">
       <aside class="stepnav" id="stepnav-cuda"></aside>
@@ -252,7 +252,7 @@
     </div>
   </section>
 
-  <!-- 4g. ECN + DCQCN（四段式章节） -->
+  <!-- 4g. ECN + DCQCN（三段式章节） -->
   <section class="view" id="view-ecn">
     <div class="chapter doc-chapter">
       <aside class="stepnav" id="stepnav-ecn"></aside>
@@ -260,7 +260,7 @@
     </div>
   </section>
 
-  <!-- 4h. LLM 优化（四段式章节） -->
+  <!-- 4h. LLM 优化（三段式章节） -->
   <section class="view" id="view-opt">
     <div class="chapter doc-chapter">
       <aside class="stepnav" id="stepnav-opt"></aside>
@@ -268,7 +268,7 @@
     </div>
   </section>
 
-  <!-- 4g. 认识 GPU（四段式章节） -->
+  <!-- 4g. 认识 GPU（三段式章节） -->
   <section class="view" id="view-gpu">
     <div class="chapter doc-chapter">
       <aside class="stepnav" id="stepnav-gpu"></aside>
@@ -296,23 +296,23 @@
 </noscript>
 
 <!-- bump ?v= below whenever web/assets or web/data change (GitHub Pages caches assets) -->
-<script src="data/data.js?v=2026-11-28-7"></script>
-<script src="data/traces.js?v=2026-11-28-7"></script>
-<script src="assets/codeview.js?v=2026-11-28-7"></script>
-<script src="assets/viz/kv.js?v=2026-11-28-7"></script>
-<script src="assets/viz/prefix.js?v=2026-11-28-7"></script>
-<script src="assets/viz/paged.js?v=2026-11-28-7"></script>
-<script src="assets/workshop.js?v=2026-11-28-7"></script>
-<script src="assets/anatomy.js?v=2026-11-28-7"></script>
-<script src="assets/calc.js?v=2026-11-28-7"></script>
-<script src="assets/train.js?v=2026-11-28-7"></script>
-<script src="assets/net.js?v=2026-11-28-7"></script>
-<script src="assets/nccl.js?v=2026-11-28-7"></script>
-<script src="assets/cuda.js?v=2026-11-28-7"></script>
-<script src="assets/gpu.js?v=2026-11-28-7"></script>
-<script src="assets/opt.js?v=2026-11-28-7"></script>
-<script src="assets/ecn.js?v=2026-11-28-7"></script>
-<script src="assets/sectionnav.js?v=2026-11-28-7"></script>
-<script src="assets/app.js?v=2026-11-28-7"></script>
+<script src="data/data.js?v=2026-11-28-10"></script>
+<script src="data/traces.js?v=2026-11-28-10"></script>
+<script src="assets/codeview.js?v=2026-11-28-10"></script>
+<script src="assets/viz/kv.js?v=2026-11-28-10"></script>
+<script src="assets/viz/prefix.js?v=2026-11-28-10"></script>
+<script src="assets/viz/paged.js?v=2026-11-28-10"></script>
+<script src="assets/workshop.js?v=2026-11-28-10"></script>
+<script src="assets/anatomy.js?v=2026-11-28-10"></script>
+<script src="assets/calc.js?v=2026-11-28-10"></script>
+<script src="assets/train.js?v=2026-11-28-10"></script>
+<script src="assets/net.js?v=2026-11-28-10"></script>
+<script src="assets/nccl.js?v=2026-11-28-10"></script>
+<script src="assets/cuda.js?v=2026-11-28-10"></script>
+<script src="assets/gpu.js?v=2026-11-28-10"></script>
+<script src="assets/opt.js?v=2026-11-28-10"></script>
+<script src="assets/ecn.js?v=2026-11-28-10"></script>
+<script src="assets/sectionnav.js?v=2026-11-28-10"></script>
+<script src="assets/app.js?v=2026-11-28-10"></script>
 </body>
 </html>

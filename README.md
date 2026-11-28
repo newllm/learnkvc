@@ -50,7 +50,7 @@ python3 web/tools/build.py
 
 ## 学习地图
 
-交互页分 5 个学习入口 + 前测/后测，共 10 个四段式章节。每章都按「**请回答 → 探索阅读 → 反思与归因 → 总结归纳**」推进：先猜，再用代码/仿真验证，最后用自己的话总结。
+交互页分 5 个学习入口 + 前测/后测，共 10 个三段式章节。每章都按「**请回答 → 探索阅读 → 反思与总结**」推进：先猜，再用代码/仿真验证，最后用自己的话总结。
 
 | 入口 | 章节 | 核心问题 | 配套 |
 | --- | --- | --- | --- |
@@ -61,7 +61,7 @@ python3 web/tools/build.py
 | LLM 优化 | 优化地图（FlashAttention / 量化 / 投机解码 / 调度 / 选型） | 先找瓶颈，再选 2–3 个高杠杆技术 | `opt_sim.py` |
 
 - 前测 10 题：提交前不显示对错；学完做后测，得到按概念对照、学习完成度与错题回看。
-- 每章「总结归纳」内嵌 2 题**章节测验**（提交后计分、显示解释），学习反馈页汇总各章得分；「导出 Markdown」会把参考总结、你的总结/反思/归因/测验和整章内容写成一个 `.md` 文件。
+- 每章「总结」内嵌 2 题**章节测验**（提交后计分、显示解释），学习反馈页汇总各章得分；「导出 Markdown」会把参考总结、你的总结/反思/归因/测验和整章内容写成一个 `.md` 文件。
 - 移动端（≤980px）代码 pane 默认折叠为「展开代码」抽屉，不占正文空间。
 - 路由：`#think`、`#gpu`、`#kv`、`#net`、`#anatomy`、`#train`、`#opt`、`#feedback`；章节内可深链到步骤，如 `#cuda/3`、`#ecn/7`。
 - 页面零依赖、经典 `<script>`，双击 `web/index.html` 即可离线使用。
@@ -96,9 +96,9 @@ python3 web/tools/build.py
 | [`example/KV_CACHE_READING.md`](example/KV_CACHE_READING.md) | 无 cache / cached attention、mask 与绝对位置、GQA、滑动窗口、reorder/fork |
 | [`example/PREFIX_CACHE_READING.md`](example/PREFIX_CACHE_READING.md) | 块池、链式哈希、引用计数、LRU + 叶子淘汰、与 vLLM / SGLang 的对应 |
 | [`example/PAGED_ATTENTION_READING.md`](example/PAGED_ATTENTION_READING.md) | block table、gather、内部碎片、与 vLLM 的对应 |
-| [`web/README.md`](web/README.md) | 交互页：前测/后测、10 个四段式章节、图表/仿真、导航与数据管线 |
+| [`web/README.md`](web/README.md) | 交互页：前测/后测、10 个三段式章节、图表/仿真、导航与数据管线 |
 | [`AGENTS.md`](AGENTS.md) | 开发约定：单一事实来源、章节 checklist、UI/验收、数据管线 |
-| [`web/DESIGN.md`](web/DESIGN.md) | 设计稿：信息架构、四段式机制、交互与验收 |
+| [`web/DESIGN.md`](web/DESIGN.md) | 设计稿：信息架构、三段式机制、交互与验收 |
 | [`docker/vllm/README.md`](docker/vllm/README.md) | Docker 跑 vLLM：PagedAttention 参数、块池日志与指标 |
 | [`docker/ollama/README.md`](docker/ollama/README.md) | Docker 跑 Ollama / Llama：CPU/GPU、API、上下文与 KV cache 参数 |
 | [`macos/ollama/README.md`](macos/ollama/README.md) | macOS 原生 Ollama（Metal）：安装、选型、内存与 KV cache |

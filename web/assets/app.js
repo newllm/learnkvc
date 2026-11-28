@@ -114,7 +114,7 @@
   const DOC_MODULES = { net: () => LK.net, train: () => LK.train, nccl: () => LK.nccl, cuda: () => LK.cuda, ecn: () => LK.ecn, gpu: () => LK.gpu, opt: () => LK.opt };
   const CH_NUMS = ["①", "②", "③"];
   const CH_SHORT = ["KV cache", "Prefix cache", "PagedAttention"];
-  const STAGE_NAMES = ["think", "explore", "reflect", "summary"];
+  const STAGE_NAMES = ["think", "explore", "reflect"];
   state.stages = {};
   state.docStep = { net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, opt: 0 };
   state.docLock = { net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, opt: 0 };
@@ -563,11 +563,12 @@
     const lesson = LK.progress.lesson(ch);
     const stageIdx = STAGE_NAMES.indexOf(stage);
 
+    const attrCards = (D.lessons[ch] && D.lessons[ch].attribution) || [];
+    const attrDone = !attrCards.length || !!lesson.attributionSubmitted;
     const stageDefs = [
       ["think", "请回答", lesson.think ? "✓" : ""],
       ["explore", "探索阅读", (lesson.exploreMax || 0) + " / " + steps.length],
-      ["reflect", "反思与归因", lesson.reflect && lesson.attributionSubmitted ? "✓" : lesson.reflect ? "待归因" : ""],
-      ["summary", "总结归纳", lesson.summary ? "✓" : ""],
+      ["reflect", "反思与总结", lesson.summary ? "✓" : attrDone ? "待总结" : "待归因"],
     ];
     const stagesHTML = stageDefs
       .map(
@@ -685,11 +686,12 @@
   function initStages() {
     ALL_CHAPTERS.forEach((ch) => {
       const l = LK.progress.lesson(ch);
-      state.stages[ch] = l.summary ? "summary" : l.reflect ? "summary" : l.think ? "explore" : "think";
+      state.stages[ch] = l.summary || l.reflect ? "reflect" : l.think ? "explore" : "think";
     });
   }
 
   function setStage(ch, stage) {
+    if (stage === "summary") stage = "reflect";
     if (!STAGE_NAMES.includes(stage)) return;
     state.stages[ch] = stage;
     if (stage !== "explore") {
@@ -732,12 +734,11 @@
       LK.workshop.renderStageThink(docEl, ch, lesson.think, () => renderChapterNav(ch), () =>
         setStage(ch, "explore")
       );
-    } else if (stageOf(ch) === "reflect") {
-      LK.workshop.renderStageReflect(docEl, ch, lesson.reflect, lesson.attribution, () => renderChapterNav(ch), () =>
-        setStage(ch, "summary")
-      );
     } else {
-      LK.workshop.renderStageSummary(docEl, ch, lesson.summary, () => renderChapterNav(ch));
+      LK.workshop.renderStageReview(
+        docEl, ch, lesson.reflect, lesson.attribution, lesson.summary,
+        () => renderChapterNav(ch)
+      );
     }
   }
 
@@ -779,12 +780,11 @@
       LK.workshop.renderStageThink(body, ch, lesson.think, () => renderChapterNav(ch), () =>
         setStage(ch, "explore")
       );
-    } else if (stage === "reflect") {
-      LK.workshop.renderStageReflect(body, ch, lesson.reflect, lesson.attribution, () =>
-        renderChapterNav(ch), () => setStage(ch, "summary")
-      );
     } else {
-      LK.workshop.renderStageSummary(body, ch, lesson.summary, () => renderChapterNav(ch));
+      LK.workshop.renderStageReview(
+        body, ch, lesson.reflect, lesson.attribution, lesson.summary,
+        () => renderChapterNav(ch)
+      );
     }
     main.scrollTop = 0;
   }
@@ -1066,8 +1066,9 @@
     for (const ch of ALL_CHAPTERS) {
       if (hash === ch || hash.startsWith(ch + "/")) {
         const rest = hash.slice(ch.length + 1);
-        if (STAGE_NAMES.includes(rest)) {
-          state.stages[ch] = rest;
+        const stage = rest === "summary" ? "reflect" : rest;
+        if (STAGE_NAMES.includes(stage)) {
+          state.stages[ch] = stage;
         } else if (/^\d+$/.test(rest)) {
           state.stages[ch] = "explore";
           setChapterStep(ch, +rest - 1);
@@ -1085,7 +1086,7 @@
       return;
     }
     if (hash === "reflect") {
-      state.stages.kv = "summary";
+      state.stages.kv = "reflect";
       setView("kv");
       updateHash();
       return;

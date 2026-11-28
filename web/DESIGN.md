@@ -12,7 +12,7 @@
 
 - 读代码 → 看状态 → 改参数，形成闭环；每个结论都能在页面上「跑」一遍。
 - 一份事实来源：`example/*.py` 是代码的唯一来源，`example/*_READING.md` 是讲解的唯一来源，`README.md` 是总览的来源。
-- 可深链：`#kv/step-3`、`#kv/L186` 这种 URL 能分享到具体步骤/代码行。
+- 可深链：`#kv/3`、`#kv/L186` 这种 URL 能分享到具体步骤/代码行。
 - 键盘可用：`←/→` 步进、`空格` 播放/暂停、`Home/End` 跳首尾。
 
 **非目标**
@@ -33,22 +33,22 @@
 
 ## 3. 信息架构
 
-当前入口顺序是「请回答 → 认识 GPU（总览 / CUDA 执行模型，两章四段式） → 认识 KVCache（三章四段式） → 推理网络（总览 / NCCL 学习章节 / ECN + DCQCN，三章四段式） → 认识模型（模型解剖 / 模型训练 / 显存计算器） → LLM 优化（四段式） → 后测 → 反馈」；多次提问与归因不再单独成页：
+当前入口顺序是「请回答 → 认识 GPU（总览 / CUDA 执行模型，两章三段式） → 认识 KVCache（三章三段式） → 推理网络（总览 / NCCL 学习章节 / ECN + DCQCN，三章三段式） → 认识模型（模型解剖 / 模型训练 / 显存计算器） → LLM 优化（三段式） → 后测 → 反馈」；多次提问与归因不再单独成页：
 
 | 视图 | 作用 | 内容来源 |
 | --- | --- | --- |
 | 请回答 | 6 个预测题，覆盖一次提问 / 多轮 / 多请求 / 三层分工 | `web/tools/pedagogy.json` |
 | ① 探索（第 1 章） | 14 步代码 ↔ 讲解联动；每步先放「请回答」再展开证据 | `kv_cache.py` + `KV_CACHE_READING.md` |
 | ② Prefix 章的「多次提问」步骤 | 多轮对话 / 多请求共享前缀模拟器，现场比较 prefill 与 KV 占用 | `traces.reuse` |
-| 每章「反思与归因」内嵌归因 | 3 张卡分到「模型 / GPU / 引擎」，提交后才能完成本阶段 | `pedagogy.json` |
+| 每章「反思与总结」内嵌归因 | 3 张卡分到「模型 / GPU / 引擎」，提交后才能完成本章 | `pedagogy.json` |
 | ④ 模型解剖 | 模型组成、参数/维度/层数、参数如何参与 token 生成、GPU 加载、kernel 表 | `anatomy.json` + 公式 |
-| ④b 模型训练 | 四段式章节：训练 step、显存账本、并行/省显存、最小训练脚本 + 每卡显存计算器 | `train.json` + `train_tiny.py` |
-| ④c 推理网络 · 总览 | 四段式章节：NCCL collectives/ring 模拟、RoCE/RDMA、PD 分离 + KV 传输计算器 | `net.json` + `net.js` |
-| ④d NCCL 学习章节 | 四段式章节：collectives、ring/tree 逐步播放、α-β 扫描与 crossover、拓扑、排查清单 + 仿真代码 | `nccl.json` + `nccl.js` + `nccl_sim.py` |
-| ④e ECN + DCQCN | 四段式章节：ECN/WRED 标记与 CNP、DCQCN 速率收敛、交换机组网/配置、服务器侧 RoCEv2/PFC/ECN、无损策略、RDMA 业务优先级/PFC、ECN 优先级/阈值、排障 | `ecn.json` + `ecn.js` + `ecn_sim.py` |
-| ④f 认识 GPU · 总览 | 四段式章节：CPU/GPU/NPU 分工、CPU vs GPU 延迟/吞吐、LLM 适配、GPU 取代不了 CPU、显存层级与 L1/L2 cache、访存模式、CUDA/ROCm/昇腾/HCU 生态 | `gpu.json` + `gpu.js` + `gpu_sim.py` |
-| ④g 认识 GPU · CUDA 执行模型 | 四段式章节：grid/block/warp/SM、occupancy 计算器、内存层级、coalescing、roofline、CUDA Graph + 字节账 | `cuda.json` + `cuda.js` + `cuda_sim.py` |
-| ④h LLM 优化（下拉：总览 / FlashAttention / 量化 / 投机解码锚点） | 四段式章节：瓶颈地图、FlashAttention、PagedAttention、量化、投机解码、调度/结构优化、选型决策 + 计算器 | `opt.json` + `opt.js` + `opt_sim.py` |
+| ④b 模型训练 | 三段式章节：训练 step、显存账本、并行/省显存、最小训练脚本 + 每卡显存计算器 | `train.json` + `train_tiny.py` |
+| ④c 推理网络 · 总览 | 三段式章节：NCCL collectives/ring 模拟、RoCE/RDMA、PD 分离 + KV 传输计算器 | `net.json` + `net.js` |
+| ④d NCCL 学习章节 | 三段式章节：collectives、ring/tree 逐步播放、α-β 扫描与 crossover、拓扑、排查清单 + 仿真代码 | `nccl.json` + `nccl.js` + `nccl_sim.py` |
+| ④e ECN + DCQCN | 三段式章节：ECN/WRED 标记与 CNP、DCQCN 速率收敛、交换机组网/配置、服务器侧 RoCEv2/PFC/ECN、无损策略、RDMA 业务优先级/PFC、ECN 优先级/阈值、排障 | `ecn.json` + `ecn.js` + `ecn_sim.py` |
+| ④f 认识 GPU · 总览 | 三段式章节：CPU/GPU/NPU 分工、CPU vs GPU 延迟/吞吐、LLM 适配、GPU 取代不了 CPU、显存层级与 L1/L2 cache、访存模式、CUDA/ROCm/昇腾/HCU 生态 | `gpu.json` + `gpu.js` + `gpu_sim.py` |
+| ④g 认识 GPU · CUDA 执行模型 | 三段式章节：grid/block/warp/SM、occupancy 计算器、内存层级、coalescing、roofline、CUDA Graph + 字节账 | `cuda.json` + `cuda.js` + `cuda_sim.py` |
+| ④h LLM 优化（下拉：总览 / FlashAttention / 量化 / 投机解码锚点） | 三段式章节：瓶颈地图、FlashAttention、PagedAttention、量化、投机解码、调度/结构优化、选型决策 + 计算器 | `opt.json` + `opt.js` + `opt_sim.py` |
 | P2 / P3（规划） | Prefix cache、PagedAttention 沿用同一套「请回答 → 证据」结构 | 后续 |
 
 总览不再是独立页面：`README.md` 的「为什么需要 KV Cache」收进「请回答」页的折叠区，作为忍不住想看结论时的证据。
@@ -89,9 +89,9 @@
 - **反馈页**：前测/后测分数、变化、按概念对照（提升/维持/退步/仍需复习）、学习完成度（探索步骤数、访问视图数）、错题回看按钮（直达对应章节步骤/视图）；最后的总结也是「概要 + 详细描述」两层。
 - 完成度记录：`app.js` 在切换视图/步骤时写 `LK.progress`（`learnkvc.progress.v1`）。
 
-## 3.58 四段式章节（v2.4）
+## 3.58 三段式章节（v2.4）
 
-**v2.5 收束**：取消独立的「多次提问」「归因与总结」页——多次提问作为 Prefix 章第 11 步内嵌模拟器；三层归因拆成每章 3 张卡，并**与提问反思合并为「反思与归因」阶段**，提交归因后才能完成本阶段；跨章归因综合放在学习反馈的按概念对照里。
+**v2.5 收束**：取消独立的「多次提问」「归因与总结」页——多次提问作为 Prefix 章第 11 步内嵌模拟器；三层归因拆成每章 3 张卡，并**与提问反思合并为「反思与总结」阶段**，提交归因后才能完成本章；跨章归因综合放在学习反馈的按概念对照里。
 
 每章不再只是「一组阅读步骤」，而是一个完整学习单元：
 
@@ -99,15 +99,14 @@
 | --- | --- | --- |
 | 请回答 | 3 道预测题（选完才揭示，不计分） | 3 题都想过 → `lessons.<ch>.think` |
 | 探索阅读 | 现有 steps：代码 ↔ 讲解 ↔ 可视化 | 记录 `exploreMax` |
-| 反思与归因 | 2–4 个开放问题 + 可折叠参考；3 张归因卡（模型/GPU/引擎） | 提交归因后点「完成反思」→ `reflect` |
-| 总结归纳 | 参考总结（概要+详细）+ 用户自己的总结 + 2 题章节测验 + 导出 Markdown | 点「完成本章」→ `summary`；测验提交 → `quizScore` |
+| 反思与总结 | 2–4 个开放问题 + 可折叠参考；3 张归因卡；参考总结（概要+详细）+ 用户自己的总结 + 2 题章节测验 + 导出 Markdown | 提交归因后点「完成本章」→ `reflect` + `summary`；测验提交 → `quizScore` |
 
-- 左侧轨道顶部先显示「章节」切换（三章标题 + ①②③，当前高亮、完成打勾；折叠时只留 ①②③），再显示四阶段与完成状态（请回答/探索/反思与归因/总结），探索阶段下面展开步骤列表；`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 文档型章节没有三章切换。非探索阶段仍保留章节（KV）与四阶段，隐藏步骤列表、代码 pane / 可视化 / 底部控制条。
+- 左侧轨道顶部先显示「章节」切换（三章标题 + ①②③，当前高亮、完成打勾；折叠时只留 ①②③），再显示三阶段与完成状态（请回答/探索阅读/反思与总结），探索阶段下面展开步骤列表；`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 文档型章节没有三章切换。非探索阶段仍保留章节（KV）与三阶段，隐藏步骤列表、代码 pane / 可视化 / 底部控制条。
 - 未完成时显示锁定页：每章状态 + 「去学习」按钮。
 
 ## 3.59 章节测验、Markdown 导出与移动代码抽屉（v2.6）
 
-- **章节测验**：每章 `lesson.quiz` 2 题（KV 三章在 `pedagogy.json`，文档章节在各自 JSON 的 lesson），渲染在「总结归纳」参考总结与「我的总结」之后；提交前不显示对错，提交后显示 `quizScore`、每题解释与「重做章节测验」。状态存 `lessons.<chapter>.quizAnswers / quizScore / quizSubmitted`，学习反馈页汇总各章得分。
+- **章节测验**：每章 `lesson.quiz` 2 题（KV 三章在 `pedagogy.json`，文档章节在各自 JSON 的 lesson），渲染在反思与总结页的参考总结与「我的总结」之后；提交前不显示对错，提交后显示 `quizScore`、每题解释与「重做章节测验」。状态存 `lessons.<chapter>.quizAnswers / quizScore / quizSubmitted`，学习反馈页汇总各章得分。
 - **Markdown 导出**：总结页「导出 Markdown」生成 `learnkvc-<chapter>.md`，包含参考总结、我的总结、反思/归因、章节测验和整章内容；文档章节导出时用对应渲染器在游离 DOM 重建教程并转 Markdown，KV 三章直接取 steps 的讲解 HTML。浏览器端用 Blob + `<a download>`，`file://` 也可用。
 - **移动代码抽屉**：≤980px 时 KV 代码 pane 默认 `code-collapsed`，只保留 pane header（文件 + 「展开代码 ▾」），点击展开为 42vh 的可滚动代码区；按钮 `aria-expanded` 同步，桌面隐藏。代码区不再固定占 42vh，正文获得更多首屏空间。
 
@@ -133,9 +132,9 @@
 
 预设覆盖 TinyModel、Qwen2.5-Coder-7B/32B、Qwen3-Coder-30B-A3B；参数量用公式在构建期算好并断言（30B → 30.53B total / 3.35B active / 96 KiB per token）。
 
-## 3.7 模型训练（四段式章节）
+## 3.7 模型训练（三段式章节）
 
-模型训练是四段式章节（`#train`）：请回答 3 题 → 探索 6 节（含 `example/train_sim.py` 仿真代码）→ 反思 4 题 + 3 张归因卡 → 总结；探索阶段没有代码 pane（训练脚本本身就是内容的一部分），左栏列出 6 个教程小节并随滚动高亮。模型解剖/显存计算器作为配套工具收在「认识模型」下拉里。主线是「一次 step 的四笔钱」：
+模型训练是三段式章节（`#train`）：请回答 3 题 → 探索 6 节（含 `example/train_sim.py` 仿真代码）→ 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验；探索阶段没有代码 pane（训练脚本本身就是内容的一部分），左栏列出 6 个教程小节并随滚动高亮。模型解剖/显存计算器作为配套工具收在「认识模型」下拉里。主线是「一次 step 的四笔钱」：
 
 - **step**：forward → loss → backward → optimizer；forward 留激活，backward 产梯度，optimizer 维护 m/v + master。
 - **显存账本**：权重 `N × bytes`、梯度 `N × bytes`、AdamW 状态 `N × (8 + master)`、激活 `layers × batch × seq × hidden × 12 × bytes`；经验值 AdamW+BF16 约 16 B/参数。
@@ -145,9 +144,9 @@
 - **仿真代码**：`example/train_sim.py` 纯标准库模拟每卡账本，打印 DP / ZeRO-1/2/3 / TP / PP / 激活重算下的峰值；页面内嵌源码与 build 期运行出的真实输出。
 
 
-## 3.8 推理网络（三章四段式章节）
+## 3.8 推理网络（三章三段式章节）
 
-推理网络总览（`#net`）是四段式章节：左侧章节导航有请回答 / 探索阅读 / 反思与归因 / 总结归纳；探索阶段保留 7 个教程小节（含 `example/net_sim.py` 仿真代码），没有代码 pane，点击小节滚动到对应 `h2`。7 个小节说明「网络在推理里到底做什么」：
+推理网络总览（`#net`）是三段式章节：左侧章节导航有请回答 / 探索阅读 / 反思与总结；探索阶段保留 7 个教程小节（含 `example/net_sim.py` 仿真代码），没有代码 pane，点击小节滚动到对应 `h2`。7 个小节说明「网络在推理里到底做什么」：
 
 - **为什么需要**：TP 每层 all-reduce、MoE all-to-all、PD 的 KV 迁移、prefix cache 块传输；区分「每层小集合通信」与「每请求 KV 迁移」。
 - **NCCL**：collectives 语义/流量/步数，ring vs tree vs NVLS/SHARP，NVLink / IB / RoCE / Socket 传输对比。
@@ -157,21 +156,21 @@
 - **仿真代码**：`example/net_sim.py` 纯标准库打印 ring 的步数/每卡流量/时间、all-reduce 调度表与 PD 的 KV 传输/TTFT；页面内嵌源码与真实输出。
 - **检查清单**：NCCL_DEBUG、all_reduce_perf、show_gids、ibv_devinfo、PD 三段计时。
 
-### 3.8.1 NCCL 学习章节（四段式章节）
+### 3.8.1 NCCL 学习章节（三段式章节）
 
-`#nccl` 把总览里的「NCCL」一节往下挖成独立学习章节（总览讲「网络在推理里做什么」，这里讲「NCCL 这个库到底怎么搬数据」）。四段式与 `net` 一致：请回答 3 题 → 探索 9 节 → 反思 4 题 + 3 张归因卡 → 总结。
+`#nccl` 把总览里的「NCCL」一节往下挖成独立学习章节（总览讲「网络在推理里做什么」，这里讲「NCCL 这个库到底怎么搬数据」）。三段式与 `net` 一致：请回答 3 题 → 探索 9 节 → 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验。
 
 探索 9 节：NCCL 定位（TP / EP / PP / PD 分别落到什么 collective）、六个 collective 的字节/步数/API、**ring all-reduce 逐步播放器**（N / S 可调，显示每步谁把哪个 chunk 发给谁、累计字节、busbw）、tree（上行 reduce + 下行 broadcast、O(log N) 步、带宽换延迟）、**α-β 模型与消息大小扫描**（ring/tree 曲线、crossover、busbw 定义）、拓扑（NVLink / PCIe / IB / RoCE 量级、`nvidia-smi topo -m`、rail-optimized）、测量与排查（nccl-tests、NCCL_DEBUG、协议、常见坑）、仿真代码、自查清单。数据在 `web/tools/nccl.json`，渲染器 `assets/nccl.js` + `assets/nccl.css`，仿真 `example/nccl_sim.py` 在 build 期运行并把 stdout 注入 `simOutput`。
 
-### 3.8.2 CUDA 执行模型（四段式章节，挂在「认识 GPU」下拉）
+### 3.8.2 CUDA 执行模型（三段式章节，挂在「认识 GPU」下拉）
 
-`#cuda` 回答「GPU 上 kernel 到底怎么跑、为什么 decode 是 memory-bound」。四段式同 `net`：请回答 3 题 → 探索 9 节 → 反思 4 题 + 3 张归因卡 → 总结。
+`#cuda` 回答「GPU 上 kernel 到底怎么跑、为什么 decode 是 memory-bound」。三段式同 `net`：请回答 3 题 → 探索 9 节 → 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验。
 
 探索 9 节：推理是一串 kernel（decode vs prefill）、执行模型（grid / block / warp / SM、**occupancy 计算器**：block size / regs / shared → 常驻 block、active warps、occupancy、谁先卡住）、内存层级（register / shared / L2 / HBM 的容量-延迟-带宽阶梯、tiling、bank conflict）、**coalescing stride 选择器**（32 线程 × 4 B → sectors / 有效带宽）、**roofline 互动**（batch 滑杆、prefill vs decode 落在哪条线）、**CUDA Graph 对比**（kernel 数 → eager vs replay）、decode 字节账（权重 + KV、量化、paged gather）、仿真代码、自查清单。数据在 `web/tools/cuda.json`，渲染器 `assets/cuda.js` + `assets/cuda.css`，仿真 `example/cuda_sim.py` 在 build 期运行。
 
-### 3.8.3 ECN + DCQCN 无损网络（四段式章节）
+### 3.8.3 ECN + DCQCN 无损网络（三段式章节）
 
-`#ecn` 是「推理网络」下拉的第 4 章，把总览里的一页 RoCE 配置展开成可落地的无损网络章节：请回答 3 题 → 探索 10 节 → 反思 4 题 + 3 张归因卡 → 总结。
+`#ecn` 是「推理网络」下拉的第 4 章，把总览里的一页 RoCE 配置展开成可落地的无损网络章节：请回答 3 题 → 探索 10 节 → 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验。
 
 探索 10 节：
 - **为什么需要**：RoCEv2 丢包 → Go-Back-N 重传放大、TTFT/TPOT 抖动；无损 = 不丢包 + 低延迟 + 高吞吐。
@@ -189,7 +188,7 @@
 
 ### 3.9 认识 GPU（下拉：总览 + CUDA 执行模型）
 
-「认识 GPU」是独立于「推理网络」的一组章节（`#gpu` 总览 + `#cuda` CUDA 执行模型，顶栏下拉）：把「CUDA / GPU / HCU / 昇腾」放到同一张认知地图上，回答四个问题——CPU 与 GPU 是什么关系、为什么 CPU 在 LLM 领域无法比拟 GPU、为什么 GPU 无法取代 CPU、GPU 的显存访问是否也有 L1/L2 cache。四段式：请回答 3 题 → 探索 10 节 → 反思 4 题 + 3 张归因卡 → 总结。
+「认识 GPU」是独立于「推理网络」的一组章节（`#gpu` 总览 + `#cuda` CUDA 执行模型，顶栏下拉）：把「CUDA / GPU / HCU / 昇腾」放到同一张认知地图上，回答四个问题——CPU 与 GPU 是什么关系、为什么 CPU 在 LLM 领域无法比拟 GPU、为什么 GPU 无法取代 CPU、GPU 的显存访问是否也有 L1/L2 cache。三段式：请回答 3 题 → 探索 10 节 → 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验。
 
 探索 10 节：
 - **CPU/GPU/NPU 分工**：CPU 是 host、GPU/NPU 是 device；CPU 负责 OS/调度/IO/数据搬运，device 负责吞吐型并行；GPU 不是「更强的 CPU」。
@@ -207,7 +206,7 @@
 
 ### 3.10 LLM 优化（下拉）
 
-「LLM 优化」是独立于前四组的一章（`#opt`，顶栏下拉：总览 / FlashAttention / 模型量化 / 投机解码锚点）：把「算子优化 / FlashAttention / PagedAttention / 模型量化 / 其他方向」放到同一张优化地图上。四段式：请回答 3 题 → 探索 11 节 → 反思 4 题 + 3 张归因卡 → 总结。
+「LLM 优化」是独立于前四组的一章（`#opt`，顶栏下拉：总览 / FlashAttention / 模型量化 / 投机解码锚点）：把「算子优化 / FlashAttention / PagedAttention / 模型量化 / 其他方向」放到同一张优化地图上。三段式：请回答 3 题 → 探索 11 节 → 反思与总结：4 题 + 3 张归因卡 + 参考/我的总结 + 章节测验。
 
 探索 11 节：
 - **先找瓶颈**：算力/带宽/容量/延迟/吞吐/通信六约束；优化不是堆技巧。
@@ -226,11 +225,11 @@
 
 ### 3.11 文档型章节（net / train / nccl / cuda / ecn / gpu / opt）
 
-`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 不套代码章节的三栏 DOM，而是 `.chapter.doc-chapter` 两栏：左侧章节导航（四阶段 + 教程小节），右侧 `.doc-main > .workshop` 整篇教程。
+`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt` 不套代码章节的三栏 DOM，而是 `.chapter.doc-chapter` 两栏：左侧章节导航（三阶段 + 教程小节），右侧 `.doc-main > .workshop` 整篇教程。
 
-- 四阶段仍复用 `workshop.js` 的 `renderStageThink/Reflect/Summary`，lesson 存在各章 JSON（`net.json` / `train.json` / `nccl.json` / `cuda.json` / `ecn.json` / `gpu.json` / `opt.json`）的 `lesson` 字段，`build.py` 合并进 `data.lessons`。
+- 三阶段复用 `workshop.js` 的 `renderStageThink` 与 `renderStageReview`，lesson 存在各章 JSON（`net.json` / `train.json` / `nccl.json` / `cuda.json` / `ecn.json` / `gpu.json` / `opt.json`）的 `lesson` 字段，`build.py` 合并进 `data.lessons`。
 - 探索阶段渲染整篇教程；左栏步骤来自教程的 `h2.sec-title`（net 7 / train 6 / nccl 9 / cuda 9 / ecn 10 / gpu 10 / opt 11 节），点击滚到对应 `h2`，滚动时用 `currentDocIndex` 同步 active、计数和 `exploreMax`；URL 用 `#<chapter>/N` 记录当前小节。
-- 没有代码 pane / 可视化 pane / 底部 timeline；切换 stage 时右侧内容整体替换，和 KV 章的四段式节奏一致。
+- 没有代码 pane / 可视化 pane / 底部 timeline；切换 stage 时右侧内容整体替换，和 KV 章的三段式节奏一致。
 - 各章的「仿真代码」小节把 `example/<chapter>_sim.py` 用 codeview 嵌入，并内联 `build.py` 运行出的真实 stdout；纯标准库，不依赖 NCCL / torch。
 - `stop`：离开任一文档章节或切出 explore 时调用对应渲染器的 `stop()`，停掉 NCCL 模拟播放与定时器（`DOC_MODULES` 统一分发）。
 
@@ -257,7 +256,7 @@
 
 顶栏五个学习内容下拉：「认识 GPU」下拉（总览 / CUDA 执行模型）、「认识 KVCache」下拉（三个 KV 子章）、「推理网络」下拉（总览 / NCCL 学习章节 / ECN + DCQCN）、「认识模型」下拉（模型解剖 / 模型训练 / 显存计算器）、「LLM 优化」下拉（总览 / FlashAttention / 模型量化 / 投机解码）；一级还有「请回答 · 前测」「学习反馈」。触发按钮会把当前所在项写进标签（如「认识 KVCache · KV」「模型训练 · 训练教程」），并给菜单项加 `aria-current`；打开/关闭用 `aria-expanded` 同步，选中、点外部、Esc 都关闭；菜单宽度在窄屏用 JS 夹在视口内，导航整体换行而不是横向滚动。
 
-移动端（< 980px）：左侧导航默认收起成 38px 轨道；展开后章节排成 3 列、四阶段排成 4 列（隐藏进度文字、保留完成打勾），步骤列表限高滚动；KV 代码区默认折叠成抽屉（header 45px，展开 42vh），可视化与讲解上下堆叠；`net`/`train` 是导航在上、教程内容占剩余高度（`auto minmax(0,1fr)`），底部无 timeline。
+移动端（< 980px）：左侧导航默认收起成 38px 轨道；展开后章节排成 3 列、三阶段排成 3 列（隐藏进度文字、保留完成打勾），步骤列表限高滚动；KV 代码区默认折叠成抽屉（header 45px，展开 42vh），可视化与讲解上下堆叠；`net`/`train` 是导航在上、教程内容占剩余高度（`auto minmax(0,1fr)`），底部无 timeline。
 
 KV 三章：桌面是 200px 章节导航 + 代码 + 讲解/可视化三栏；`net`/`train`/`nccl`/`cuda`/`ecn`/`gpu`/`opt`：200px 章节导航 + 整篇教程两栏（无代码 pane）；模型解剖/显存计算器仍是工具，200px 小节导航 + 正文。导航 sticky 且可折叠到 36px（同宽、同底色、同折叠按钮）；≤980px 默认收起成正文顶部条，展开后列表限高滚动，正文表格可横向滚动。
 
@@ -417,7 +416,7 @@ web/
 - **无障碍**：`aria-live="polite"` 播报计数器；步骤导航项与折叠按钮都是原生 `<button>`（折叠带 `aria-expanded`）；顶栏下拉带 `aria-haspopup="menu"`/`aria-expanded`/`aria-current`，支持 ↑/↓/Home/End/Esc/Tab 与点外部关闭；焦点环可见；对比度 ≥ 4.5:1。
 - **主题**：暗色默认，可切亮色，选择存 `localStorage`。
 - **打印**：`@media print` 隐藏控件，输出「讲解 + 代码 + 当前状态」。
-- **深链**：`#kv/step-3`、`#net/4`、`#net/reflect`、`#nccl/3`、`#cuda/5`、`#cuda/summary`、`#ecn/3`、`#ecn/6`、`#gpu/6`、`#gpu/cache`、`#opt/3`、`#opt/summary`、`#anatomy`、`#calc`。
+- **深链**：`#kv/3`、`#net/4`、`#net/reflect`、`#nccl/3`、`#cuda/5`、`#cuda/reflect`、`#ecn/3`、`#ecn/6`、`#gpu/6`、`#opt/3`、`#opt/reflect`、`#anatomy`、`#calc`。
 
 ## 10. 实施计划
 
@@ -431,11 +430,11 @@ web/
 | P3 ✅ | 第 3 章：block table + append/gather 动画 + 碎片对比 | 已完成 |
 | P4 ✅ | 计算器 + 模型解剖 + 亮色主题 + 响应式 + 无障碍 | 已完成（键盘/跳转链接/aria-live/主题记忆） |
 | P5 ✅ | README 入口、GitHub Pages 部署（`.github/workflows/pages.yml`） | 已完成，待仓库开启 Pages |
-| P6 ✅ | 推理网络总览 + 模型训练四段式章节（`net.json` / `train.json` + 渲染器 + 仿真代码） | 已完成 |
-| P7 ✅ | 推理网络深造：NCCL 学习章节 + CUDA 执行模型（`nccl.json` / `cuda.json` + 渲染器 + `nccl_sim.py` / `cuda_sim.py`） | 已完成：两章各 9 节、3+ 互动、四段式可完成 |
-| P8 ✅ | 认识 GPU（`gpu.json` + `gpu.js` + `gpu_sim.py`）：CPU/GPU/NPU 分工、LLM 适配、显存与 L1/L2、CUDA/ROCm/昇腾/HCU 生态 | 已完成：10 节、4 个互动、四段式可完成 |
-| P9 ✅ | ECN + DCQCN 无损网络（`ecn.json` + `ecn.js` + `ecn_sim.py`）：ECN/WRED、CNP/DCQCN、交换机/服务器配置、组网、PFC、优先级与阈值 | 已完成：10 节、4 个互动、四段式可完成 |
-| P10 ✅ | LLM 优化（`opt.json` + `opt.js` + `opt_sim.py`）：瓶颈地图、FlashAttention、PagedAttention、量化、投机解码、调度与结构、选型 | 已完成：11 节、4 个互动、四段式可完成 |
+| P6 ✅ | 推理网络总览 + 模型训练三段式章节（`net.json` / `train.json` + 渲染器 + 仿真代码） | 已完成 |
+| P7 ✅ | 推理网络深造：NCCL 学习章节 + CUDA 执行模型（`nccl.json` / `cuda.json` + 渲染器 + `nccl_sim.py` / `cuda_sim.py`） | 已完成：两章各 9 节、3+ 互动、三段式可完成 |
+| P8 ✅ | 认识 GPU（`gpu.json` + `gpu.js` + `gpu_sim.py`）：CPU/GPU/NPU 分工、LLM 适配、显存与 L1/L2、CUDA/ROCm/昇腾/HCU 生态 | 已完成：10 节、4 个互动、三段式可完成 |
+| P9 ✅ | ECN + DCQCN 无损网络（`ecn.json` + `ecn.js` + `ecn_sim.py`）：ECN/WRED、CNP/DCQCN、交换机/服务器配置、组网、PFC、优先级与阈值 | 已完成：10 节、4 个互动、三段式可完成 |
+| P10 ✅ | LLM 优化（`opt.json` + `opt.js` + `opt_sim.py`）：瓶颈地图、FlashAttention、PagedAttention、量化、投机解码、调度与结构、选型 | 已完成：11 节、4 个互动、三段式可完成 |
 | P11 ✅ | 章节测验（每章 2 题计分）+ Markdown 导出（总结/整章）+ 移动端代码抽屉 | 已完成：测验计分与反馈汇总、导出 `.md`、980px 以下抽屉 |
 
 每阶段独立可交付：P0 完成就能替代「纯 Markdown 阅读」，后续只是加交互。
