@@ -62,7 +62,10 @@ button { font-family: inherit; }
   align-items: baseline;
   gap: 8px;
   white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
 }
+.brand:hover .name { color: var(--accent); }
 
 .brand .logo {
   font-family: var(--mono);
@@ -161,7 +164,9 @@ button { font-family: inherit; }
   padding: 3px 8px;
   border-radius: 999px;
   white-space: nowrap;
+  text-decoration: none;
 }
+.badge:hover { background: rgba(255, 183, 3, .08); border-color: var(--accent-2); }
 
 /* ---------------------------------------------------------------- layout */
 
