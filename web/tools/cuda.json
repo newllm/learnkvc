@@ -1,10 +1,10 @@
 {
   "kicker": "学习章节 · 推理网络 · CUDA 执行模型",
   "title": "CUDA 执行模型：kernel 怎么跑，decode 为什么卡在带宽",
-  "lead": "推理不是「把模型丢给 GPU」：每一步都是一串 kernel，block 被调度到 SM，warp 以 32 线程为单位执行，HBM 以 32 B sector 搬运。本章把单卡上的账算清楚：occupancy 受什么限制、coalescing 浪费多少字节、decode 为什么落在 roofline 的带宽斜线上，以及 CUDA Graph 到底省了什么。",
+  "lead": "推理不是「把 LLM 丢给 GPU」：每一步都是一串 kernel，block 被调度到 SM，warp 以 32 线程为单位执行，HBM 以 32 B sector 搬运。本章把单卡上的账算清楚：occupancy 受什么限制、coalescing 浪费多少字节、decode 为什么落在 roofline 的带宽斜线上，以及 CUDA Graph 到底省了什么。",
   "why": {
     "title": "1 · 推理是一串 kernel，不是一次「GPU 计算」",
-    "lead": "先分清 prefill 与 decode 在 GPU 上的形状差异，再理解为什么「算力够」不等于「跑得快」；本章负责单卡执行，模型解剖和推理网络分别负责结构与多卡。",
+    "lead": "先分清 prefill 与 decode 在 GPU 上的形状差异，再理解为什么「算力够」不等于「跑得快」；本章负责单卡执行，LLM 结构和推理网络分别负责结构与多卡。",
     "items": [
       {
         "name": "一次 forward = 很多次 kernel launch",
@@ -22,8 +22,8 @@
         "when": "先判断 bound 是带宽还是算力，再决定优化方向；否则会对着算力做无用功。"
       },
       {
-        "name": "与模型解剖的分工",
-        "data": "模型解剖回答「有多少参数、多少层、KV/token 多大」；本章回答「这些字节在 GPU 上按什么节奏流动」。",
+        "name": "与 LLM 结构的分工",
+        "data": "LLM 结构回答「有多少参数、多少层、KV/token 多大」；本章回答「这些字节在 GPU 上按什么节奏流动」。",
         "when": "参数、层数、KV/token 是输入；occupancy、coalescing、roofline 才是执行侧的账。"
       },
       {
@@ -112,7 +112,7 @@
         "capacity": "50 MiB",
         "latency": "~200–300 cycles",
         "bandwidth": "~10 TiB/s",
-        "why": "全 GPU 共享；跨 SM 复用权重/激活、合并访问都靠它，但容量装不下整个模型。"
+        "why": "全 GPU 共享；跨 SM 复用权重/激活、合并访问都靠它，但容量装不下整个 LLM。"
       },
       {
         "level": "HBM3",
@@ -145,7 +145,7 @@
       "理想情况：32 个线程各读 4 B、地址连续，正好覆盖 128 B = 4 个 32 B sector，一次 transaction，利用率 100%。",
       "stride=2：线程之间隔 8 B，覆盖 256 B = 8 个 sector；只用到其中 128 B，一半带宽浪费。",
       "stride 继续翻倍，sector 数翻倍，直到每个线程独占一个 sector：最多 32 个 sector，搬 1024 B 用 128 B，有效带宽只剩 12.5%。",
-      "paged attention 的 block_table gather：逻辑上连续的 token，物理 K/V 块不连续，一个 warp 会落到多个块，sector 放大到约 8 倍；这是引擎的块布局问题，不是模型参数问题。"
+      "paged attention 的 block_table gather：逻辑上连续的 token，物理 K/V 块不连续，一个 warp 会落到多个块，sector 放大到约 8 倍；这是引擎的块布局问题，不是 LLM 参数问题。"
     ],
     "calcTitle": "4.1 交互：选 stride，看 32 个线程的 sector 与有效带宽",
     "calcNote": "固定 32 线程 × 4 B、sector=32 B、地址从 0 开始；只算一个 warp 的一次 load，未考虑 L1 命中、合并多个 warp 请求和 DRAM burst。"
@@ -198,7 +198,7 @@
     ],
     "table": [
       { "opt": "KV 量化 FP16 → FP8", "saves": "KV 字节减半（12.88 → 6.44 GB）", "owner": "引擎（量化 / 推理框架）" },
-      { "opt": "权重量化（INT4 / FP8）", "saves": "权重字节 6.70 GB → 约 1.7–3.4 GB", "owner": "模型 + 引擎" },
+      { "opt": "权重量化（INT4 / FP8）", "saves": "权重字节 6.70 GB → 约 1.7–3.4 GB", "owner": "LLM + 引擎" },
       { "opt": "FlashAttention / 融合 kernel", "saves": "不落 n×n 分数矩阵，少中间读写，也少 launch", "owner": "GPU + 引擎" },
       { "opt": "PagedAttention 块布局 / 预取", "saves": "减少 block_table gather 的 sector 放大（最坏 ~8×）", "owner": "引擎" },
       { "opt": "CUDA Graph", "saves": "不减少字节，只减少 launch 与 CPU 空转", "owner": "引擎 / 运行时" },
@@ -206,7 +206,7 @@
       { "opt": "更高 HBM 带宽 / 更多 SM", "saves": "抬高 roofline 的斜线与平顶", "owner": "GPU" }
     ],
     "notes": [
-      "长上下文 decode 变慢，本质是每步要读的 KV 字节变多；不是模型「突然变笨」，是 HBM 带宽被吃满。",
+      "长上下文 decode 变慢，本质是每步要读的 KV 字节变多；不是 LLM「突然变笨」，是 HBM 带宽被吃满。",
       "paged gather 的 transaction 放大是引擎侧问题：块布局、块大小、预取策略都会影响 sector 利用率。",
       "memory-bound 时量化收益最大；compute-bound 时量化可能只省容量、不省时间。"
     ]
@@ -233,7 +233,7 @@
       "能算 arithmetic intensity，并用 295.5 FLOP/B 的拐点判断 decode / prefill 各在 roofline 的哪一侧。",
       "能解释 CUDA Graph 省的是 CPU launch 开销，不是 GPU 计算或 HBM 字节。",
       "能把「decode 慢」翻译成「权重 + KV 的字节数 / HBM 带宽」，并给出降低字节的手段。",
-      "能把优化手段归到模型 / GPU / 引擎：量化、融合 kernel、paged gather、CUDA Graph 分别归谁。",
+      "能把优化手段归到 LLM / GPU / 引擎：量化、融合 kernel、paged gather、CUDA Graph 分别归谁。",
       "知道这些数字是 H100 量级；换卡要重算 SM 数、shared 容量、HBM 带宽和峰值算力。"
     ],
     "questions": [
@@ -346,7 +346,7 @@
         "id": "cuda-m1",
         "label": "层数、参数与 KV/token 决定的 kernel 数与字节公式",
         "bucket": "model",
-        "why": "48 层、3.35B 激活参数、96 KiB KV/token 来自模型结构；它们决定单步 kernel 数、权重大小和 KV 字节，是整本账的输入。"
+        "why": "48 层、3.35B 激活参数、96 KiB KV/token 来自 LLM 结构；它们决定单步 kernel 数、权重大小和 KV 字节，是整本账的输入。"
       },
       {
         "id": "cuda-g1",
@@ -358,7 +358,7 @@
         "id": "cuda-e1",
         "label": "CUDA Graph、paged gather 与 KV 量化策略",
         "bucket": "engine",
-        "why": "capture/replay、batch bucket、块布局与预取、KV 量化都是推理引擎/运行时的决策；它们减少 launch 或字节，但不改变模型结构。"
+        "why": "capture/replay、batch bucket、块布局与预取、KV 量化都是推理引擎/运行时的决策；它们减少 launch 或字节，但不改变 LLM 结构。"
       }
     ]
   }

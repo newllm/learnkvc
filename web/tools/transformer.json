@@ -1,0 +1,349 @@
+{
+  "kicker": "学习章节 · LLM 基础",
+  "title": "Transformer 与 LLM：为什么最后是它胜出",
+  "lead": "LLM 不是突然出现的。它站在 RNN/LSTM、CNN、注意力机制、互联网文本和 GPU 五级台阶上。本章先讲 LLM 从哪来，再回答一个更大的问题：为什么在这么多 AI / 深度学习方向里，LLM 成了通用入口。",
+  "why": {
+    "title": "在 Transformer 之前：序列建模的三条路",
+    "lead": "语言是变长序列：前一个词影响后一个词。Transformer 之前，主流做法各有硬伤。",
+    "cards": [
+      {
+        "name": "n-gram / 统计语言方法",
+        "tag": "局部",
+        "does": "只看前 k 个词，简单但无法建模长距离依赖；数据稀疏，组合爆炸。"
+      },
+      {
+        "name": "RNN / LSTM",
+        "tag": "串行",
+        "does": "把历史压进 hidden state，逐步递推；长序列会遗忘，训练必须按时间步串行。"
+      },
+      {
+        "name": "CNN / 卷积",
+        "tag": "局部窗口",
+        "does": "并行好，但感受野靠堆层扩大；远距离依赖仍要很多层。"
+      },
+      {
+        "name": "注意力机制",
+        "tag": "直接连接",
+        "does": "让每个位置直接看其他位置，路径长度 O(1)；2017 年 Transformer 把它变成主结构。"
+      }
+    ],
+    "note": "一句话：语言建模的核心矛盾是「长距离依赖」与「可并行训练」。Transformer 同时缓解了两者。"
+  },
+  "attn": {
+    "title": "自注意力：每个 token 直接看所有 token",
+    "lead": "输入 X 投影成 Q、K、V；用 QKᵀ 算相关性，softmax 后加权 V。多组头并行，就是多头注意力。",
+    "points": [
+      "QKᵀ 得到 N×N 分数矩阵：序列越长，计算和显存按 N² 增长。",
+      "causal mask 把未来 token 遮掉，保证自回归生成只看到左边。",
+      "多头让 LLM在不同子空间关注不同关系；每层的输出再进 FFN。",
+      "推理时用 KV cache 缓存历史 K/V，decode 每步只算新 token 的 Q。"
+    ],
+    "note": "注意力的代价是 O(N²)：这是长上下文贵、FlashAttention 有价值、KV cache 要分页的根本原因。"
+  },
+  "arch": {
+    "title": "一个 Transformer 块，和三种架构",
+    "lead": "注意力 + FFN + 残差 + LayerNorm 构成一个块；堆 N 层就是 LLM 主干。",
+    "rows": [
+      {
+        "part": "Self-Attention",
+        "role": "Token 之间交换信息",
+        "note": "Q/K/V、多头、causal mask"
+      },
+      {
+        "part": "FFN / MLP",
+        "role": "逐 token 做非线性变换",
+        "note": "通常是 hidden → 4×hidden → hidden；MoE 把 FFN 换成专家"
+      },
+      {
+        "part": "Residual + Norm",
+        "role": "稳定深层训练",
+        "note": "Pre-LN 更常见；残差让梯度直达浅层"
+      },
+      {
+        "part": "Position",
+        "role": "注入顺序信息",
+        "note": "绝对/相对位置、RoPE、ALiBi"
+      }
+    ],
+    "arches": [
+      {
+        "name": "Encoder-only（BERT）",
+        "use": "理解 / 分类 / 检索",
+        "note": "双向注意力，适合 embedding"
+      },
+      {
+        "name": "Encoder-Decoder（T5）",
+        "use": "翻译 / 摘要",
+        "note": "编码输入、解码输出"
+      },
+      {
+        "name": "Decoder-only（GPT）",
+        "use": "生成 / 通用 LLM",
+        "note": "causal mask；同一目标 next-token，最容易 scale"
+      }
+    ],
+    "note": "今天主流 LLM 大多是 decoder-only：结构简单、训练目标统一、天然支持生成和 in-context learning。"
+  },
+  "timeline": {
+    "title": "2017 → 今天：关键台阶",
+    "lead": "不是一篇论文赢了，而是一条工程与数据曲线持续叠加。",
+    "events": [
+      {
+        "year": "2017",
+        "name": "Transformer",
+        "note": "Attention Is All You Need：去掉 RNN，序列可并行。"
+      },
+      {
+        "year": "2018",
+        "name": "BERT / GPT-1",
+        "note": "预训练 + 微调成为范式；BERT 做理解，GPT 做生成。"
+      },
+      {
+        "year": "2020",
+        "name": "GPT-3",
+        "note": "175B 参数，few-shot / in-context learning 展示「规模本身」的能力。"
+      },
+      {
+        "year": "2022",
+        "name": "Chinchilla / InstructGPT / ChatGPT",
+        "note": "数据与参数配比、RLHF 对齐；LLM 从实验室走向大众。"
+      },
+      {
+        "year": "2023+",
+        "name": "开源 LLM / 长上下文 / MoE / Agent",
+        "note": "生态扩散，推理成本下降，工具调用与多模态融合。"
+      }
+    ],
+    "note": "每一级都建立在上一级之上：注意力 → 并行训练 → 更大 LLM → 更多数据 → 更强泛化 → 更多用户与工具。"
+  },
+  "scaling": {
+    "title": "缩放定律：为什么「大」真的有用",
+    "lead": "Transformer 的另一个优势是：它的 loss 随参数、数据、算力呈平滑的幂律下降，工程上可以「按预算外推」。",
+    "rows": [
+      {
+        "axis": "参数 N",
+        "effect": "容量变大，能拟合更复杂分布",
+        "caution": "数据不足会过拟合；推理显存与成本上升"
+      },
+      {
+        "axis": "数据 D",
+        "effect": "覆盖更多语言/知识/任务",
+        "caution": "数据质量与重复比数量更重要"
+      },
+      {
+        "axis": "算力 C",
+        "effect": "训练更长、更大、更好",
+        "caution": "边际收益递减；还要对齐与推理成本"
+      },
+      {
+        "axis": "推理时算力",
+        "effect": "更长思考 / 采样 / 验证可换质量",
+        "caution": "延迟和成本线性上升"
+      }
+    ],
+    "note": "Chinchilla 的经验是「参数与 token 一起放大」（约 20 tokens/param），而不是只堆参数。缩放定律让 LLM 的投入产出现在可以提前估算。"
+  },
+  "win": {
+    "title": "为什么在这么多 AI 方向里，LLM 成了通用入口？",
+    "lead": "不是 LLM 取代了所有方案，而是它同时满足了一个通用接口需要的六个条件。",
+    "reasons": [
+      {
+        "name": "统一接口",
+        "detail": "所有任务都能写成「给定 token 序列，续写/生成 token 序列」：问答、翻译、摘要、代码、工具调用。"
+      },
+      {
+        "name": "自监督 + 互联网数据",
+        "detail": "next-token prediction 不需要人工标注；互联网文本提供了前所未有的数据规模。"
+      },
+      {
+        "name": "迁移与上下文学习",
+        "detail": "预训练学到通用表示；few-shot / instruction / RAG 让同一个 LLM迁移到新任务，边际成本低。"
+      },
+      {
+        "name": "硬件友好",
+        "detail": "主体是大矩阵乘和注意力，能填满 GPU Tensor Core；训练可在序列维并行，正好吃到算力增长。"
+      },
+      {
+        "name": "缩放经济学",
+        "detail": "参数、数据、算力一起放大时 loss 平滑下降；投入可以按幂律预估，形成「越大越强」的正循环。"
+      },
+      {
+        "name": "生态飞轮",
+        "detail": "框架、推理引擎、工具调用、API、社区与数据反馈互相强化；用户越多，优化越快。"
+      }
+    ],
+    "contrast": [
+      {
+        "field": "计算机视觉",
+        "before": "CNN / ResNet 专用",
+        "now": "LLM 走向多模态；图像生成仍有 diffusion 的独立优势"
+      },
+      {
+        "field": "语音",
+        "before": "ASR 专用声学方案",
+        "now": "Whisper 式端到端 + LLM 接口"
+      },
+      {
+        "field": "推荐 / 搜索",
+        "before": "特征工程 + 排序方案",
+        "now": "LLM 做语义理解与重排，但专用排序仍高效"
+      },
+      {
+        "field": "强化学习",
+        "before": "专用策略与奖励",
+        "now": "LLM 作为决策/工具调用层，RL 仍用于对齐与推理"
+      }
+    ],
+    "conclusion": "LLM 赢在「通用性 × 可扩展性 × 生态」：一个 LLM 接口覆盖大量任务，而 scale 又能持续带来收益。它不是每个领域的唯一最优解，但它是第一个能当「通用入口」的 LLM。"
+  },
+  "limits": {
+    "title": "LLM 没赢的地方与代价",
+    "lead": "把 LLM 当万能解会踩坑；它的边界同样重要。",
+    "items": [
+      {
+        "name": "幻觉",
+        "note": "next-token 目标不保证事实正确；需要检索、工具、验证与不确定性表达。"
+      },
+      {
+        "name": "上下文与注意力成本",
+        "note": "O(N²) 计算、KV cache 显存、长上下文有效利用率都限制「一次塞更多」。"
+      },
+      {
+        "name": "推理与规划",
+        "note": "链式思考、工具调用能缓解，但没有可靠的符号推理保证。"
+      },
+      {
+        "name": "数据与版权",
+        "note": "训练数据质量、重复、许可与隐私是长期约束。"
+      },
+      {
+        "name": "成本与延迟",
+        "note": "LLM 推理贵；量化、蒸馏、MoE、投机解码、缓存都是工程补偿。"
+      },
+      {
+        "name": "不是所有模态都该用 LLM",
+        "note": "图像生成用 diffusion，推荐排序用专用方案，实时控制用轻量策略；LLM 更适合语义/接口层。"
+      }
+    ],
+    "note": "更准确的结论不是「LLM 赢了所有 AI」，而是「LLM 成了通用语义接口，专用方案仍在各自最优位置」。"
+  },
+  "codeSection": {
+    "title": "算一笔账：N² 的注意力、线性的 KV、可并行的训练",
+    "lead": "用纯 Python 看三个量：注意力分数、KV cache、训练 FLOPs。",
+    "file": "example/transformer_sim.py",
+    "run": "python3 example/transformer_sim.py",
+    "notes": [
+      "每层注意力分数矩阵是 heads × N × N，序列翻倍，计算和显存约 4 倍。",
+      "KV cache 随 token 数线性增长；这是长上下文与并发成本的来源。",
+      "RNN 训练要 N 个串行时间步；Transformer 的串行深度只有层数，序列维可并行。"
+    ]
+  },
+  "check": {
+    "title": "自查：把「为什么」说清楚",
+    "lead": "能用自己的话回答这几条，说明你不是在背名词。",
+    "checklist": [
+      "能说出 RNN/LSTM 的两个硬伤，以及注意力如何缓解",
+      "能写出自注意力的 Q、K、V 与 causal mask 在做什么",
+      "知道注意力的 O(N²) 与 KV cache 的线性增长分别影响什么",
+      "能解释 decoder-only 为什么成为主流 LLM 结构",
+      "能说出 LLM 胜出的至少四个工程/数据/生态原因",
+      "能举出 LLM 不适用的场景，而不是「所有任务都上 LLM」"
+    ],
+    "questions": [
+      {
+        "q": "Transformer 比 RNN 强，最关键的是哪一点？",
+        "a": "不是「更聪明」，而是把序列建模变成可并行的大矩阵乘：训练可在序列维并行，长距离依赖路径 O(1)，同时能吃到 GPU 算力增长。"
+      },
+      {
+        "q": "为什么 decoder-only 成了 LLM 主流？",
+        "a": "结构简单、训练目标统一（next-token）、天然支持生成与 in-context learning，且最容易 scale 到更大参数和数据。"
+      },
+      {
+        "q": "LLM 是「所有 AI 任务的赢家」吗？",
+        "a": "不是。它赢在通用语义接口与可扩展性；图像生成、推荐排序、实时控制等仍有专用方案的位置。更准确说是「通用入口」而非「唯一方案」。"
+      },
+      {
+        "q": "缩放定律为什么重要？",
+        "a": "它让参数、数据、算力的投入与 loss 的关系可预估，工程上能按预算做决策，形成「越大越强」的正循环；但边际收益递减，且数据质量与对齐同样关键。"
+      }
+    ]
+  },
+  "lesson": {
+    "quiz": [
+      {
+        "q": "Transformer 相比 RNN 的核心工程优势是什么？",
+        "options": [
+          "序列维可并行训练，长距离依赖路径更短",
+          "参数一定更少",
+          "不需要训练数据",
+          "只能做文本"
+        ],
+        "answer": 0,
+        "why": "RNN 必须按时间步串行；Transformer 用注意力直接连接任意位置，训练可在序列维并行，正好匹配 GPU。"
+      },
+      {
+        "q": "LLM 成为通用入口，最关键的组合更接近哪一项？",
+        "options": [
+          "统一 token 接口 + 自监督数据 + 可扩展的缩放 + 生态",
+          "只因为参数量最大",
+          "只因为用了 RLHF",
+          "只因为开源 LLM多"
+        ],
+        "answer": 0,
+        "why": "单一原因都不够：接口统一让任务可迁移，自监督提供数据，缩放带来持续收益，生态把优势放大。"
+      }
+    ],
+    "think": [
+      {
+        "q": "如果 RNN 也能堆到很大，为什么它没有成为 LLM 的主干？"
+      },
+      {
+        "q": "注意力是 O(N²)，为什么反而让 Transformer 更适合 GPU？"
+      },
+      {
+        "q": "LLM 赢的是「能力」还是「接口 + 规模 + 生态」？"
+      }
+    ],
+    "reflect": [
+      {
+        "id": "tf-r1",
+        "q": "用一句话解释 Transformer 为什么能并行训练。",
+        "ref": "注意力把任意两个位置直接连起来，训练时整段序列可以同时算；RNN 的 hidden state 必须一步步传递，时间步无法并行。"
+      },
+      {
+        "id": "tf-r2",
+        "q": "LLM 的「通用性」具体来自哪里？",
+        "ref": "统一的 token 接口 + 大规模自监督预训练 + 上下文学习/指令对齐：同一套参数可以迁移到问答、翻译、摘要、代码与工具调用。"
+      },
+      {
+        "id": "tf-r3",
+        "q": "为什么说 LLM 不是所有 AI 任务的唯一解？",
+        "ref": "图像生成、推荐排序、实时控制等有各自更高效的专用方案；LLM 更像通用语义/工具接口，适合与专用方案组合，而不是取代全部。"
+      }
+    ],
+    "attribution": [
+      {
+        "id": "tf-a1",
+        "label": "LLM 结构选择（decoder-only / MoE / 层数）决定能力与成本",
+        "bucket": "model",
+        "why": "结构、参数、训练目标决定 LLM 能学什么、显存多大；这是 LLM 侧。"
+      },
+      {
+        "id": "tf-a2",
+        "label": "注意力矩阵与 KV cache 让长上下文受显存/带宽限制",
+        "bucket": "gpu",
+        "why": "N² 计算和线性 KV 都要落在 HBM 与 Tensor Core 上；是硬件与系统约束。"
+      },
+      {
+        "id": "tf-a3",
+        "label": "推理引擎的 batching、KV 管理、量化决定吞吐",
+        "bucket": "engine",
+        "why": "同样的 LLM，调度与缓存策略决定实际 tok/s 与并发；属于引擎侧。"
+      }
+    ],
+    "summary": {
+      "brief": "Transformer 用自注意力把序列建模变成可并行的大矩阵乘；LLM 胜出靠的是统一 token 接口、自监督数据、可外推的缩放、硬件友好与生态飞轮，而不是单一能力。",
+      "detail": "RNN/LSTM 受串行训练和长距离遗忘限制；Transformer 让任意位置直接交互，训练可在序列维并行，代价是 O(N²) 注意力与线性 KV cache。BERT/GPT/T5 三种架构中，decoder-only 因结构简单、目标统一、易 scale 成为主流 LLM。缩放定律让参数/数据/算力投入可预估，形成正循环；统一接口 + 互联网自监督数据 + 上下文学习 + 工具生态，使 LLM 成为通用入口。但幻觉、上下文成本、推理可靠性与专用方案效率仍是边界：LLM 是通用语义层，不是所有任务唯一解。"
+    }
+  }
+}

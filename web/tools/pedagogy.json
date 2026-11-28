@@ -2,8 +2,8 @@
   "quiz": [
     {
       "id": "q1",
-      "tag": "模型构成",
-      "q": "下面哪一组完整描述了「一个模型」的构成？",
+      "tag": "LLM 构成",
+      "q": "下面哪一组完整描述了「一个 LLM」的构成？",
       "options": [
         "只有权重参数",
         "参数 + 结构（层数/hidden/头数）+ tokenizer/模板/生成配置",
@@ -11,9 +11,9 @@
         "只有 config.json"
       ],
       "answer": 1,
-      "why": "权重只是模型包里最大的文件。config 决定参数形状，tokenizer/chat template 决定输入怎么拼，generation_config 决定采样；这些都属于模型包。",
-      "summary": "考什么：模型 ≠ 只有参数",
-      "detail": "权重是数字；结构是 config 里的层数/hidden/头数/专家数；tokenizer、chat template、generation_config 决定文本怎么进模型、怎么采样。它们合起来才是「模型包」。"
+      "why": "权重只是 LLM 包里最大的文件。config 决定参数形状，tokenizer/chat template 决定输入怎么拼，generation_config 决定采样；这些都属于 LLM 包。",
+      "summary": "考什么：LLM ≠ 只有参数",
+      "detail": "权重是数字；结构是 config 里的层数/hidden/头数/专家数；tokenizer、chat template、generation_config 决定文本怎么进 LLM、怎么采样。它们合起来才是「LLM 包」。"
     },
     {
       "id": "q2",
@@ -52,7 +52,7 @@
       "options": [
         "每个 token 的 K/V 值",
         "逻辑块 → 物理块号的映射",
-        "模型权重",
+        "LLM 权重",
         "采样参数"
       ],
       "answer": 1,
@@ -80,15 +80,15 @@
       "tag": "三层分工",
       "q": "块哈希、引用计数、LRU 淘汰主要由谁负责？",
       "options": [
-        "模型",
+        "LLM",
         "GPU",
         "推理引擎",
         "tokenizer"
       ],
       "answer": 2,
-      "why": "模型定义 K/V 怎么算，GPU 提供算力和显存，引擎负责块分配、共享、淘汰与调度。",
+      "why": "LLM 定义 K/V 怎么算，GPU 提供算力和显存，引擎负责块分配、共享、淘汰与调度。",
       "summary": "考什么：缓存策略归引擎",
-      "detail": "这里问的是「谁决定缓存策略」：哈希、ref_count、free list、淘汰时机都是引擎的缓存管理；模型和 GPU 不决定这些。"
+      "detail": "这里问的是「谁决定缓存策略」：哈希、ref_count、free list、淘汰时机都是引擎的缓存管理；LLM 和 GPU 不决定这些。"
     },
     {
       "id": "q7",
@@ -138,11 +138,11 @@
     {
       "id": "q10",
       "tag": "优化技术",
-      "q": "模型量化为什么对 decode 特别有效？",
+      "q": "LLM 量化为什么对 decode 特别有效？",
       "options": [
         "decode 是 memory-bound，权重/KV 字节降下来时间直接下降",
         "量化让 GPU 的 FP16 算力翻倍",
-        "量化会减少模型层数",
+        "量化会减少 LLM 层数",
         "量化能自动增加上下文长度"
       ],
       "answer": 0,
@@ -154,14 +154,14 @@
   "stepThink": {
     "overview": {
       "q": "如果每一步都重新喂整段前缀，重复算出来的 K/V 和上一次一样吗？",
-      "a": "同模型、同精度、同位置时完全一样（差异只来自浮点累加顺序）。一样，意味着缓存不是近似，而是省掉纯浪费。"
+      "a": "同 LLM、同精度、同位置时完全一样（差异只来自浮点累加顺序）。一样，意味着缓存不是近似，而是省掉纯浪费。"
     },
     "no-cache": {
       "q": "8 个 prompt + 8 个生成，为什么是 92 次而不是 64 次？",
       "a": "每步输入都是整段前缀：8,9,…,15，求和 92；其中 77 个位置的结果被直接丢弃。"
     },
     "layer-cache": {
-      "q": "缓存为什么按层分开存，而不是整个模型一个大张量？",
+      "q": "缓存为什么按层分开存，而不是整个 LLM 一个大张量？",
       "a": "K/V 是每层自己的投影结果，层与层不共享；布局 (batch, kv_heads, T, head_dim) 让每层独立追加。"
     },
     "append": {
@@ -185,8 +185,8 @@
       "a": "说明缓存的 K/V、位置或掩码有 bug。缓存绝不能改变数学结果；这正是 check_numerics 要断言的性质。"
     },
     "tiny-model": {
-      "q": "这一层里，哪些是模型的数学、哪些是 GPU 的执行、哪些是引擎要管的？",
-      "a": "投影/attention/MoE 公式 = 模型；GEMM、显存带宽、kernel = GPU；缓存分配、调度、复用 = 引擎。"
+      "q": "这一层里，哪些是 LLM 的数学、哪些是 GPU 的执行、哪些是引擎要管的？",
+      "a": "投影/attention/MoE 公式 = LLM；GEMM、显存带宽、kernel = GPU；缓存分配、调度、复用 = 引擎。"
     },
     "checks": {
       "q": "4.47e-08 的差异说明缓存是近似吗？",
@@ -205,15 +205,15 @@
       "a": "自测没有标准答案；能指出对应的代码位置（函数名/行号）就算过。"
     },
     "production": {
-      "q": "这份 demo 缺的三件事，分别属于模型、GPU 还是引擎？",
-      "a": "连续布局/PagedAttention 管理 = 引擎；显存分配与 kernel = GPU；KV 量化/精度 = 模型 + 引擎共同决定。"
+      "q": "这份 demo 缺的三件事，分别属于 LLM、GPU 还是引擎？",
+      "a": "连续布局/PagedAttention 管理 = 引擎；显存分配与 kernel = GPU；KV 量化/精度 = LLM + 引擎共同决定。"
     }
   },
   "attribution": {
     "buckets": [
       {
         "id": "model",
-        "label": "模型",
+        "label": "LLM",
         "desc": "数学公式、权重、精度：决定「算什么」"
       },
       {
@@ -232,13 +232,13 @@
         "id": "c1",
         "label": "QKV 投影公式",
         "bucket": "model",
-        "why": "模型结构定义，权重来自训练。"
+        "why": "LLM 结构定义，权重来自训练。"
       },
       {
         "id": "c2",
         "label": "RoPE 位置编码",
         "bucket": "model",
-        "why": "位置怎么进入 attention 由模型设计决定。"
+        "why": "位置怎么进入 attention 由 LLM 设计决定。"
       },
       {
         "id": "c3",
@@ -250,7 +250,7 @@
         "id": "c4",
         "label": "MoE top-8 路由",
         "bucket": "model",
-        "why": "路由网络是模型权重的一部分。"
+        "why": "路由网络是 LLM 权重的一部分。"
       },
       {
         "id": "c5",
@@ -301,7 +301,7 @@
         "why": "PagedAttention 的块表由引擎维护，kernel 按表取数。"
       }
     ],
-    "afterword": "边界不是绝对的：一个「attention kernel」既是模型的数学，也由 GPU 执行、由引擎选择。判断标准是「谁定义规则、谁执行、谁决定策略」。"
+    "afterword": "边界不是绝对的：一个「attention kernel」既是 LLM 的数学，也由 GPU 执行、由引擎选择。判断标准是「谁定义规则、谁执行、谁决定策略」。"
   },
   "reflect": {
     "prompts": [
@@ -315,7 +315,7 @@
       },
       {
         "id": "r3",
-        "q": "模型、GPU、引擎各负责哪一段？举一个你原来容易混淆的点。"
+        "q": "LLM、GPU、引擎各负责哪一段？举一个你原来容易混淆的点。"
       }
     ],
     "reference": [
@@ -344,7 +344,7 @@
       {
         "title": "三层分工",
         "points": [
-          "模型：定义算什么（公式、权重、精度）。",
+          "LLM：定义算什么（公式、权重、精度）。",
           "GPU：执行算子、读写显存、决定算多快。",
           "引擎：调度请求、管理缓存块、决定复用与淘汰。"
         ]
@@ -352,17 +352,17 @@
     ],
     "takeaway": "KV cache 把「算过的 K/V」从计算问题变成存储与复用问题；GPU 决定同样的字节能跑多快，网络决定多卡协作的上限，优化技术（FlashAttention / 量化 / 投机解码）决定同样的硬件还能快多少。",
     "feedbackSummary": {
-      "brief": "模型 = 参数 + 结构 + 模型包 + 运行时状态；KV cache 把算过的 K/V 变成存储与复用（模型定义、GPU 执行、引擎管理）。decode 是 memory-bound；TP 用 all-reduce、无损网络靠 PFC+ECN/DCQCN；优化技术从 IO（FlashAttention）、字节（量化）和调度（投机解码）三个方向提速。",
-      "detail": "参数决定「知道什么」；结构决定参数形状与计算图；tokenizer/chat template/generation_config 决定输入和采样；运行时状态决定这次请求算到哪、占多少显存。一次提问：decode 只投影新 token，省重复计算，KV 随上下文占显存。多次提问：多轮省 prefill 不省显存；多请求共享前缀计算和显存都省。GPU 侧：decode 算术强度低、受 HBM 带宽限制；coalescing/occupancy/kernel 融合决定有效带宽；CUDA Graph 省 launch 开销。多卡侧：TP 每层 all-reduce（decode 小消息延迟敏感），PFC 兜底 + ECN/DCQCN 细粒度降速实现无损；NVLink/PCIe/IB 拓扑决定上限。优化侧：先找瓶颈（算力/带宽/容量/延迟/通信），再用 FlashAttention（省 HBM 流量）、量化（省字节）、投机解码（省串行步数）、continuous batching/chunked prefill/PD 分离（省调度空转），最后 A/B 度量。三层分工：模型定义规则，GPU 执行，引擎管理缓存、并行策略与调度。"
+      "brief": "LLM = 参数 + 结构 + LLM 包 + 运行时状态；KV cache 把算过的 K/V 变成存储与复用（LLM 定义、GPU 执行、引擎管理）。decode 是 memory-bound；TP 用 all-reduce、无损网络靠 PFC+ECN/DCQCN；优化技术从 IO（FlashAttention）、字节（量化）和调度（投机解码）三个方向提速。",
+      "detail": "参数决定「知道什么」；结构决定参数形状与计算图；tokenizer/chat template/generation_config 决定输入和采样；运行时状态决定这次请求算到哪、占多少显存。一次提问：decode 只投影新 token，省重复计算，KV 随上下文占显存。多次提问：多轮省 prefill 不省显存；多请求共享前缀计算和显存都省。GPU 侧：decode 算术强度低、受 HBM 带宽限制；coalescing/occupancy/kernel 融合决定有效带宽；CUDA Graph 省 launch 开销。多卡侧：TP 每层 all-reduce（decode 小消息延迟敏感），PFC 兜底 + ECN/DCQCN 细粒度降速实现无损；NVLink/PCIe/IB 拓扑决定上限。优化侧：先找瓶颈（算力/带宽/容量/延迟/通信），再用 FlashAttention（省 HBM 流量）、量化（省字节）、投机解码（省串行步数）、continuous batching/chunked prefill/PD 分离（省调度空转），最后 A/B 度量。三层分工：LLM 定义规则，GPU 执行，引擎管理缓存、并行策略与调度。"
     }
   },
   "postTest": {
     "title": "后测 · 学完再答一遍",
-    "note": "同样 10 个概念，换问法，覆盖认识 GPU、KV 三章、推理网络、认识模型与 LLM 优化。提交后和前面的前测对照，看看哪里真的学会了。",
+    "note": "同样 10 个概念，换问法，覆盖认识 GPU、KV 三章、推理网络、认识 LLM 与 LLM 优化。提交后和前面的前测对照，看看哪里真的学会了。",
     "questions": [
       {
         "id": "b1",
-        "tag": "模型构成",
+        "tag": "LLM 构成",
         "q": "config.json、tokenizer、chat_template、safetensors 里，哪些是「参数」？",
         "options": [
           "全部都是",
@@ -372,8 +372,8 @@
         ],
         "answer": 1,
         "why": "safetensors 才是权重张量；config 是结构，tokenizer/template 决定输入，generation_config 决定采样。",
-        "summary": "考什么：参数只是模型包的一部分",
-        "detail": "权重是参数；config/tokenizer/template/generation_config 是模型包里的非参数文件，但会改变模型的行为。",
+        "summary": "考什么：参数只是 LLM 包的一部分",
+        "detail": "权重是参数；config/tokenizer/template/generation_config 是 LLM 包里的非参数文件，但会改变 LLM 的行为。",
         "suggest": {
           "view": "anatomy"
         }
@@ -458,15 +458,15 @@
         "tag": "三层分工",
         "q": "workspace、CUDA Graph、block pool 主要由谁管理？",
         "options": [
-          "模型",
+          "LLM",
           "GPU 硬件",
           "推理引擎 / 框架",
           "tokenizer"
         ],
         "answer": 2,
-        "why": "模型只定义需要哪些状态；GPU 提供显存/执行；分配、复用、捕获、释放由引擎/框架管理。",
+        "why": "LLM 只定义需要哪些状态；GPU 提供显存/执行；分配、复用、捕获、释放由引擎/框架管理。",
         "summary": "考什么：运行时状态的管家",
-        "detail": "模型决定形状，GPU 提供 HBM 和 kernel，引擎决定 block 池、workspace、CUDA Graph 怎么分配复用。",
+        "detail": "LLM 决定形状，GPU 提供 HBM 和 kernel，引擎决定 block 池、workspace、CUDA Graph 怎么分配复用。",
         "suggest": {
           "view": "kv",
           "stage": "summary"
@@ -475,7 +475,7 @@
       {
         "id": "b7",
         "tag": "GPU 与 CPU",
-        "q": "同一模型上，decode 比 prefill 更容易受带宽限制，主要原因是？",
+        "q": "同一 LLM 上，decode 比 prefill 更容易受带宽限制，主要原因是？",
         "options": [
           "decode 每步只算 1 个 token，但要读全量权重 + 全部历史 KV",
           "decode 的 FLOPs 比 prefill 大",
@@ -536,7 +536,7 @@
         "options": [
           "HBM 读写（避免 N×N 分数矩阵物化）",
           "FLOPs（把 O(N²) 计算降到 O(N)）",
-          "模型参数量",
+          "LLM 参数量",
           "显存容量（把 KV 直接删掉）"
         ],
         "answer": 0,
@@ -556,7 +556,7 @@
         {
           "q": "同一个 prompt 生成两次，第二次 decode 的 K/V 和第一次完全一样吗？",
           "options": [
-            "一样，同模型同位置",
+            "一样，同 LLM 同位置",
             "不一样，采样随机",
             "只有第一层一样"
           ],
@@ -611,7 +611,7 @@
           "id": "kv-m1",
           "label": "QKV 投影与 attention 公式",
           "bucket": "model",
-          "why": "模型定义 token 怎么变成 Q/K/V、怎么做 softmax；公式和权重来自模型。"
+          "why": "LLM 定义 token 怎么变成 Q/K/V、怎么做 softmax；公式和权重来自 LLM。"
         },
         {
           "id": "kv-g1",
@@ -707,7 +707,7 @@
           "id": "p-m1",
           "label": "每 4 个 token 的 K/V 计算",
           "bucket": "model",
-          "why": "块里装的是模型算出的 K/V；哈希只决定「用哪一份」，不改变数值。"
+          "why": "块里装的是 LLM 算出的 K/V；哈希只决定「用哪一份」，不改变数值。"
         },
         {
           "id": "p-g1",
@@ -764,7 +764,7 @@
           "options": [
             "每个 token 的 K/V 值",
             "逻辑块 → 物理块号的映射",
-            "模型权重"
+            "LLM 权重"
           ],
           "answer": 1,
           "why": "block table 是 per-sequence 的索引：第 i 个逻辑块放在哪个物理块。K/V 本身在物理块池里。"
@@ -835,7 +835,7 @@
           "options": [
             "逻辑块号 → 物理块号的映射",
             "每个 token 的 K/V 值",
-            "模型权重",
+            "LLM 权重",
             "采样参数"
           ],
           "answer": 0,

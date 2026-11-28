@@ -96,7 +96,7 @@
       gpuFunctionMap(data.gpuFunctions) +
       runtimeSection(data.runtime, preset, c, m) +
       thinkBoxes(data.notes) +
-      '<div class="reuse-actions"><button class="btn primary" id="anatomy-reflect">把「模型/GPU/引擎」写进我的总结 →</button></div>';
+      '<div class="reuse-actions"><button class="btn primary" id="anatomy-reflect">把「LLM/GPU/引擎」写进我的总结 →</button></div>';
 
     bind(el, data);
   };
@@ -105,9 +105,9 @@
 
   function head(preset) {
     return (
-      '<p class="kicker">模型 · 参数 · 维度 · GPU</p>' +
-      '<h1 class="page-title">一个模型，一次 token 生成</h1>' +
-      '<p class="page-lead">模型是一叠「看上下文 + 逐 token 变换」的层；参数是这些层里的数字；' +
+      '<p class="kicker">LLM · 参数 · 维度 · GPU</p>' +
+      '<h1 class="page-title">一个 LLM，一次 token 生成</h1>' +
+      '<p class="page-lead">LLM 是一叠「看上下文 + 逐 token 变换」的层；参数是这些层里的数字；' +
       "维度决定每层张量多宽；层数决定重复多少遍。GPU 负责把这些数字变成 kernel 调用，" +
       "引擎决定缓存和调度。先用左边的预设认识规模，再往下看每一步。</p>" +
       '<div class="preset-row">' +
@@ -169,10 +169,10 @@
   function composition(preset, c, m) {
     const perLayer = m.per_layer;
     return (
-      '<h2 class="sec-title">1 · 模型由什么组成</h2>' +
+      '<h2 class="sec-title">1 · LLM 由什么组成</h2>' +
       '<p class="page-lead">自回归 LM 的计算图只有四块：<b>embedding</b>（token id → 向量）、' +
       "<b>N 层 DecoderLayer</b>（每层是 attention + FFN/MoE）、<b>final norm</b>、<b>lm_head</b>（hidden → 词表）。" +
-      "但「模型」不等于这张图：参数只是其中一层，外面还有结构、tokenizer/模板/生成配置，以及推理时的运行时状态。</p>" +
+      "但「LLM」不等于这张图：参数只是其中一层，外面还有结构、tokenizer/模板/生成配置，以及推理时的运行时状态。</p>" +
       composeGrid(c, m) +
       '<div class="stack">' +
       block("embedding", "[vocab, hidden] → [n, hidden]", calc.params(m.embed) + " 参数") +
@@ -189,7 +189,7 @@
       paramRow("总参数", calc.params(m.total),
         c.layers + " × " + calc.params(perLayer) + " + embedding/head" + (m.pos ? " + 位置表" : "")) +
       paramRow("每 token 激活参数", calc.params(m.active),
-        c.experts ? "只读 top-" + c.top_k + " 的 expert；dense 模型这里等于总参数" : "dense：每步读全部") +
+        c.experts ? "只读 top-" + c.top_k + " 的 expert；dense LLM 这里等于总参数" : "dense：每步读全部") +
       paramRow("KV / token", calc.bytes(m.kv_bytes / 1024),
         "2（K/V）× " + c.layers + " 层 × " + c.kv_heads + " KV 头 × " + c.head_dim) +
       paramRow("权重体积", calc.gb(m.q4_gb) + "（Q4） / " + calc.gb(m.bf16_gb) + "（BF16）",
@@ -235,13 +235,13 @@
       {
         title: "词表 / 模板 / 配置",
         big: "tokenizer + template + generation",
-        body: "决定文本怎么变成 token、system/user 怎么拼、temperature/top_p 怎么采样；是模型包的一部分，但不在计算图里。",
+        body: "决定文本怎么变成 token、system/user 怎么拼、temperature/top_p 怎么采样；是 LLM 包的一部分，但不在计算图里。",
         tone: "e",
       },
       {
         title: "运行时状态",
         big: "KV " + calc.bytes(m.kv_bytes / 1024) + " / token",
-        body: "KV cache、激活、workspace、block table、采样 RNG；模型文件里没有，推理时必须存在。",
+        body: "KV cache、激活、workspace、block table、采样 RNG；LLM 文件里没有，推理时必须存在。",
         tone: "k",
       },
     ];
@@ -260,8 +260,8 @@
 
   function packageSection(files) {
     return (
-      '<h2 class="sec-title">2 · 模型包里除了权重还有什么</h2>' +
-      '<p class="page-lead">下载一个模型 ≠ 只下载权重。config 决定形状，tokenizer/template 决定输入，' +
+      '<h2 class="sec-title">2 · LLM 包里除了权重还有什么</h2>' +
+      '<p class="page-lead">下载一个 LLM ≠ 只下载权重。config 决定形状，tokenizer/template 决定输入，' +
       "generation_config 决定采样；同一个权重换模板，行为就变了。</p>" +
       '<div class="table-wrap"><table class="tagtable"><thead><tr>' +
       "<th>文件</th><th>内容</th><th>是参数？</th><th>归属</th></tr></thead><tbody>" +
@@ -297,7 +297,7 @@
       "<b>" + gb.toFixed(2) + " GiB</b></div>";
 
     return (
-      '<h2 class="sec-title">8 · 运行时状态：模型文件之外的那一半</h2>' +
+      '<h2 class="sec-title">8 · 运行时状态：LLM 文件之外的那一半</h2>' +
       '<p class="page-lead">' + esc(rt.intro) + "它不是参数，也不是权重文件；是「这次请求正在算什么、算到哪了」的现场。" +
       "按活多久分成四组：</p>" +
       '<div class="rt-groups">' +
@@ -340,7 +340,7 @@
       "</tbody></table></div>" +
       '<h4 class="sec-sub">三层分工</h4>' +
       '<div class="compose-grid three">' +
-      '<div class="compose-card"><h4>模型定义</h4><p>层数、hidden、KV 头、词表、dtype：决定「需要哪些状态、长什么样」。</p></div>' +
+      '<div class="compose-card"><h4>LLM 定义</h4><p>层数、hidden、KV 头、词表、dtype：决定「需要哪些状态、长什么样」。</p></div>' +
       '<div class="compose-card"><h4>GPU 提供</h4><p>HBM 存 KV/激活/workspace；kernel 生产与消费这些状态；带宽决定 decode。</p></div>' +
       '<div class="compose-card"><h4>引擎管理</h4><p>block pool / block table / prefix cache / 调度 / 释放 / swap；决定状态放哪、何时复用。</p></div>' +
       "</div>" +
@@ -574,7 +574,7 @@
       '<h2 class="sec-title">9 · 用自己的话回答</h2>' +
       details("为什么层数增加，参数量和 KV 都线性增加，但 hidden 不变？", notes.layers + " " + notes.kv) +
       details("参数是什么？它和「知识」是什么关系？", notes.params) +
-      details("模型、GPU、引擎在这套流程里各做了什么？", notes.gpu)
+      details("LLM、GPU、引擎在这套流程里各做了什么？", notes.gpu)
     );
   }
 

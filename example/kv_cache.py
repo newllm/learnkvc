@@ -536,8 +536,8 @@ def main() -> None:
     n_new = 8
 
     print("=" * 78)
-    print("同一个模型、同一段 prompt，跑两遍：不带 cache 与带 cache")
-    print(f"  模型：{N_LAYERS} 层、{Q_HEADS}/{KV_HEADS} 头（GQA）、d_model={D_MODEL}、绝对位置嵌入")
+    print("同一个 LLM、同一段 prompt，跑两遍：不带 cache 与带 cache")
+    print(f"  LLM：{N_LAYERS} 层、{Q_HEADS}/{KV_HEADS} 头（GQA）、d_model={D_MODEL}、绝对位置嵌入")
     device_type = torch.device(DEVICE).type
     if device_type == "cuda":
         print(f"  device = {DEVICE}：matmul -> cuBLAS，其余算子 -> ATen CUDA kernel")

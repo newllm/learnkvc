@@ -1,12 +1,12 @@
 # 在 macOS 上跑 Ollama / Llama（Apple GPU / Metal）
 
-在 Mac 上直接跑 [Ollama](https://ollama.com/)：装官方 App 或 CLI，拉一个 Llama 模型，用 HTTP API 对话。文档既讲 Ollama 本身的安装/启动，也讲 Llama 家族在 Mac 上怎么选模型、内存怎么算，另有一节把 Qwen3-Coder-30B（30B MoE 代码模型）的显存账、10K prompt 的 prefill 与每步 decode 占用算清楚。和 [`docker/ollama/`](../../docker/ollama/README.md) 是同一件事的两种跑法——那边是 Docker 容器（在 macOS 上只能用 CPU，Linux + NVIDIA 才用得到 GPU）；这边是 macOS 原生版，Apple Silicon 上会走 **Metal GPU**，模型权重和 KV cache 都放在统一内存里。
+在 Mac 上直接跑 [Ollama](https://ollama.com/)：装官方 App 或 CLI，拉一个 Llama LLM，用 HTTP API 对话。文档既讲 Ollama 本身的安装/启动，也讲 Llama 家族在 Mac 上怎么选 LLM、内存怎么算，另有一节把 Qwen3-Coder-30B（30B MoE 代码 LLM）的显存账、10K prompt 的 prefill 与每步 decode 占用算清楚。和 [`docker/ollama/`](../../docker/ollama/README.md) 是同一件事的两种跑法——那边是 Docker 容器（在 macOS 上只能用 CPU，Linux + NVIDIA 才用得到 GPU）；这边是 macOS 原生版，Apple Silicon 上会走 **Metal GPU**，LLM 权重和 KV cache 都放在统一内存里。
 
 目录内容：
 
 ```text
 macos/ollama/
-├── run.sh     # 检查/安装 + 启动 serve + 拉模型 + 调一次 API 的脚本
+├── run.sh     # 检查/安装 + 启动 serve + 拉 LLM + 调一次 API 的脚本
 └── README.md  # 本文件
 ```
 
@@ -27,12 +27,12 @@ macos/ollama/
   - [终端 / 脚本模式：直接前缀](#终端--脚本模式直接前缀)
   - [Homebrew service 模式](#homebrew-service-模式)
   - [常用变量](#常用变量)
-- [模型、目录与 API](#模型目录与-api)
-  - [模型从哪来](#模型从哪来)
+- [LLM、目录与 API](#llm目录与-api)
+  - [LLM 从哪来](#llm-从哪来)
   - [文件都在哪](#文件都在哪)
   - [HTTP API](#http-api)
 - [在 Mac 上跑 Llama：选型、内存与速度](#在-mac-上跑-llama选型内存与速度)
-  - [按内存挑模型](#按内存挑模型)
+  - [按内存挑 LLM](#按内存挑-llm)
   - [量化怎么选](#量化怎么选)
   - [速度由什么决定](#速度由什么决定)
   - [和 llama.cpp / MLX 的关系](#和-llamacpp--mlx-的关系)
@@ -44,7 +44,7 @@ macos/ollama/
   - [Ollama 上怎么配](#ollama-上怎么配)
 - [对接 OpenCode（编程 Agent）](#对接-opencode编程-agent)
 - [对接 Cline（VS Code 编程 Agent）](#对接-clinevs-code-编程-agent)
-  - [1. 启动 Ollama 并准备模型](#1-启动-ollama-并准备模型)
+  - [1. 启动 Ollama 并准备 LLM](#1-启动-ollama-并准备-llm)
   - [2. Cline 里的设置](#2-cline-里的设置)
   - [3. 几个容易踩的坑](#3-几个容易踩的坑)
   - [4. OpenAI Compatible 兜底](#4-openai-compatible-兜底)
@@ -52,12 +52,12 @@ macos/ollama/
   - [常见问题：OpenCode Desktop 2.x 与 CLI 1.x 共库冲突](#常见问题opencode-desktop-2x-与-cli-1x-共库冲突)
 - [上下文与 KV cache：和本仓库的关系](#上下文与-kv-cache和本仓库的关系)
 - [和 Docker 版的差异](#和-docker-版的差异)
-- [怎么自己测模型](#怎么自己测模型)
+- [怎么自己测 LLM](#怎么自己测-llm)
 - [token 输出慢怎么定位](#token-输出慢怎么定位)
   - [看懂 MLX runner 的日志](#看懂-mlx-runner-的日志)
   - [一组 API 数字怎么算](#一组-api-数字怎么算)
   - [先关掉 thinking 再比速度](#先关掉-thinking-再比速度)
-  - [让模型常驻（避免每次请求都等加载）](#让模型常驻避免每次请求都等加载)
+  - [让 LLM 常驻（避免每次请求都等加载）](#让-llm-常驻避免每次请求都等加载)
   - [怎么判断有没有触发 offload](#怎么判断有没有触发-offload)
   - [prefill 到底占多少内存、为什么慢](#prefill-到底占多少内存为什么慢)
   - [每层在做什么：一层的数据流](#每层在做什么一层的数据流)
@@ -77,11 +77,11 @@ macos/ollama/
 | --- | --- |
 | 系统 | macOS Sonoma（14）或更新 |
 | 芯片 | Apple Silicon（M 系列）：CPU + GPU（Metal）；Intel Mac：只有 CPU |
-| 内存 | 模型大小 + 上下文开销；量化后的 8B 模型约占 5–6 GB，KV cache 另算（见下文） |
-| 磁盘 | 模型存在 `~/.ollama/models`，一个 3B/8B 模型通常 2–5 GB |
-| 网络 | 拉模型走 HTTPS（`registry.ollama.ai`），公司网络需要代理时只设 `HTTPS_PROXY` |
+| 内存 | LLM 大小 + 上下文开销；量化后的 8B LLM 约占 5–6 GB，KV cache 另算（见下文） |
+| 磁盘 | LLM 存在 `~/.ollama/models`，一个 3B/8B LLM 通常 2–5 GB |
+| 网络 | 拉 LLM 走 HTTPS（`registry.ollama.ai`），公司网络需要代理时只设 `HTTPS_PROXY` |
 
-> Apple Silicon 是**统一内存**：模型和 KV cache 都从同一块内存里分配，和 CPU 共享。所以“显存够不够”在 Mac 上等价于“内存够不够”，同时开一堆大内存应用会直接影响推理。
+> Apple Silicon 是**统一内存**：LLM 和 KV cache 都从同一块内存里分配，和 CPU 共享。所以“显存够不够”在 Mac 上等价于“内存够不够”，同时开一堆大内存应用会直接影响推理。
 
 ## 安装（三种方式，选一种）
 
@@ -162,13 +162,13 @@ tail -f "$(brew --prefix)/var/log/ollama.log"
 
 ### 方式 D：本目录的脚本（推荐先跑这个）
 
-脚本把上面这些事串起来：找安装位置 → 后台启动 `ollama serve`（或交给 App）→ 等待就绪 → 拉模型 → 调一次 `/api/generate` → 打印 `ollama ps`。
+脚本把上面这些事串起来：找安装位置 → 后台启动 `ollama serve`（或交给 App）→ 等待就绪 → 拉 LLM → 调一次 `/api/generate` → 打印 `ollama ps`。
 
 ```bash
 bash macos/ollama/run.sh                     # 后台 serve，默认拉 llama3.2:3b
 
 MODELS="llama3.2:3b qwen2.5:3b" bash macos/ollama/run.sh   # 一次拉多个
-MODEL=llama3.1:8b bash macos/ollama/run.sh                 # 单模型别名
+MODEL=llama3.1:8b bash macos/ollama/run.sh                 # 单 LLM 别名
 bash macos/ollama/run.sh --model qwen2.5:3b --ctx 8192     # 显式设默认上下文（8K）
 bash macos/ollama/run.sh --app                             # 用菜单栏 App 启动
 bash macos/ollama/run.sh --install                         # 没装时先跑官方安装脚本
@@ -218,25 +218,25 @@ brew services restart ollama
 | 变量 | 作用 |
 | --- | --- |
 | `OLLAMA_HOST` | 监听地址，默认 `127.0.0.1:11434`；`0.0.0.0:11434` 可让局域网访问，`127.0.0.1:11500` 可换端口 |
-| `OLLAMA_MODELS` | 模型目录，默认 `~/.ollama/models`；可指到外置盘 |
+| `OLLAMA_MODELS` | LLM 目录，默认 `~/.ollama/models`；可指到外置盘 |
 | `OLLAMA_CONTEXT_LENGTH` | 默认上下文长度；不设时 Ollama 按显存选 **4k（<24 GiB）/ 32k（24–48 GiB）/ 256k（≥48 GiB）**，也是 `num_ctx` 的全局默认值 |
-| `OLLAMA_KEEP_ALIVE` | 模型空闲多久卸载，默认 `5m`；`-1` 常驻 |
-| `OLLAMA_NUM_PARALLEL` | 每个模型同时处理的请求数，默认 1；每路各占一份 KV cache |
-| `OLLAMA_MAX_LOADED_MODELS` | 同时加载几个模型，默认 3（有 GPU 时 3×GPU 数） |
+| `OLLAMA_KEEP_ALIVE` | LLM 空闲多久卸载，默认 `5m`；`-1` 常驻 |
+| `OLLAMA_NUM_PARALLEL` | 每个 LLM 同时处理的请求数，默认 1；每路各占一份 KV cache |
+| `OLLAMA_MAX_LOADED_MODELS` | 同时加载几个 LLM，默认 3（有 GPU 时 3×GPU 数） |
 | `OLLAMA_MAX_QUEUE` | 忙时最多排队多少请求，默认 512，超出返回 503 |
 | `OLLAMA_FLASH_ATTENTION` | 是否启用 FlashAttention；多数后端默认自动开启，`1` 强制、`0` 关闭 |
 | `OLLAMA_KV_CACHE_TYPE` | KV cache 精度：`f16`（默认）、`q8_0`、`q4_0`（量化需要 FlashAttention） |
 | `OLLAMA_ORIGINS` | 允许跨域访问的来源，默认只有 `127.0.0.1` / `0.0.0.0` |
-| `OLLAMA_NO_CLOUD` | 设为 `1` 关闭云端模型与联网功能，纯本地运行 |
+| `OLLAMA_NO_CLOUD` | 设为 `1` 关闭云端 LLM 与联网功能，纯本地运行 |
 | `OLLAMA_DEBUG` | 设为 `1` 输出更详细的日志 |
 
 完整列表可以直接看 CLI 自带帮助：`ollama serve --help`。
 
-## 模型、目录与 API
+## LLM、目录与 API
 
-### 模型从哪来
+### LLM 从哪来
 
-和 Docker 版一致：默认从 [Ollama 官方模型库](https://ollama.com/library)拉取，`name:tag` 的完整坐标是 `registry.ollama.ai/library/<name>:<tag>`；也支持 `hf.co/<user>/<repo>:<quant>` 这种 Hugging Face GGUF。Llama 家族各型号的体积、上下文和内存取舍见下一节。
+和 Docker 版一致：默认从 [Ollama 官方 LLM 库](https://ollama.com/library)拉取，`name:tag` 的完整坐标是 `registry.ollama.ai/library/<name>:<tag>`；也支持 `hf.co/<user>/<repo>:<quant>` 这种 Hugging Face GGUF。Llama 家族各型号的体积、上下文和内存取舍见下一节。
 
 ```bash
 ollama pull llama3.2:3b
@@ -251,12 +251,12 @@ ollama stop llama3.2:3b   # 立刻卸载，释放内存
 
 | 路径 | 内容 |
 | --- | --- |
-| `~/.ollama/models` | 模型（`manifests/` 清单 + `blobs/` 权重分片） |
+| `~/.ollama/models` | LLM（`manifests/` 清单 + `blobs/` 权重分片） |
 | `~/.ollama/logs/app.log`、`server.log` | App 与推理服务日志 |
-| `~/.ollama/id_ed25519.pub` | 本机 Ollama 公钥（推模型/云端模型会用到） |
+| `~/.ollama/id_ed25519.pub` | 本机 Ollama 公钥（推 LLM/云端 LLM 会用到） |
 | `$(brew --prefix)/var/log/ollama.log` | Homebrew service 日志 |
 
-换模型目录（比如外置盘）：
+换 LLM 目录（比如外置盘）：
 
 ```bash
 launchctl setenv OLLAMA_MODELS "/Volumes/SSD/ollama-models"   # App 模式后重启 App
@@ -284,7 +284,7 @@ curl -s http://127.0.0.1:11434/api/chat \
   -H 'Content-Type: application/json' \
   -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"stream\":false}"
 
-# 当前加载的模型、占用与跑在 CPU 还是 GPU 上
+# 当前加载的 LLM、占用与跑在 CPU 还是 GPU 上
 curl -s http://127.0.0.1:11434/api/ps
 ```
 
@@ -300,9 +300,9 @@ Python 用 `openai` SDK 时把 `base_url` 设为 `http://127.0.0.1:11434/v1/`、
 
 ## 在 Mac 上跑 Llama：选型、内存与速度
 
-Ollama 模型库里的 Llama 都是 Meta 官方模型，下面的 tag 都能直接 `ollama pull`。体积是 Ollama 默认 4-bit 量化（q4_K_M 级别）的下载大小；KV 列是 `num_ctx=128K` 时 fp16 KV cache 的**估算**（公式见下一节），不是模型权重。
+Ollama LLM 库里的 Llama 都是 Meta 官方 LLM，下面的 tag 都能直接 `ollama pull`。体积是 Ollama 默认 4-bit 量化（q4_K_M 级别）的下载大小；KV 列是 `num_ctx=128K` 时 fp16 KV cache 的**估算**（公式见下一节），不是 LLM 权重。
 
-| 模型 | tag 示例 | 下载体积 | 上下文 | 128K 上下文的 KV（fp16，估算） | 建议统一内存 |
+| LLM | tag 示例 | 下载体积 | 上下文 | 128K 上下文的 KV（fp16，估算） | 建议统一内存 |
 | --- | --- | --- | --- | --- | --- |
 | Llama 3.2 1B | `llama3.2:1b` | 1.3 GB | 128K | ~4 GiB | 8 GB 起 |
 | Llama 3.2 3B | `llama3.2:3b`（默认） | 2.0 GB | 128K | ~14 GiB | 8–16 GB |
@@ -318,7 +318,7 @@ Ollama 模型库里的 Llama 都是 Meta 官方模型，下面的 tag 都能直�
 >
 > Llama 3.x 的官方支持语言里**没有中文**；中文任务可以换仓库 Docker 文档里提到的 `qwen2.5:3b` / `qwen2.5:7b`。
 
-### 按内存挑模型
+### 按内存挑 LLM
 
 ```bash
 # 8 GB：先跑 3B，验证链路
@@ -327,14 +327,14 @@ ollama run llama3.2:3b
 # 16 GB：3B 日常够用，8B 也能跑（上下文别开太大）
 ollama run llama3.1:8b
 
-# 24–64 GB：8B + 更大上下文，或 11B 视觉模型（提示词里带图片路径）
+# 24–64 GB：8B + 更大上下文，或 11B 视觉 LLM（提示词里带图片路径）
 ollama run llama3.2-vision:11b "这张图里有什么？/Users/you/Pictures/demo.png"
 
 # 64 GB+：70B 的 4-bit 量化版本
 ollama run llama3.3:70b
 ```
 
-用本目录脚本跑同样的模型（会自动拉模型、调一次 API、打印占用）：
+用本目录脚本跑同样的 LLM（会自动拉 LLM、调一次 API、打印占用）：
 
 ```bash
 bash macos/ollama/run.sh --model llama3.2:3b
@@ -343,7 +343,7 @@ bash macos/ollama/run.sh --model llama3.1:8b --ctx 8192
 
 ### 量化怎么选
 
-同一模型在模型库里通常有多个量化 tag，例如 8B 的 `llama3.1:8b-instruct-q4_K_M`、`llama3.1:8b-instruct-q8_0`、`llama3.1:8b-instruct-fp16`：
+同一 LLM 在 LLM 库里通常有多个量化 tag，例如 8B 的 `llama3.1:8b-instruct-q4_K_M`、`llama3.1:8b-instruct-q8_0`、`llama3.1:8b-instruct-fp16`：
 
 | 量化 | 大致体积（8B） | 说明 |
 | --- | --- | --- |
@@ -352,25 +352,25 @@ bash macos/ollama/run.sh --model llama3.1:8b --ctx 8192
 | fp16 | ~16 GB | 只在验证精度时用 |
 | q2/q3 系列 | 更小 | 质量损失明显，内存极紧时才考虑 |
 
-各模型有哪些 tag，看模型库的 Tags 页（如 <https://ollama.com/library/llama3.1/tags>），或直接 `ollama pull llama3.1:8b-instruct-q8_0` 试。
+各 LLM 有哪些 tag，看 LLM 库的 Tags 页（如 <https://ollama.com/library/llama3.1/tags>），或直接 `ollama pull llama3.1:8b-instruct-q8_0` 试。
 
 ### 速度由什么决定
 
-- **decode（逐 token 生成）大多卡在内存带宽**：同一模型，M 系列里 Pro/Max/Ultra 的内存带宽更高，tokens/s 也更高；GPU 核数更多主要改善 prefill（首 token）和长上下文。
-- 确认没掉到 CPU：`ollama ps` 的 `PROCESSOR` 应为 `100% GPU`；出现 `xx%/yy% CPU/GPU` 说明模型/上下文装不下、部分层被 offload 到 CPU，速度会明显下降。
+- **decode（逐 token 生成）大多卡在内存带宽**：同一 LLM，M 系列里 Pro/Max/Ultra 的内存带宽更高，tokens/s 也更高；GPU 核数更多主要改善 prefill（首 token）和长上下文。
+- 确认没掉到 CPU：`ollama ps` 的 `PROCESSOR` 应为 `100% GPU`；出现 `xx%/yy% CPU/GPU` 说明 LLM/上下文装不下、部分层被 offload 到 CPU，速度会明显下降。
 - 上下文越大 KV 越大，内存压力越大；`ollama ps` 的 `CONTEXT` 列可以确认实际分配的长度。
-- 首次加载要读权重、编译 Metal shader，第一句会慢几秒到几十秒；模型空闲 5 分钟会被卸载（`OLLAMA_KEEP_ALIVE`），反复用同一个模型时保持默认即可。
+- 首次加载要读权重、编译 Metal shader，第一句会慢几秒到几十秒；LLM 空闲 5 分钟会被卸载（`OLLAMA_KEEP_ALIVE`），反复用同一个 LLM 时保持默认即可。
 - prompt 很长（贴代码/文档）时主要吃 prefill，首 token 延迟比短 prompt 明显。
 
 ### 和 llama.cpp / MLX 的关系
 
-- Ollama 在 Apple Silicon 上同时带 Metal（llama.cpp 系）和 MLX 两个后端，模型格式是 GGUF，具体走哪条由 Ollama 自己选，日常不用关心。
+- Ollama 在 Apple Silicon 上同时带 Metal（llama.cpp 系）和 MLX 两个后端，LLM 格式是 GGUF，具体走哪条由 Ollama 自己选，日常不用关心。
 - 想手动调 offload 层数、上下文长度、KV 量化等底层参数，可以改用 llama.cpp：安装与用法见 [`../llama-cpp/README.md`](../llama-cpp/README.md)。
 - 想试 Apple 的 MLX 框架，用 `mlx-lm` 加载 Hugging Face 格式的权重；它和 Ollama 的 GGUF 不通用。
 
 ## Qwen3-Coder-30B：复杂代码开发的显存要求
 
-前面按体积挑模型；这一节换成一个具体场景：**用 Qwen3-Coder-30B-A3B（Ollama tag `qwen3-coder:30b`）做仓库级 / Agent 式代码开发，显存要多少**，以及 10K token 的 prompt 在 prefill、decode 两个阶段分别吃多少内存。Mac 的统一内存和独显用同一本账。
+前面按体积挑 LLM；这一节换成一个具体场景：**用 Qwen3-Coder-30B-A3B（Ollama tag `qwen3-coder:30b`）做仓库级 / Agent 式代码开发，显存要多少**，以及 10K token 的 prompt 在 prefill、decode 两个阶段分别吃多少内存。Mac 的统一内存和独显用同一本账。
 
 ### 结论：24 GB 独显起，统一内存按约 2/3 折算
 
@@ -386,7 +386,7 @@ bash macos/ollama/run.sh --model llama3.1:8b --ctx 8192
 显存 ≈ 权重 + T × 每 token KV + 1–2 GiB（运行时 / 激活）
 ```
 
-24 GB 独显上：17.3 GiB 权重 + 3 GiB（32K fp16 KV）+ 1–2 GiB ≈ 21–22 GiB，**能跑但只剩 2–3 GiB**。Mac 16 GB 连权重都放不下（macOS 给 Metal 的预算约 10.7 GiB，见「常见问题」里的 `vram-based default context` 日志），24 GB 内存的 Mac 同样放不下，别硬试 30B 级模型。
+24 GB 独显上：17.3 GiB 权重 + 3 GiB（32K fp16 KV）+ 1–2 GiB ≈ 21–22 GiB，**能跑但只剩 2–3 GiB**。Mac 16 GB 连权重都放不下（macOS 给 Metal 的预算约 10.7 GiB，见「常见问题」里的 `vram-based default context` 日志），24 GB 内存的 Mac 同样放不下，别硬试 30B 级 LLM。
 
 ### 权重与 KV：每 token 96 KiB
 
@@ -448,16 +448,16 @@ OLLAMA_FLASH_ATTENTION=1 OLLAMA_CONTEXT_LENGTH=65536 ollama serve
 
 ## 对接 OpenCode（编程 Agent）
 
-[OpenCode](https://opencode.ai) 是终端里的开源编程 Agent。它对 Ollama 有**内置 provider**：服务在 `http://127.0.0.1:11434` 时，OpenCode 会自动探测 `/api/tags`、`/api/show`，把可用的对话模型加进 `/models`，不需要账号，也不需要写配置。
+[OpenCode](https://opencode.ai) 是终端里的开源编程 Agent。它对 Ollama 有**内置 provider**：服务在 `http://127.0.0.1:11434` 时，OpenCode 会自动探测 `/api/tags`、`/api/show`，把可用的对话 LLM 加进 `/models`，不需要账号，也不需要写配置。
 
 ```bash
-# 1) 启动 Ollama 并拉一个模型（工具调用/上下文尽量好一点的）
+# 1) 启动 Ollama 并拉一个 LLM（工具调用/上下文尽量好一点的）
 ollama pull qwen2.5-coder:7b
 
 # 2) 安装 OpenCode
 curl -fsSL https://opencode.ai/install | bash
 
-# 3) 在项目里打开，/models 选 Ollama 的模型
+# 3) 在项目里打开，/models 选 Ollama 的 LLM
 cd ~/code/your-project
 opencode
 ```
@@ -466,7 +466,7 @@ opencode
 
 ```bash
 ollama launch opencode
-# 指定模型
+# 指定 LLM
 ollama launch opencode --model qwen2.5-coder:7b
 ```
 
@@ -487,15 +487,15 @@ ollama launch opencode --model qwen2.5-coder:7b
 
 - `baseURL` 要带 `/v1`；OpenCode 会从它推导原生 `/api/tags`、`/api/show` 的发现地址。
 - 远程服务开了认证时，在 `settings.apiKey` 里给 token。
-- Ollama 的 OpenCode 接入文档建议模型上下文 **64K 以上**；但 Ollama 会把 `num_ctx` 限制在模型训练长度内（超过时日志会警告 `requested context size too large for model` 并压回）。`qwen2.5-coder:7b` 是 32K，所以设 `OLLAMA_CONTEXT_LENGTH=65536` 实际仍是 32K。
-- 16 GB 上想用 Ollama 跑 64K，得换原生 64K+ 的模型（如 `llama3.1:8b` 的 128K，配合 `OLLAMA_KV_CACHE_TYPE=q8_0`），但代码能力不如 Qwen Coder；想 64K + Qwen Coder 只能用 llama.cpp 的 YaRN 外推，见 [`../llama-cpp/README.md`](../llama-cpp/README.md#64k-上下文)。现实一点的组合仍是本地 32K + OpenCode 自动压缩，长任务用云端模型。
-- 本地模型写代码的选型和 OpenCode 的详细配置见 [`../llama-cpp/README.md`](../llama-cpp/README.md#对接-opencode本地代码-agent)。
+- Ollama 的 OpenCode 接入文档建议 LLM 上下文 **64K 以上**；但 Ollama 会把 `num_ctx` 限制在 LLM 训练长度内（超过时日志会警告 `requested context size too large for model` 并压回）。`qwen2.5-coder:7b` 是 32K，所以设 `OLLAMA_CONTEXT_LENGTH=65536` 实际仍是 32K。
+- 16 GB 上想用 Ollama 跑 64K，得换原生 64K+ 的 LLM（如 `llama3.1:8b` 的 128K，配合 `OLLAMA_KV_CACHE_TYPE=q8_0`），但代码能力不如 Qwen Coder；想 64K + Qwen Coder 只能用 llama.cpp 的 YaRN 外推，见 [`../llama-cpp/README.md`](../llama-cpp/README.md#64k-上下文)。现实一点的组合仍是本地 32K + OpenCode 自动压缩，长任务用云端 LLM。
+- 本地 LLM 写代码的选型和 OpenCode 的详细配置见 [`../llama-cpp/README.md`](../llama-cpp/README.md#对接-opencode本地代码-agent)。
 
 ## 对接 Cline（VS Code 编程 Agent）
 
 [Cline](https://docs.cline.bot) 内置 Ollama 提供方，是本地代码 Agent 里配置成本最低的选项之一。
 
-### 1. 启动 Ollama 并准备模型
+### 1. 启动 Ollama 并准备 LLM
 
 ```bash
 ollama pull qwen2.5-coder:7b
@@ -506,7 +506,7 @@ OLLAMA_CONTEXT_LENGTH=32768 ollama serve
 
 如果用的是菜单栏 App，在 App 的 Settings 里把 context length 调到 `32768`，然后重启 App。
 
-模型选择（16 GB / 10.7 GiB Metal 预算）：
+LLM 选择（16 GB / 10.7 GiB Metal 预算）：
 
 - `qwen3.5:4b`（4.0 GB）：快，32K/64K 都放得下，适合日常 Agent。
 - `qwen3.5:9b`（6.6–7.6 GB，同家族 tools/thinking/256K）：质量更好，32K 仍能 100% GPU（权重 + 32K KV 约 1 GiB + 开销），64K 接近上限、需实测。
@@ -529,14 +529,14 @@ VS Code 安装 Cline 后，打开 Cline 设置 → **API Configuration**：
 ### 3. 几个容易踩的坑
 
 - **上下文两边都要设**：Ollama 侧 `OLLAMA_CONTEXT_LENGTH`（或 App 滑块）和 Cline 的 `Context Window` 都设 32768。只设 Cline 的话，Ollama 实际仍按 4K 截断，表现为「Cline 突然忘事/输出被截断」。
-- **Qwen2.5-Coder 原生就是 32K**：在这条 Ollama 路线上不要写 64K，Ollama 会把 `num_ctx` 压回 32K（日志警告 `requested context size too large for model`）。要 64K 得换原生 64K+ 模型（如 `llama3.1:8b`）或改用 llama.cpp 的 YaRN。
-- **工具调用**：Cline 的改文件/执行命令依赖 tool calling。`qwen2.5-coder:7b` 以代码见长；如果出现「只聊天不改文件 / 不调用工具」，换 `qwen3:8b`（Ollama Cline 文档的示例模型）或云端模型，也可以试下面的 OpenAI Compatible 入口。
-- **内存**：16 GB 上 7B Q4 + 32K 上下文约 6–8 GB，再开浏览器/IDE 会紧；不要同时再跑一个 Ollama 模型。
+- **Qwen2.5-Coder 原生就是 32K**：在这条 Ollama 路线上不要写 64K，Ollama 会把 `num_ctx` 压回 32K（日志警告 `requested context size too large for model`）。要 64K 得换原生 64K+ LLM（如 `llama3.1:8b`）或改用 llama.cpp 的 YaRN。
+- **工具调用**：Cline 的改文件/执行命令依赖 tool calling。`qwen2.5-coder:7b` 以代码见长；如果出现「只聊天不改文件 / 不调用工具」，换 `qwen3:8b`（Ollama Cline 文档的示例 LLM）或云端 LLM，也可以试下面的 OpenAI Compatible 入口。
+- **内存**：16 GB 上 7B Q4 + 32K 上下文约 6–8 GB，再开浏览器/IDE 会紧；不要同时再跑一个 Ollama LLM。
 - **远程 Ollama**：Base URL 换成 `http://<Mac-IP>:11434`，服务端用 `OLLAMA_HOST=0.0.0.0:11434` 启动；只在内网用，别暴露公网。
 
 ### 4. OpenAI Compatible 兜底
 
-如果 Cline 的 Ollama provider 连不上或模型列表为空，可以走 OpenAI 兼容入口：
+如果 Cline 的 Ollama provider 连不上或 LLM 列表为空，可以走 OpenAI 兼容入口：
 
 | 设置项 | 值 |
 | --- | --- |
@@ -548,7 +548,7 @@ VS Code 安装 Cline 后，打开 Cline 设置 → **API Configuration**：
 
 ### 5. Cline Desktop
 
-如果用的是 Cline Desktop，它的 **Local Models** 页面可以直接发现 Ollama、下载模型并自动填好上面的配置，比手动填更省事。
+如果用的是 Cline Desktop，它的 **Local Models** 页面可以直接发现 Ollama、下载 LLM 并自动填好上面的配置，比手动填更省事。
 
 ### 常见问题：OpenCode Desktop 2.x 与 CLI 1.x 共库冲突
 
@@ -602,7 +602,7 @@ macOS 原生版和 Docker 版用的是同一套 Ollama，参数含义完全相�
   2（K 和 V）× n_layers × n_kv_heads × head_dim × 每个元素字节数
   ```
 
-  Llama 3 8B（32 层、8 个 KV 头、head_dim=128、fp16）大约是 **128 KiB / token**，8192 token ≈ 1 GiB。上下文翻倍，KV 就翻倍；在 Mac 上这部分和模型权重一起占统一内存。
+  Llama 3 8B（32 层、8 个 KV 头、head_dim=128、fp16）大约是 **128 KiB / token**，8192 token ≈ 1 GiB。上下文翻倍，KV 就翻倍；在 Mac 上这部分和 LLM 权重一起占统一内存。
 
 - `OLLAMA_NUM_PARALLEL=2` 会同时保留两份上下文，KV 占用翻倍；`OLLAMA_KV_CACHE_TYPE=q8_0` 把 KV 减半，`q4_0` 减到约四分之一（质量损失随 GQA 强度变化）。
 - 用 API 显式设置上下文长度：
@@ -617,7 +617,7 @@ macOS 原生版和 Docker 版用的是同一套 Ollama，参数含义完全相�
          \"options\":{\"num_ctx\":8192,\"num_predict\":256}}"
   ```
 
-- `ollama ps` 的列含义：`SIZE` 是加载后的总占用（权重 + 上下文 + 运行时开销）；`PROCESSOR` 显示 `100% GPU` / `100% CPU` / `xx%/yy% CPU/GPU`；`CONTEXT` 是实际分配的上下文长度；`RUNNER` 是实际用的推理后端（Apple Silicon 上可能是 `mlx` 或 `llamacpp`，两者都走 Apple GPU，具体由 Ollama 按模型选择）。这是确认 Metal 有没有生效、默认档位是否如预期、以及 `num_ctx` 调大后内存涨了多少的最直接方式。
+- `ollama ps` 的列含义：`SIZE` 是加载后的总占用（权重 + 上下文 + 运行时开销）；`PROCESSOR` 显示 `100% GPU` / `100% CPU` / `xx%/yy% CPU/GPU`；`CONTEXT` 是实际分配的上下文长度；`RUNNER` 是实际用的推理后端（Apple Silicon 上可能是 `mlx` 或 `llamacpp`，两者都走 Apple GPU，具体由 Ollama 按 LLM 选择）。这是确认 Metal 有没有生效、默认档位是否如预期、以及 `num_ctx` 调大后内存涨了多少的最直接方式。
 
 对比 [`../../example/kv_cache.py`](../../example/kv_cache.py)：那边是单请求的 K/V 追加与复用；Ollama 把同样的 K/V 放在 Metal GPU 的统一内存里，并处理多请求、采样和上下文管理。跨请求的前缀共享见 [`../../example/prefix_cache_demo.py`](../../example/prefix_cache_demo.py)。
 
@@ -627,24 +627,24 @@ macOS 原生版和 Docker 版用的是同一套 Ollama，参数含义完全相�
 | --- | --- | --- |
 | GPU | Apple Silicon 可用 Metal GPU | 用不到 Apple GPU，只能 CPU |
 | 内存 | 统一内存，权重 + KV 一起占内存 | Docker Desktop 虚拟机的内存，同样只能 CPU |
-| 模型位置 | `~/.ollama/models` | volume `ollama`（Docker Desktop 虚拟机内），删容器不丢模型 |
+| LLM 位置 | `~/.ollama/models` | volume `ollama`（Docker Desktop 虚拟机内），删容器不丢 LLM |
 | 启动方式 | 菜单栏 App / `ollama serve` / `brew services` | `docker run` / 本仓库 `run.sh` |
 | 日志 | `~/.ollama/logs/*.log` | `docker logs ollama` |
 | 升级 | App 自动更新，或 `brew upgrade ollama` | `docker pull ollama/ollama` |
 | 适合场景 | 日常在 Mac 上跑、想用 GPU | 练 Docker、复现 Linux 服务器环境 |
 
-> 两种方式**不要同时跑**：都监听 `11434`，而且 Docker 版会把模型再下载一份进 volume，白占磁盘。想切换时先把一边停掉。
+> 两种方式**不要同时跑**：都监听 `11434`，而且 Docker 版会把 LLM 再下载一份进 volume，白占磁盘。想切换时先把一边停掉。
 
-## 怎么自己测模型
+## 怎么自己测 LLM
 
 不要只看榜单，用你自己机器 + 自己任务测。仓库里附了一个小脚本 [`eval_models.py`](eval_models.py)，做三件事：
 
-1. 6 道带隐藏断言的 Python 题，模型只看到题目，生成代码后在子进程里跑断言；
+1. 6 道带隐藏断言的 Python 题，LLM 只看到题目，生成代码后在子进程里跑断言；
 2. 检查 `write_file` 工具调用是否返回 `tool_calls`；
 3. 记录每题耗时。
 
 ```bash
-# 一次测一个模型（避免模型切换/卸载的额外等待）
+# 一次测一个 LLM（避免 LLM 切换/卸载的额外等待）
 python3 macos/ollama/eval_models.py --models qwen3.5:4b --ctx 32768
 python3 macos/ollama/eval_models.py --models qwen3.5:9b --ctx 32768
 
@@ -669,7 +669,7 @@ python3 macos/ollama/eval_models.py --models qwen3.5:4b-q8_0 --tasks 3
 - 固定条件：同一 `num_ctx`、`temperature=0`、关闭 thinking、同一 prompt；
 - 记录 **pass@1、平均耗时、工具调用成功率、峰值内存/是否 swap**；
 - Agent 场景再加 5–10 个端到端任务：在临时 git 仓库里放一个失败测试，让 Cline/OpenCode 修，跑测试并统计“一次通过 / 需要人工改几次”；
-- 一次只加载一个模型；如果 Ollama 中途重启或 `ollama ps` 卡在 `Stopping...`，先清内存/重启 App 再测。
+- 一次只加载一个 LLM；如果 Ollama 中途重启或 `ollama ps` 卡在 `Stopping...`，先清内存/重启 App 再测。
 
 ## token 输出慢怎么定位
 
@@ -695,9 +695,9 @@ print("decode =%.1f tok/s (%s tok)" % (rate(d.get("eval_duration",0), d.get("eva
 
 读法：
 
-- `load` 很大（几十秒到几分钟）→ 不是生成慢，是**模型加载/切换/卸载在等**；先看 `ollama ps` 里有没有模型卡在 `Stopping...`。
+- `load` 很大（几十秒到几分钟）→ 不是生成慢，是**LLM 加载/切换/卸载在等**；先看 `ollama ps` 里有没有 LLM 卡在 `Stopping...`。
 - `prefill` 慢 → 提示词/上下文太长，或 `num_ctx` 太大；Agent 每轮都会重发很长的 system prompt + 文件内容。
-- `decode` 慢 → 先看 `ollama ps` 的 `PROCESSOR`：不是 `100% GPU` 就是被 offload 了（内存不够 / 上下文太大 / 模型太大）。
+- `decode` 慢 → 先看 `ollama ps` 的 `PROCESSOR`：不是 `100% GPU` 就是被 offload 了（内存不够 / 上下文太大 / LLM 太大）。
 
 然后按顺序查：
 
@@ -709,8 +709,8 @@ print("decode =%.1f tok/s (%s tok)" % (rate(d.get("eval_duration",0), d.get("eva
    memory_pressure -Q | tail -2
    ```
 
-   16 GB 的 Mac 上，如果 swap 已用好几 GB、空闲内存很低，模型切换/加载会非常慢，decode 也会被拖累。关掉不用的 Electron 应用、浏览器标签、其他 LLM 服务，只保留一个模型。
-3. **模型切换**：`OLLAMA_MAX_LOADED_MODELS=1` 时切模型要先卸载旧的；MLX runner 偶发卡在 `Stopping...`（`ollama stop` 后 `ollama ps` 一直显示 Stopping…）。这时重启 Ollama App 清状态，并在一次 Agent 会话里只用一个模型。
+   16 GB 的 Mac 上，如果 swap 已用好几 GB、空闲内存很低，LLM 切换/加载会非常慢，decode 也会被拖累。关掉不用的 Electron 应用、浏览器标签、其他 LLM 服务，只保留一个 LLM。
+3. **LLM 切换**：`OLLAMA_MAX_LOADED_MODELS=1` 时切 LLM 要先卸载旧的；MLX runner 偶发卡在 `Stopping...`（`ollama stop` 后 `ollama ps` 一直显示 Stopping…）。这时重启 Ollama App 清状态，并在一次 Agent 会话里只用一个 LLM。
 4. **日志**：
 
    ```bash
@@ -734,7 +734,7 @@ qwen3.5:4b：prefill ≈ 252 tok/s，decode ≈ 21 tok/s（100% GPU，mlx）
 qwen2.5-coder:7b 在 9b 仍驻留时切换过去：load ≈ 141s，prefill ≈ 110 tok/s，decode ≈ 12 tok/s
 ```
 
-第二行说明“慢”很多时候是**模型切换 / 内存压力**，不是模型本身生成慢。
+第二行说明“慢”很多时候是**LLM 切换 / 内存压力**，不是 LLM 本身生成慢。
 
 ### 看懂 MLX runner 的日志
 
@@ -753,12 +753,12 @@ pipeline: memory peak="9.35 GiB" held="7.62 GiB"
 | `Prompt processing progress processed/total` | 正在 prefill（读 prompt） | 10.5K token 的 prompt 在 M2 上要几十秒到一两分钟，是首轮慢的主因 |
 | 请求 `took=1m40s` | 整个请求耗时 | 要减去 prefill 才能得到 decode 时间 |
 | `prefix_cache "cache hit" matched=10630/11012` | 前缀缓存命中 | 只重算 `left=382` 个 token，所以第二个请求从 1m40s 降到几秒；前缀（system prompt + tools）越稳定命中越高 |
-| `speculative decode stats acceptance=0.68 avg_accepted=0.24` | 投机解码接受率 | 接受率低时收益有限；由模型自带的 draft/MTP 决定，普通请求无法用环境变量关掉 |
+| `speculative decode stats acceptance=0.68 avg_accepted=0.24` | 投机解码接受率 | 接受率低时收益有限；由 LLM 自带的 draft/MTP 决定，普通请求无法用环境变量关掉 |
 | `memory peak="9.35 GiB"` | 峰值内存 | 16 GB 机器的 Metal 预算约 10.7 GiB；9b 在 32K 已经接近上限，再涨上下文就会 swap/offload |
 
 对应到你的日志：第一次 1m40s 主要是 **10562 token 的 prefill**；第二次因为 prefix cache 命中 10630 token，只处理 382 token，所以只要 5.9s。这不是“时快时慢”，而是 **prefix cache 生效与否**。
 
-降低 prefill 成本的办法：用更小的模型（`qwen3.5:4b`）、压缩 system prompt/工具定义、少塞文件、保持前缀稳定让 cache 命中；如果 Agent 每轮都改前缀，cache 就失效，每轮都要重算 1 万 token。
+降低 prefill 成本的办法：用更小的 LLM（`qwen3.5:4b`）、压缩 system prompt/工具定义、少塞文件、保持前缀稳定让 cache 命中；如果 Agent 每轮都改前缀，cache 就失效，每轮都要重算 1 万 token。
 
 ### 一组 API 数字怎么算
 
@@ -772,8 +772,8 @@ eval_duration        = 8,815,842,875 ns  ≈ 8.82 s  → decode  ≈ 14.1 tok/s
 
 - 总耗时 ≈ `load + prompt_eval + eval`，这组大约是 **15 秒**。
 - prompt 只有 11 token，所以 prefill 可以忽略；慢在 **eval（生成 124 token）**。
-- `load 5.6s` 是冷加载；如果每次请求都重新加载，会额外多 5 秒，记得让模型保持加载（`OLLAMA_KEEP_ALIVE`）。
-- 9B 模型在 M2 上 decode 14 tok/s 属于正常范围（4B 约 21 tok/s）；如果 124 token 里有大量**思考 token**，体感会更慢。
+- `load 5.6s` 是冷加载；如果每次请求都重新加载，会额外多 5 秒，记得让 LLM 保持加载（`OLLAMA_KEEP_ALIVE`）。
+- 9B LLM 在 M2 上 decode 14 tok/s 属于正常范围（4B 约 21 tok/s）；如果 124 token 里有大量**思考 token**，体感会更慢。
 
 ### 先关掉 thinking 再比速度
 
@@ -788,14 +788,14 @@ think=false：eval_count=37，2.80s，直接给出完整答案
 
 - Ollama 原生 API：`"think": false`
 - OpenAI 兼容接口：`"reasoning_effort": "none"`（实测能关掉 qwen3.5 的思考）
-- OpenCode：在模型的 `settings.reasoningEffort` 或 reasoning variant 里关掉
+- OpenCode：在 LLM 的 `settings.reasoningEffort` 或 reasoning variant 里关掉
 - Cline：如果 UI 没有 thinking 开关，就只能换 `qwen3.5:4b` 或接受思考开销
 
-### 让模型常驻（避免每次请求都等加载）
+### 让 LLM 常驻（避免每次请求都等加载）
 
-Ollama 默认空闲 **5 分钟**就卸载模型。常驻有三种设置方式，优先级：请求 `keep_alive` > 服务级 `OLLAMA_KEEP_ALIVE` > 默认 5m。
+Ollama 默认空闲 **5 分钟**就卸载 LLM。常驻有三种设置方式，优先级：请求 `keep_alive` > 服务级 `OLLAMA_KEEP_ALIVE` > 默认 5m。
 
-1. **服务级（影响所有模型，推荐给 Cline/OpenCode）**
+1. **服务级（影响所有 LLM，推荐给 Cline/OpenCode）**
 
    ```bash
    # CLI 前台启动
@@ -820,7 +820,7 @@ Ollama 默认空闲 **5 分钟**就卸载模型。常驻有三种设置方式，
 
 2. **单次请求 `keep_alive`（覆盖服务级，适合 App 用户）**
 
-   不需要改环境变量，直接给已加载的模型续期：
+   不需要改环境变量，直接给已加载的 LLM 续期：
 
    ```bash
    curl -s http://127.0.0.1:11434/api/generate      -d '{"model":"qwen3.5:9b","keep_alive":-1}'
@@ -832,7 +832,7 @@ Ollama 默认空闲 **5 分钟**就卸载模型。常驻有三种设置方式，
    - `0`：请求结束后立刻卸载
    - 也可以直接预热：`ollama run qwen3.5:9b ""`（配合 `--keepalive 30m`）
 
-3. **不要频繁切模型**：`OLLAMA_MAX_LOADED_MODELS=1` 时切模型会先卸载旧的，又回到 load 等待。一次 Agent 会话只用一个模型。
+3. **不要频繁切 LLM**：`OLLAMA_MAX_LOADED_MODELS=1` 时切 LLM 会先卸载旧的，又回到 load 等待。一次 Agent 会话只用一个 LLM。
 
 验证：
 
@@ -850,7 +850,7 @@ ollama ps
 ### 怎么判断有没有触发 offload
 
 - **llama.cpp runner**（`RUNNER=llamacpp`）：日志里 `load_tensors: offloaded 29/29 layers to GPU` 表示**全部层都在 GPU**，不是 CPU offload；只有 `ollama ps` 的 `PROCESSOR` 出现 `xx%/yy% CPU/GPU`，或日志里 GPU 层数小于总层数，才是真的把层放到了 CPU。
-- **MLX runner**（`RUNNER=mlx`）：没有“按层 offload”这个概念，模型整体在统一内存里跑；`PROCESSOR` 通常一直显示 `100% GPU`，不能只看这一列判断是否吃紧。要看 `pipeline: memory peak/held` 和系统内存：
+- **MLX runner**（`RUNNER=mlx`）：没有“按层 offload”这个概念，LLM 整体在统一内存里跑；`PROCESSOR` 通常一直显示 `100% GPU`，不能只看这一列判断是否吃紧。要看 `pipeline: memory peak/held` 和系统内存：
 
   ```bash
   ollama ps                 # SIZE / PROCESSOR / CONTEXT
@@ -872,9 +872,9 @@ ollama ps
 - prefill 的临时激活按 chunk 算（MLX runner 的 chunk 是 2048 token），峰值大约 **1–1.5 GiB**（包含计算缓冲/前缀缓存快照）。
 - 所以日志里 `memory peak 9.85 GiB` ≈ 权重 7.6 GiB + KV 1 GiB + prefill 临时缓冲 1 GiB 左右；`ollama ps SIZE 8.9 GB` 是常驻占用，不含瞬时峰值。
 
-不同模型的 KV 估算：
+不同 LLM 的 KV 估算：
 
-| 模型 | KV/token | 32K 上下文 KV | 10.8K prompt 实际占用 |
+| LLM | KV/token | 32K 上下文 KV | 10.8K prompt 实际占用 |
 | --- | --- | --- | --- |
 | `qwen3.5:4b / 9b` | ~32 KiB | ~1 GiB | ~337 MiB |
 | `qwen2.5-coder:7b` | 56 KiB | ~1.75 GiB | ~590 MiB |
@@ -894,11 +894,11 @@ M2 的 GPU 算力大约只有数据中心卡的几十分之一：194 TFLOPs / 10
 - 9.85 GiB 峰值贴近 10.7 GiB 预算，swap 已用 9 GB，系统换页进一步拖慢；
 - speculative decode 只影响生成阶段，救不了 prefill。
 
-所以优化 prefill 的方向只有：**换小模型（4b）、缩短 prompt、保持前缀稳定让 prefix cache 命中、别开 64K**。
+所以优化 prefill 的方向只有：**换小 LLM（4b）、缩短 prompt、保持前缀稳定让 prefix cache 命中、别开 64K**。
 
 ### 每层在做什么：一层的数据流
 
-前面把 prefill 的 FLOPs 拆成「GEMM + 8 层 full attention」两条腿。这一节把 `qwen3.5:9b` 的一层打开，看这两条腿分别落在哪。参数取自模型自身的元数据（`ollama show` 和 GGUF 头）：32 层、hidden 4096、FFN 12288、16 个 Q 头 / 4 个 KV 头、head_dim 256；每 4 层插 1 层 full attention（第 4、8、…、32 层，共 8 层），其余 24 层是线性注意力（Gated DeltaNet 一类的递推结构）。
+前面把 prefill 的 FLOPs 拆成「GEMM + 8 层 full attention」两条腿。这一节把 `qwen3.5:9b` 的一层打开，看这两条腿分别落在哪。参数取自 LLM 自身的元数据（`ollama show` 和 GGUF 头）：32 层、hidden 4096、FFN 12288、16 个 Q 头 / 4 个 KV 头、head_dim 256；每 4 层插 1 层 full attention（第 4、8、…、32 层，共 8 层），其余 24 层是线性注意力（Gated DeltaNet 一类的递推结构）。
 
 一层就是两个残差子层，prefill 和 decode 跑的是同一张图，只是张量形状不同：
 
@@ -914,13 +914,13 @@ x ──► RMSNorm ──► attention 子层 ──► (+x) ──► RMSNorm 
 
 几个能直接对上前面数字的结论：
 
-- **KV 只来自 8 层 full attention。** 每 token 每层 `2 × 4 × 256 × 2 B = 4 KiB`，8 层正好 **32 KiB/token**，就是前面表格里的数；24 层线性注意力不占 KV cache（只维护固定大小的递推状态），所以 9B 的 KV 只有「32 层全是 full attention」同类模型的 1/4。`qwen3.5:4b` 只是宽度小（hidden 2560 / FFN 9216），层数和注意力配比相同，KV 同为 32 KiB/token。
+- **KV 只来自 8 层 full attention。** 每 token 每层 `2 × 4 × 256 × 2 B = 4 KiB`，8 层正好 **32 KiB/token**，就是前面表格里的数；24 层线性注意力不占 KV cache（只维护固定大小的递推状态），所以 9B 的 KV 只有「32 层全是 full attention」同类 LLM 的 1/4。`qwen3.5:4b` 只是宽度小（hidden 2560 / FFN 9216），层数和注意力配比相同，KV 同为 32 KiB/token。
 - **prefill 的算力主要花在 MLP 和投影上。** MLP 一层每 token 约 0.30 GFLOPs，32 层 × 10.8K token ≈ **105 TFLOPs**，是那 194 TFLOPs 里最大的一块；attention 投影加上 8 层 full attention 的 15 TFLOPs 填掉剩下的部分。这就是「慢在 GEMM 把算力打满」的实际来源。
-- **decode 走的是另一条路。** 每步输入 `[1, 4096]`，GEMM 退化成 GEMV，算力不再是瓶颈；瓶颈变成每步要读的权重和 KV（上下文 × 32 KiB）。所以 prefill 的优化方向是算力（换小模型、缩 prompt），decode 是带宽（KV 量化、减上下文）。
+- **decode 走的是另一条路。** 每步输入 `[1, 4096]`，GEMM 退化成 GEMV，算力不再是瓶颈；瓶颈变成每步要读的权重和 KV（上下文 × 32 KiB）。所以 prefill 的优化方向是算力（换小 LLM、缩 prompt），decode 是带宽（KV 量化、减上下文）。
 
-日志里 `speculative decode stats` 那行是投机解码的统计（草案 token 让主模型一次验证多个），只影响 decode，救不了 prefill。
+日志里 `speculative decode stats` 那行是投机解码的统计（草案 token 让主 LLM 一次验证多个），只影响 decode，救不了 prefill。
 
-换成 [Qwen3-Coder-30B](#qwen3-coder-30b复杂代码开发的显存要求) 是另一种组合：48 层**全部**是 full attention（4 个 KV 头、head_dim 128 → 96 KiB/token），MLP 位置换成 MoE——每层一个 router 在 128 个专家里选 8 个。decode 每步只读激活的 3.3B 参数，所以快；prefill 时 10.8K 个 token 会摊到大部分专家，GEMM 仍按 30.5B 总参算，所以贵。同样叫「一层」，稠密模型和 MoE 的账不一样。
+换成 [Qwen3-Coder-30B](#qwen3-coder-30b复杂代码开发的显存要求) 是另一种组合：48 层**全部**是 full attention（4 个 KV 头、head_dim 128 → 96 KiB/token），MLP 位置换成 MoE——每层一个 router 在 128 个专家里选 8 个。decode 每步只读激活的 3.3B 参数，所以快；prefill 时 10.8K 个 token 会摊到大部分专家，GEMM 仍按 30.5B 总参算，所以贵。同样叫「一层」，稠密 LLM 和 MoE 的账不一样。
 
 ## 日常开发要多大上下文
 
@@ -942,7 +942,7 @@ x ──► RMSNorm ──► attention 子层 ──► (+x) ──► RMSNorm 
 
 不同 `num_ctx` 的 KV 内存（只算 KV，不含权重）：
 
-| 模型 | KV/token | 8K | 16K | 32K | 64K |
+| LLM | KV/token | 8K | 16K | 32K | 64K |
 | --- | --- | --- | --- | --- | --- |
 | `qwen3.5:4b/9b` | 32 KiB | 0.25 GiB | 0.5 GiB | 1 GiB | 2 GiB |
 | `qwen2.5-coder:7b` | 56 KiB | 0.44 GiB | 0.88 GiB | 1.75 GiB | 原生上限 32K |
@@ -954,7 +954,7 @@ x ──► RMSNorm ──► attention 子层 ──► (+x) ──► RMSNorm 
 - `qwen3.5:9b`：7.6 GB 权重，32K 已到 9.8 GiB 峰值，64K 会超预算；
 - `qwen2.5-coder:7b`：32K 是原生上限，权重 + KV 约 7–8 GB，能跑但 Agent 工具调用不稳。
 
-**建议**：这台机器上日常开发设 `num_ctx=32768`，模型用 `qwen3.5:4b`（速度/内存都宽松）或 `qwen3.5:9b`（质量更好、余量小）；`16K` 只在单文件/短会话时用；`8K` 不要给 Agent。
+**建议**：这台机器上日常开发设 `num_ctx=32768`，LLM 用 `qwen3.5:4b`（速度/内存都宽松）或 `qwen3.5:9b`（质量更好、余量小）；`16K` 只在单文件/短会话时用；`8K` 不要给 Agent。
 
 ### 一次 7m45s 请求的拆解
 
@@ -967,7 +967,7 @@ POST /v1/chat/completions took=7m45s
 
 拆开看：
 
-- **prefill**：从 10:46:53 到 10:49:53，约 **3 分钟** 处理 15,483 token → **约 86 tok/s**（每 2048 块 23–28s）。这部分是 9B 模型 + M2 的正常量级。
+- **prefill**：从 10:46:53 到 10:49:53，约 **3 分钟** 处理 15,483 token → **约 86 tok/s**（每 2048 块 23–28s）。这部分是 9B LLM + M2 的正常量级。
 - **decode**：10:49:53 到 10:54:38，约 **4 分 45 秒**。按 2287 次迭代 + 1108 个被接受的 draft 粗略估算约 3.4K 输出 token → **约 12 tok/s**。
 - 合计 ≈ 3 分钟 + 4 分 45 秒 = **7m45s**，和日志一致。
 
@@ -1058,21 +1058,21 @@ CLI 只是客户端，需要有服务在跑。`curl -s http://127.0.0.1:11434/ap
 
 看 `~/.ollama/logs/server.log`；App 层面的启动问题看 `app.log`。必要时 `launchctl setenv OLLAMA_DEBUG 1` 后重启 App 再复现。
 
-**下载模型很慢 / 中途失败**
+**下载 LLM 很慢 / 中途失败**
 
 支持断点续传，重跑 `ollama pull` 即可。需要代理时只设 `HTTPS_PROXY`（官方建议**不要**设 `HTTP_PROXY`，可能干扰客户端连本地服务）；公司自签证书要装进系统钥匙串。
 
 **内存吃紧 / 开始用 swap，机器变卡**
 
-按代价从低到高：换更小的模型（`llama3.2:1b` / `3b`）；把 `num_ctx` 调小（`OLLAMA_CONTEXT_LENGTH` 或请求里的 `num_ctx`）；想更快卸载把 `OLLAMA_KEEP_ALIVE` 调小（如 `1m`，默认是 `5m`），或 `ollama stop <model>` 手动卸载；`OLLAMA_NUM_PARALLEL=1` 别开并发；把 `OLLAMA_KV_CACHE_TYPE` 从 `f16` 改成 `q8_0`。
+按代价从低到高：换更小的 LLM（`llama3.2:1b` / `3b`）；把 `num_ctx` 调小（`OLLAMA_CONTEXT_LENGTH` 或请求里的 `num_ctx`）；想更快卸载把 `OLLAMA_KEEP_ALIVE` 调小（如 `1m`，默认是 `5m`），或 `ollama stop <model>` 手动卸载；`OLLAMA_NUM_PARALLEL=1` 别开并发；把 `OLLAMA_KV_CACHE_TYPE` 从 `f16` 改成 `q8_0`。
 
-**模型跑在 CPU 上 / 速度不对**
+**LLM 跑在 CPU 上 / 速度不对**
 
 先看 `ollama ps` 的 `PROCESSOR` 列。Apple Silicon 正常应是 `100% GPU`；Intel Mac 只有 CPU。如果 Apple Silicon 上跑的是 Rosetta 转译的 x86_64 CLI，可能退回通用 CPU 库——用 `uname -m` 和 `file "$(command -v ollama)"` 确认，装 arm64 原生版本。
 
 **`ollama ps` 的 CONTEXT 一直是 4096，怎么调大？**
 
-`CONTEXT` 是**当前 Ollama 服务启动时**分配的默认上下文（16 GB 机器默认 4K），不是单次 `ollama run` 能改的；已经加载的模型也不会因为你在 shell 里 export 就变。改法：
+`CONTEXT` 是**当前 Ollama 服务启动时**分配的默认上下文（16 GB 机器默认 4K），不是单次 `ollama run` 能改的；已经加载的 LLM 也不会因为你在 shell 里 export 就变。改法：
 
 - App 模式（菜单栏 Ollama）：Settings 里把 context length 滑块调到 `32768`，然后 Quit 再重开 App。
 - CLI 模式：先退出 App，再带环境变量起服务：
@@ -1088,7 +1088,7 @@ CLI 只是客户端，需要有服务在跑。`curl -s http://127.0.0.1:11434/ap
   ./macos/ollama/run.sh --ctx 32768 --no-pull --no-demo
   ```
 
-重启后第一次加载模型，再用 `ollama ps` 确认 `CONTEXT` 变成 `32768`。16 GB 上建议 32K；64K 的前提是模型原生支持且 KV 装得下，别硬设。
+重启后第一次加载 LLM，再用 `ollama ps` 确认 `CONTEXT` 变成 `32768`。16 GB 上建议 32K；64K 的前提是 LLM 原生支持且 KV 装得下，别硬设。
 
 **日志里的 `vram-based default context` 是什么意思？**
 
@@ -1100,13 +1100,13 @@ vram-based default context total_vram="10.7 GiB" default_num_ctx=4096
 ```
 
 - 16 GB 统一内存的 Mac，macOS 给 Metal 的预算约 **10.7 GiB**（其余留给系统），落在 `< 23 GiB` 档，所以默认 `4096`。
-- 这个默认值只是“起点”，`OLLAMA_CONTEXT_LENGTH` 可以覆盖；**日志里即使还打印 `default_num_ctx=4096` 也不代表没生效**——那行只是 VRAM 分档的兜底值，实际加载优先级是：请求 `num_ctx` > Modelfile/模型参数 > `OLLAMA_CONTEXT_LENGTH` > VRAM 默认。用 `ollama ps` 的 `CONTEXT` 列验证真实值。
+- 这个默认值只是“起点”，`OLLAMA_CONTEXT_LENGTH` 可以覆盖；**日志里即使还打印 `default_num_ctx=4096` 也不代表没生效**——那行只是 VRAM 分档的兜底值，实际加载优先级是：请求 `num_ctx` > Modelfile/LLM 参数 > `OLLAMA_CONTEXT_LENGTH` > VRAM 默认。用 `ollama ps` 的 `CONTEXT` 列验证真实值。
 - 但**权重 + KV 要装进这 10.7 GiB 才能保持 `100% GPU`**，超了会 offload 到 CPU（`ollama ps` 的 `PROCESSOR` 会显示 CPU/GPU 混合）。
 - 本机参考：`qwen2.5-coder:7b`（4.7 GB 权重 + 32K KV 约 1.75 GiB）≈ 7 GB，32K 可以稳稳 100% GPU；`llama3.2:3b` 的 64K KV 约 7 GiB + 2.6 GB 权重，已经接近 10.7 GiB 上限，容易掉 CPU。所以 16 GB 上 **32K 是安全档，64K 要先实测**。
 
-**同时加载了两个模型，内存吃紧？**
+**同时加载了两个 LLM，内存吃紧？**
 
-`ollama ps` 里出现多行说明多个模型都在内存里（默认最多 3 个，空闲 5 分钟后卸载）。16 GB 上写代码只留一个：
+`ollama ps` 里出现多行说明多个 LLM 都在内存里（默认最多 3 个，空闲 5 分钟后卸载）。16 GB 上写代码只留一个：
 
 ```bash
 ollama stop llama3.2:3b          # 停掉不用的
@@ -1136,7 +1136,7 @@ rm -rf "$HOME/Library/Saved Application State/com.electron.ollama.savedState"
 rm -rf "$HOME/Library/Caches/com.electron.ollama/"
 rm -rf "$HOME/Library/Caches/ollama"
 rm -rf "$HOME/Library/WebKit/com.electron.ollama"
-rm -rf "$HOME/.ollama"             # 模型也在这里，删之前确认不再需要
+rm -rf "$HOME/.ollama"             # LLM 也在这里，删之前确认不再需要
 
 # Homebrew 安装的话
 brew uninstall ollama
@@ -1144,12 +1144,12 @@ brew uninstall ollama
 
 > 如果系统设置的「登录项」里还残留 Ollama 条目，手动删掉即可。
 
-> 只想腾模型空间、保留程序：`du -sh ~/.ollama/models` 看占用，`ollama rm <model>` 逐个删。
+> 只想腾 LLM 空间、保留程序：`du -sh ~/.ollama/models` 看占用，`ollama rm <model>` 逐个删。
 
 ## 参考
 
 - Ollama macOS 文档：<https://docs.ollama.com/macos>
-- 本地 FAQ（环境变量、模型目录、并发、KV cache 量化）：<https://docs.ollama.com/faq>
+- 本地 FAQ（环境变量、LLM 目录、并发、KV cache 量化）：<https://docs.ollama.com/faq>
 - 上下文长度（按显存档位的默认值）：<https://docs.ollama.com/context-length>
 - CLI 参考：<https://docs.ollama.com/cli>
 - API 文档：<https://docs.ollama.com/api/introduction>

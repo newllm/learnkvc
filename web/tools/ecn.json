@@ -64,7 +64,7 @@
         "what": "如果 ECN 还没来得及降速、队列继续涨到 XOFF，就发 802.1Qbb pause 帧暂停上游；降到 XON 以下恢复。PFC 是最后一道防线，不是第一选择。"
       }
     ],
-    "note": "简化模型：CNP 延迟 6 tick、每 2 tick 最多一个 CNP、WRED 用入队前 standing queue；真实网卡/交换机还有 EWMA、CNP 聚合、per-flow 状态和更多定时器。"
+    "note": "简化 LLM：CNP 延迟 6 tick、每 2 tick 最多一个 CNP、WRED 用入队前 standing queue；真实网卡/交换机还有 EWMA、CNP 聚合、per-flow 状态和更多定时器。"
   },
   "switch": {
     "title": "3 · 交换机怎么组网与配置",
@@ -389,7 +389,7 @@
       }
     ],
     "calcTitle": "7.1 交互：拉 min/max/max_p，看 WRED 曲线与队列/速率收敛",
-    "calcNote": "曲线是 WRED 概率函数；下方小图用同一简化模型跑 300 tick（PFC 开、ECN 开、固定种子），展示队列与速率如何收敛。阈值单位 MB，归一化账本。",
+    "calcNote": "曲线是 WRED 概率函数；下方小图用同一简化 LLM 跑 300 tick（PFC 开、ECN 开、固定种子），展示队列与速率如何收敛。阈值单位 MB，归一化账本。",
     "note": "真实 ECN 阈值通常按 buffer 字节数或百分比配置（如 200 KB/500 KB），并用 EWMA 队列长度；这里用 MB/tick 的归一化单位，重点看相对关系。"
   },
   "tuning": {
@@ -452,7 +452,7 @@
   },
   "codeSection": {
     "title": "9 · 仿真代码：把 ECN/DCQCN/PFC 账本跑一遍",
-    "lead": "这段纯 Python 把交换机队列、ECN/WRED 标记、CNP 延迟反馈、DCQCN 速率更新和 PFC pause 写成可跑的简化模型，对照三种组合并扫描 ECN 阈值。代码在 example/ecn_sim.py，可直接运行；网页里的示例输出就是它的 stdout。",
+    "lead": "这段纯 Python 把交换机队列、ECN/WRED 标记、CNP 延迟反馈、DCQCN 速率更新和 PFC pause 写成可跑的简化 LLM，对照三种组合并扫描 ECN 阈值。代码在 example/ecn_sim.py，可直接运行；网页里的示例输出就是它的 stdout。",
     "file": "example/ecn_sim.py",
     "run": "python3 example/ecn_sim.py",
     "notes": [
@@ -584,7 +584,7 @@
         "id": "ecn-m1",
         "label": "RDMA 流量的模式与拥塞点",
         "bucket": "model",
-        "why": "TP 每层小 all-reduce、PD 大 KV 迁移、MoE all-to-all 突发，这些消息大小/频率由模型和并行方式决定；它们决定拥塞是持续还是突发，从而决定 ECN/PFC 阈值怎么选。"
+        "why": "TP 每层小 all-reduce、PD 大 KV 迁移、MoE all-to-all 突发，这些消息大小/频率由 LLM 和并行方式决定；它们决定拥塞是持续还是突发，从而决定 ECN/PFC 阈值怎么选。"
       },
       {
         "id": "ecn-g1",

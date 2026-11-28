@@ -16,7 +16,7 @@
   /* ============================================ progress + think tests */
 
   const PROGRESS_KEY = "learnkvc.progress.v1";
-  const LEARNING_VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "train", "net", "nccl", "cuda", "ecn", "gpu", "npu", "opt"];
+  const LEARNING_VIEWS = ["think", "kv", "prefix", "paged", "transformer", "anatomy", "train", "net", "nccl", "cuda", "ecn", "gpu", "npu", "opt"];
   const EMPTY_PROGRESS = { pre: null, post: null, gpu: "rtx4090", views: [], steps: [] };
 
   function loadProgress() {
@@ -97,10 +97,10 @@
       '<p class="note">' + esc(context.note) + "</p>" +
       '<div class="ctx-chips"><span>认识 GPU（GPU / NPU / 国产算力）</span><span>① KV cache 章</span>' +
       "<span>② Prefix 章（含多次提问）</span><span>③ PagedAttention 章</span>" +
-      "<span>推理网络（NCCL / 无损）</span><span>认识模型（解剖 / 训练 / 计算器）</span>" +
+      "<span>推理网络（NCCL / 无损）</span><span>认识 LLM（解剖 / 训练 / 计算器）</span>" +
       "<span>LLM 优化（FlashAttention / 量化 / 投机）</span></div>" +
       '<div class="ctx-grid">' +
-      '<div class="ctx-model"><h4>模型信息</h4>' +
+      '<div class="ctx-model"><h4>LLM 信息</h4>' +
       row("总参数 / 激活", calcP(m.total) + " / " + calcP(m.active)) +
       row("层数 / hidden", preset.layers + " 层 / " + preset.hidden) +
       row("Q / KV 头", preset.q_heads + " / " + preset.kv_heads + "（head_dim " + preset.head_dim + "）") +
@@ -366,7 +366,7 @@
       thinkBox(
         "多轮对话里，缓存越攒越多，为什么还是划算？它省的到底是什么？",
         "省的是每一轮把历史重新 prefill 的计算。显存不省，反而随对话增长；" +
-          "所以引擎还要做上下文压缩/淘汰——那是引擎的策略，不是模型的数学。"
+          "所以引擎还要做上下文压缩/淘汰——那是引擎的策略，不是 LLM 的数学。"
       ) +
       '<div class="reuse-actions"><button class="btn primary" data-go="request">换个场景：多个请求共享前缀 →</button></div>';
 
@@ -647,7 +647,7 @@
         (assigned < total ? "disabled" : "") + ">提交判断</button>";
 
     el.innerHTML =
-      '<p class="kicker">归因 · 模型 / GPU / 引擎</p>' +
+      '<p class="kicker">归因 · LLM / GPU / 引擎</p>' +
       '<h1 class="page-title">这张卡片，是谁的工作？</h1>' +
       '<p class="page-lead">把 12 张卡片分到三层。分层不是绝对的；关键是说清「谁定义规则、谁执行、谁决定策略」。' +
       "分完点提交，会逐条给出理由。</p>" +
@@ -803,8 +803,8 @@
 
   /* =================================================== lesson stages */
 
-  const CHAPTER_LABELS = { kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention", net: "推理网络", train: "模型训练", nccl: "NCCL 学习章节", cuda: "CUDA 执行模型", ecn: "ECN + DCQCN", gpu: "认识 GPU", npu: "NPU 与国产算力", opt: "LLM 优化" };
-  const ALL_CHAPTERS = ["gpu", "npu", "cuda", "kv", "prefix", "paged", "net", "nccl", "ecn", "train", "opt"];
+  const CHAPTER_LABELS = { transformer: "Transformer 与 LLM", kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention", net: "推理网络", train: "LLM 训练", nccl: "NCCL 学习章节", cuda: "CUDA 执行模型", ecn: "ECN + DCQCN", gpu: "认识 GPU", npu: "NPU 与国产算力", opt: "LLM 优化" };
+  const ALL_CHAPTERS = ["transformer", "gpu", "npu", "cuda", "kv", "prefix", "paged", "net", "nccl", "ecn", "train", "opt"];
 
   function lessonOf(chapter) {
     const p = loadProgress();
@@ -951,7 +951,7 @@
     el.innerHTML =
       '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 反思与总结</div>" +
       '<h2>先用自己的话回答，再判断这是谁的工作</h2>' +
-      '<p class="hint">反思写不出来，说明探索还没闭环；归因把「模型 / GPU / 引擎」的分工说清楚；最后用三句话收束整章。参考默认折叠，先写再看。</p>' +
+      '<p class="hint">反思写不出来，说明探索还没闭环；归因把「LLM / GPU / 引擎」的分工说清楚；最后用三句话收束整章。参考默认折叠，先写再看。</p>' +
       '<div class="qprogress"><span>反思已写 ' + filled + " / " + promptList.length + "</span><span>保存到本地</span></div>" +
       promptList.map(
         (q, i) =>
@@ -1046,7 +1046,7 @@
     const assigned = lesson.attribution || {};
     const submitted = !!lesson.attributionSubmitted;
     const buckets = [
-      ["model", "模型"],
+      ["model", "LLM"],
       ["gpu", "GPU"],
       ["engine", "引擎"],
     ];
@@ -1055,7 +1055,7 @@
       : 0;
 
     el.innerHTML =
-      '<p class="hint">把下面 3 张卡分到「模型 / GPU / 引擎」；提交后逐条看理由。</p>' +
+      '<p class="hint">把下面 3 张卡分到「LLM / GPU / 引擎」；提交后逐条看理由。</p>' +
       cards
         .map((c) => {
           const cur = assigned[c.id];

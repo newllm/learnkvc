@@ -180,7 +180,7 @@
       ).join("") + "</tbody></table></div>" +
       '<h3 class="sec-sub">优化手段 → 减少什么 → 谁负责</h3>' +
       '<div class="table-wrap"><table class="tagtable net-table"><thead><tr>' +
-      "<th>优化手段</th><th>减少什么</th><th>谁负责（模型 / GPU / 引擎）</th>" +
+      "<th>优化手段</th><th>减少什么</th><th>谁负责（LLM / GPU / 引擎）</th>" +
       "</tr></thead><tbody>" +
       arr(sec.table).map((r) =>
         "<tr><td><b>" + esc(r.opt) + "</b></td><td>" + esc(r.saves) + "</td><td>" + esc(r.owner) + "</td></tr>"
@@ -538,7 +538,7 @@
     if (!host) return;
     host.innerHTML =
       '<div class="cuda-controls cuda-controls-2">' +
-      ctl("模型层数", '<select data-graph="layers">' +
+      ctl("LLM 层数", '<select data-graph="layers">' +
         [16, 24, 32, 48, 64].map((v) => option(v, v + " 层", graphState.layers)).join("") +
         "</select>") +
       ctl("每层 kernel 数", '<select data-graph="perLayer">' +

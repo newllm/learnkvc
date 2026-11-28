@@ -117,7 +117,7 @@
       '<p class="note">' + esc(data.ledgerSection.calcLead) + "</p>" +
       '<div class="calc-layout train-calc">' +
       '<div class="calc-controls">' +
-      '<label class="calc-field"><span>模型</span><select data-field="preset">' +
+      '<label class="calc-field"><span>LLM</span><select data-field="preset">' +
       presets.map((p) => option(p.id, p.name, state.presetId)).join("") +
       "</select></label>" +
       '<label class="calc-field"><span>权重/梯度精度</span><select data-field="precision">' +

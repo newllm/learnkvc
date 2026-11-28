@@ -150,7 +150,7 @@
         }
       ]
     },
-    "note": "同一个 7B 模型：decode 时 CPU 只是「带宽慢 42 倍」，prefill 时是「算力慢约 100 倍」。这解释了为什么推理系统把 prefill 和 decode 分开设计，也解释了为什么 CPU 只能做小模型/低并发兜底。"
+    "note": "同一个 7B LLM：decode 时 CPU 只是「带宽慢 42 倍」，prefill 时是「算力慢约 100 倍」。这解释了为什么推理系统把 prefill 和 decode 分开设计，也解释了为什么 CPU 只能做小 LLM/低并发兜底。"
   },
   "replace": {
     "title": "4 · 为什么 GPU 取代不了 CPU",
@@ -432,7 +432,7 @@
     "notes": [
       "设计点表：32 核 × 16 lane 对 132 SM × 128 lane，DDR5 ~80 GB/s 对 HBM3 3350 GB/s，FP16 ~8 对 ~990 TFLOPS。",
       "存储层级表同时列出 CPU L1/L2/L3/DDR 与 GPU 寄存器/shared/L1/L2/HBM，并标注是否 cache、容量、延迟、带宽。",
-      "LLM 部分用 roofline 算 7B 模型的 decode/prefill/attention：decode AI≈0.98（memory-bound），prefill AI≈2031（compute-bound）。",
+      "LLM 部分用 roofline 算 7B LLM 的 decode/prefill/attention：decode AI≈0.98（memory-bound），prefill AI≈2031（compute-bound）。",
       "最后算 launch 开销（CPU 0.2 µs vs GPU 4 µs）和 Amdahl（串行 40 ms + 并行 100 ms，GPU 10× → 整步 2.8×），说明 CPU 为什么不可替代。"
     ]
   },
@@ -542,7 +542,7 @@
       },
       {
         "q": "GPU 有 L1/L2，为什么很多 kernel 还是直接卡在 HBM 带宽上？",
-        "ref": "因为容量太小：L2 只有 50 MiB 级，装不下 14 GB 权重和长上下文 KV；memory-bound kernel 的每步字节数由模型和 KV 决定，cache 只能减少重复事务，不能减少必须搬的字节。coalescing 差时还会把 128 B line 浪费成 8× 搬运。"
+        "ref": "因为容量太小：L2 只有 50 MiB 级，装不下 14 GB 权重和长上下文 KV；memory-bound kernel 的每步字节数由 LLM 和 KV 决定，cache 只能减少重复事务，不能减少必须搬的字节。coalescing 差时还会把 128 B line 浪费成 8× 搬运。"
       },
       {
         "q": "如果你来设计一个异构推理系统，CPU 和 GPU 各负责什么？launch 开销会怎样影响设计？",
@@ -558,7 +558,7 @@
         "id": "gpu-m1",
         "label": "LLM 算子的可并行性与算术强度",
         "bucket": "model",
-        "why": "矩阵乘/attention 的并行度和 FLOP/byte 由模型结构、层数、hidden、seq、batch 决定；它决定了任务天然更适合 CPU 还是 GPU。"
+        "why": "矩阵乘/attention 的并行度和 FLOP/byte 由 LLM 结构、层数、hidden、seq、batch 决定；它决定了任务天然更适合 CPU 还是 GPU。"
       },
       {
         "id": "gpu-g1",

@@ -1,6 +1,6 @@
 # 用 Docker 跑 vLLM（CPU / GPU，PagedAttention）
 
-用 Docker 起 [vLLM](https://github.com/vllm-project/vllm) 的 OpenAI 兼容服务，验证 `/v1/chat/completions`，并观察 PagedAttention 的 KV cache 块信息。默认模型是 `Qwen/Qwen2.5-0.5B-Instruct`：体积小、无需申请权限，CPU 也能跑通。
+用 Docker 起 [vLLM](https://github.com/vllm-project/vllm) 的 OpenAI 兼容服务，验证 `/v1/chat/completions`，并观察 PagedAttention 的 KV cache 块信息。默认 LLM 是 `Qwen/Qwen2.5-0.5B-Instruct`：体积小、无需申请权限，CPU 也能跑通。
 
 vLLM 官方同时提供 GPU 和 CPU 镜像：
 
@@ -20,11 +20,11 @@ docker/vllm/
 ## 目录
 
 - [前置条件](#前置条件)
-- [镜像和模型从哪里来](#镜像和模型从哪里来)
+- [镜像和 LLM 从哪里来](#镜像和-llm-从哪里来)
 - [快速开始](#快速开始)
 - [CPU 模式](#cpu-模式)
 - [GPU 模式](#gpu-模式)
-- [常用模型](#常用模型)
+- [常用 LLM](#常用-llm)
 - [API 示例](#api-示例)
 - [PagedAttention 与参数](#pagedattention-与参数)
 - [和本仓库的关系](#和本仓库的关系)
@@ -40,21 +40,21 @@ docker/vllm/
 | Docker | Docker Engine / Desktop，daemon 已启动 |
 | CPU 模式 | Linux x86_64（AVX2 起，推荐 AVX512）或 ARM64；内存建议 ≥ 8 GB |
 | GPU 模式 | NVIDIA GPU + 驱动，已安装 [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) |
-| 其他 | `curl`；gated 模型需要 Hugging Face token（`HF_TOKEN`） |
+| 其他 | `curl`；gated LLM 需要 Hugging Face token（`HF_TOKEN`） |
 
 > macOS 上 Docker 跑的是 Linux 容器，Apple GPU 用不到；CPU 镜像可以用，但速度取决于机器。
 
-## 镜像和模型从哪里来
+## 镜像和 LLM 从哪里来
 
 | 东西 | 来源 |
 | --- | --- |
 | GPU 镜像 | Docker Hub 的 [`vllm/vllm-openai`](https://hub.docker.com/r/vllm/vllm-openai) |
 | CPU 镜像 | Docker Hub 的 [`vllm/vllm-openai-cpu`](https://hub.docker.com/r/vllm/vllm-openai-cpu)（`latest-x86_64` / `latest-arm64`） |
-| 模型 | [Hugging Face](https://huggingface.co) 上的模型 id |
+| LLM | [Hugging Face](https://huggingface.co) 上的 LLM id |
 
-模型在容器启动时下载到 Hugging Face 缓存；脚本把宿主机的 `${HF_CACHE:-~/.cache/huggingface}` 挂到容器的 `/root/.cache/huggingface`，第二次启动不会重复下载。
+LLM 在容器启动时下载到 Hugging Face 缓存；脚本把宿主机的 `${HF_CACHE:-~/.cache/huggingface}` 挂到容器的 `/root/.cache/huggingface`，第二次启动不会重复下载。
 
-gated 模型（如 Llama 系列）需要先在 Hugging Face 页面接受协议，然后：
+gated LLM（如 Llama 系列）需要先在 Hugging Face 页面接受协议，然后：
 
 ```bash
 HF_TOKEN=hf_xxx bash docker/vllm/run.sh --model meta-llama/Llama-3.2-3B-Instruct
@@ -76,7 +76,7 @@ bash docker/vllm/run.sh --gpu          # 强制 GPU 镜像
 2. 检查 docker、daemon、curl；GPU 模式额外检查 `nvidia-smi`；
 3. 删掉同名旧容器（HF 缓存保留在宿主机目录）；
 4. `docker run` 启动 vLLM，映射 `8000`，挂载 HF 缓存和 vLLM 的 torch.compile 缓存；
-5. 轮询 `/health` 直到就绪（首次要下载模型、编译 kernel，可能几分钟）；等待期间每 15 秒打印一次 HF / vLLM 缓存大小和容器最后一行日志；
+5. 轮询 `/health` 直到就绪（首次要下载 LLM、编译 kernel，可能几分钟）；等待期间每 15 秒打印一次 HF / vLLM 缓存大小和容器最后一行日志；
 6. 从日志里过滤 `KV cache size` / `Maximum concurrency`，调一次 `/v1/chat/completions` 并打印回答。
 
 其他常用参数：
@@ -128,9 +128,9 @@ GPU_MEM_UTIL=0.8 TP=2 bash docker/vllm/run.sh --gpu
 
 GPU 模式使用 `--gpus all --ipc=host`；`TP>1` 时 `--ipc=host` 是必须的（共享内存不足会导致 NCCL 报错）。`GPU_MEM_UTIL` 对应 `--gpu-memory-utilization`，决定启动时能划出多少 KV cache 块。
 
-## 常用模型
+## 常用 LLM
 
-| 模型 | 资源（约） | 说明 |
+| LLM | 资源（约） | 说明 |
 | --- | --- | --- |
 | `Qwen/Qwen2.5-0.5B-Instruct` | CPU 内存 2 GB+ / GPU 2 GB+ | 默认，链路验证 |
 | `Qwen/Qwen2.5-1.5B-Instruct` | CPU 4 GB+ / GPU 4 GB+ | 质量更好一点 |
@@ -146,7 +146,7 @@ GPU 模式使用 `--gpus all --ipc=host`；`TP>1` 时 `--ipc=host` 是必须的�
 ```bash
 MODEL="${MODEL:-Qwen/Qwen2.5-0.5B-Instruct}"
 
-# 健康检查 / 模型列表
+# 健康检查 / LLM 列表
 curl -s http://127.0.0.1:8000/health
 curl -s http://127.0.0.1:8000/v1/models
 
@@ -250,7 +250,7 @@ EAGER=1 bash docker/vllm/run.sh --cpu
    bash docker/vllm/run.sh
    ```
 
-4. **gated 模型**：下载 401/403 多半是没接受 Hugging Face 许可或没传 `HF_TOKEN`。
+4. **gated LLM**：下载 401/403 多半是没接受 Hugging Face 许可或没传 `HF_TOKEN`。
 5. **确认容器内能访问**：
 
    ```bash
@@ -266,9 +266,9 @@ EAGER=1 bash docker/vllm/run.sh --cpu
 
 **`get_mempolicy: Operation not permitted`**：默认 seccomp 限制了 NUMA 系统调用；脚本已经加了 `seccomp=unconfined` 和 `SYS_NICE`，如仍出现可忽略（功能正常，NUMA 优化可能不生效）。
 
-**启动时报显存不足（OOM）**：GPU 模式先降 `MAX_MODEL_LEN`（如 2048）、再降 `GPU_MEM_UTIL`（如 0.8）；CPU 模式降 `VLLM_CPU_KVCACHE_SPACE` 或换更小模型。
+**启动时报显存不足（OOM）**：GPU 模式先降 `MAX_MODEL_LEN`（如 2048）、再降 `GPU_MEM_UTIL`（如 0.8）；CPU 模式降 `VLLM_CPU_KVCACHE_SPACE` 或换更小 LLM。
 
-**模型下载失败（401/403）**：gated 模型需要 `HF_TOKEN`，并先在 Hugging Face 页面接受许可。
+**LLM 下载失败（401/403）**：gated LLM 需要 `HF_TOKEN`，并先在 Hugging Face 页面接受许可。
 
 **第一次启动很慢**：先下载数 GB 权重，再做 torch.compile / warmup。看 `docker logs -f`；编译缓存现在挂在 `~/.cache/vllm`，重启用会快很多。急用可以加 `--eager` 跳过编译。
 
@@ -281,5 +281,5 @@ EAGER=1 bash docker/vllm/run.sh --cpu
 ```bash
 docker stop vllm
 docker rm -f vllm
-# 模型缓存默认在 ~/.cache/huggingface，需要时再手动清理
+# LLM 缓存默认在 ~/.cache/huggingface，需要时再手动清理
 ```

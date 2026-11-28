@@ -398,7 +398,7 @@
     const cfg = quantCfg(quantSec);
     host.innerHTML =
       '<div class="opt-controls opt-controls-3">' +
-      ctl("模型预设", '<select data-quant="preset">' +
+      ctl("LLM 预设", '<select data-quant="preset">' +
         presets.map((p) => option(p.id, p.name, state.presetId)).join("") + "</select>") +
       ctl("权重 bits", '<select data-quant="wb">' +
         WEIGHT_BIT_OPTIONS.map((b) => option(b, b + " bit" + (b === 8 ? "（FP8/INT8）" : b === 4 ? "（INT4）" : ""), state.weightBits)).join("") +
@@ -440,7 +440,7 @@
       stat("权重显存", fmtGB(r.weightBytes), state.weightBits + " bit × " + fmtB(preset.params) + " 参数") +
       stat("KV @ seq " + cfg.seq, fmtBytes(r.kvBytes), state.kvBits + " bit；FP16=" + fmtKiB(preset.kvPerToken) + "/token") +
       stat("decode 每步字节", fmtGB(r.total), "batch=1，权重 + KV") +
-      stat("decode 时间", r.ms.toFixed(2) + " ms", (cfg.bw / 1e9).toFixed(0) + " GB/s 带宽模型") +
+      stat("decode 时间", r.ms.toFixed(2) + " ms", (cfg.bw / 1e9).toFixed(0) + " GB/s 带宽 LLM") +
       stat("相对 BF16 加速", '<span class="opt-tone ' + tone + '">' + r.speedup.toFixed(2) + "×</span>",
         "BF16 基线 " + r.baseMs.toFixed(2) + " ms") +
       "</div>" +
@@ -508,7 +508,7 @@
       '<p class="note">' +
       (r.speedup < 1
         ? "当前参数下加速比 <1：接受率低或草稿成本高，投机解码会亏；提高 α、降低 c 或减小 γ 再试。"
-        : "量级模型：忽略树验证、调度和 batch 摊薄；真实收益要做端到端 benchmark。") +
+        : "量级 LLM：忽略树验证、调度和 batch 摊薄；真实收益要做端到端 benchmark。") +
       "</p>";
   }
 

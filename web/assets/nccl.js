@@ -23,7 +23,7 @@
     { id: "pcie4", name: "PCIe 4.0 x16", gbs: 16, latUs: 1.2, note: "无 NVLink 的单机" },
     { id: "pcie5", name: "PCIe 5.0 x16", gbs: 32, latUs: 1.0, note: "新平台单机" },
     { id: "ib200", name: "InfiniBand HDR 200G", gbs: 25, latUs: 1.5, note: "跨机，支持 SHARP" },
-    { id: "ib400", name: "InfiniBand NDR 400G", gbs: 50, latUs: 2.0, note: "跨机主流，本章模型" },
+    { id: "ib400", name: "InfiniBand NDR 400G", gbs: 50, latUs: 2.0, note: "跨机主流，本章 LLM" },
     { id: "roce", name: "RoCEv2 400G", gbs: 50, latUs: 3.0, note: "跨机以太网，需 PFC + ECN" },
     { id: "tcp", name: "TCP Socket", gbs: 6, latUs: 80, note: "兜底，慢一个量级" }
   ];

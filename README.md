@@ -1,11 +1,11 @@
 # learnkvc
 
-用一个仓库讲清 **LLM 推理与训练**：3 份最小可运行的 KV cache 示例、8 份纯 Python 仿真、1 个零依赖交互式学习页，外加 Docker / macOS 跑真实模型的实操。
+用一个仓库讲清 **LLM 推理与训练**：3 份最小可运行的 KV cache 示例、9 份纯 Python 仿真、1 个零依赖交互式学习页，外加 Docker / macOS 跑真实 LLM 的实操。
 
-每个结论都有可执行代码和断言；不需要模型权重，clone 下来就能跑。
+每个结论都有可执行代码和断言；不需要 LLM 权重，clone 下来就能跑。
 
 - **开始学习**：[在线交互页（前测）](https://newllm.github.io/learnkvc/web/#think) · [本地打开](web/index.html#think)（双击即可，离线可用）
-- **分章入口**：[认识 GPU](web/index.html#gpu) · [认识 KVCache](web/index.html#kv) · [推理网络](web/index.html#net) · [认识模型](web/index.html#anatomy) · [LLM 优化](web/index.html#opt) · [学习反馈](web/index.html#feedback)
+- **分章入口**：[认识 GPU](web/index.html#gpu) · [认识 LLM](web/index.html#transformer) · [认识 KVCache](web/index.html#kv) · [推理网络](web/index.html#net) · [LLM 优化](web/index.html#opt) · [学习反馈](web/index.html#feedback)
 
 [![learnkvc 交互式学习页：KV cache 探索页](docs/images/reader.png)](https://newllm.github.io/learnkvc/web/#kv/explore)
 
@@ -33,6 +33,7 @@ python3 example/nccl_sim.py              # NCCL：ring/tree / α-β / 拓扑
 python3 example/cuda_sim.py              # CUDA：occupancy / coalescing / roofline / graph
 python3 example/gpu_sim.py               # CPU vs GPU / L1-L2 / 量级对照
 python3 example/npu_sim.py               # GPU / NPU / 国产算力：roofline 与选型
+python3 example/transformer_sim.py       # Transformer：注意力 N²、KV、缩放账本
 python3 example/ecn_sim.py               # ECN/DCQCN/PFC：标记、降速、pause
 python3 example/opt_sim.py               # 优化：FlashAttention / 量化 / 投机解码
 ```
@@ -51,14 +52,14 @@ python3 web/tools/build.py
 
 ## 学习地图
 
-交互页分 5 个学习入口 + 前测/后测，共 11 个三段式章节。每章都按「**请回答 → 探索阅读 → 反思与总结**」推进：先猜，再用代码/仿真验证，最后用自己的话总结。
+交互页分 5 个学习入口 + 前测/后测，共 12 个三段式章节。每章都按「**请回答 → 探索阅读 → 反思与总结**」推进：先猜，再用代码/仿真验证，最后用自己的话总结。
 
 | 入口 | 章节 | 核心问题 | 配套 |
 | --- | --- | --- | --- |
 | 认识 GPU | GPU / NPU 与国产算力 / CUDA 执行模型 | CPU 与 GPU 怎么分工、GPU/NPU/ASIC 差异、国产卡与软件栈、decode 为什么 memory-bound | `gpu_sim.py`、`npu_sim.py`、`cuda_sim.py` |
+| 认识 LLM | Transformer 与 LLM / LLM 结构 / LLM 训练 / 显存计算器 | 自注意力、缩放定律、为什么 LLM 胜出；参数与结构、训练账本、显存 | `transformer_sim.py`、`train_sim.py`、`train_tiny.py`、`anatomy.json` |
 | 认识 KVCache | 单请求 / Prefix / PagedAttention | 为什么缓存、块怎么共享、逻辑位置怎么映射到物理块 | `kv_cache.py`、`prefix_cache_demo.py`、`paged_attention.py` |
 | 推理网络 | 总览 / NCCL / ECN + DCQCN | TP/EP 怎么通信、ring/tree、RoCE 怎么做到无损 | `net_sim.py`、`nccl_sim.py`、`ecn_sim.py` |
-| 认识模型 | 模型解剖 / 模型训练 / 显存计算器 | 参数与结构、训练账本、这套模型能否跑在某张卡上 | `train_sim.py`、`train_tiny.py`、`anatomy.json` |
 | LLM 优化 | 优化地图（FlashAttention / 量化 / 投机解码 / 调度 / 选型） | 先找瓶颈，再选 2–3 个高杠杆技术 | `opt_sim.py` |
 
 - 前测 10 题：提交前不显示对错；学完做后测，得到按概念对照、学习完成度与错题回看。
@@ -76,7 +77,7 @@ python3 web/tools/build.py
 │   ├── prefix_cache_demo.py  # 多请求共享前缀：块池 + 哈希 + 引用计数 + LRU
 │   ├── paged_attention.py    # PagedAttention：block table + gather
 │   ├── train_tiny.py         # 最小 PyTorch 训练循环（需要 torch）
-│   ├── *_sim.py              # 8 份纯 Python 仿真：net/train/nccl/cuda/gpu/npu/ecn/opt
+│   ├── *_sim.py              # 9 份纯 Python 仿真：net/train/nccl/cuda/gpu/npu/transformer/ecn/opt
 │   └── *_READING.md          # KV 三章的逐段阅读导图
 ├── web/                      # 零依赖交互式学习页
 │   ├── index.html
@@ -97,7 +98,7 @@ python3 web/tools/build.py
 | [`example/KV_CACHE_READING.md`](example/KV_CACHE_READING.md) | 无 cache / cached attention、mask 与绝对位置、GQA、滑动窗口、reorder/fork |
 | [`example/PREFIX_CACHE_READING.md`](example/PREFIX_CACHE_READING.md) | 块池、链式哈希、引用计数、LRU + 叶子淘汰、与 vLLM / SGLang 的对应 |
 | [`example/PAGED_ATTENTION_READING.md`](example/PAGED_ATTENTION_READING.md) | block table、gather、内部碎片、与 vLLM 的对应 |
-| [`web/README.md`](web/README.md) | 交互页：前测/后测、11 个三段式章节、图表/仿真、导航与数据管线 |
+| [`web/README.md`](web/README.md) | 交互页：前测/后测、12 个三段式章节、图表/仿真、导航与数据管线 |
 | [`AGENTS.md`](AGENTS.md) | 开发约定：单一事实来源、章节 checklist、UI/验收、数据管线 |
 | [`web/DESIGN.md`](web/DESIGN.md) | 设计稿：信息架构、三段式机制、交互与验收 |
 | [`docker/vllm/README.md`](docker/vllm/README.md) | Docker 跑 vLLM：PagedAttention 参数、块池日志与指标 |
@@ -107,7 +108,7 @@ python3 web/tools/build.py
 
 各章的内容源是 `web/tools/<chapter>.json` + `example/<chapter>_sim.py`，统一由 `build.py` 注入页面；详见 [`web/README.md`](web/README.md)。
 
-## 跑真实模型（可选）
+## 跑真实 LLM（可选）
 
 | 场景 | 入口 |
 | --- | --- |

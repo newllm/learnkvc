@@ -392,7 +392,7 @@
     host.innerHTML =
       '<div class="calc-layout">' +
       '<div class="calc-controls">' +
-      '<label class="calc-field"><span>模型</span><select data-pd="preset">' +
+      '<label class="calc-field"><span>LLM</span><select data-pd="preset">' +
       presets.map((p) => option(p.id, p.name, pd.presetId)).join("") + "</select></label>" +
       '<label class="calc-field"><span>Prompt <b>' + fmt(pd.prompt) + " tok</b></span>" +
       '<input type="range" data-pd="prompt" min="512" max="32768" step="512" value="' + pd.prompt + '"></label>' +

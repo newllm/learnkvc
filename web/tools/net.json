@@ -274,7 +274,7 @@
         "q": "NCCL_DEBUG=INFO 里看到 NET/Socket，最先查什么？",
         "options": [
           "IB/RoCE 网卡、GID index、容器 RDMA 透传",
-          "模型参数量",
+          "LLM 参数量",
           "batch size 和 temperature"
         ],
         "answer": 0,

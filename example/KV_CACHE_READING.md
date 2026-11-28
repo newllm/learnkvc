@@ -1,6 +1,6 @@
 # `kv_cache.py` 阅读导图
 
-这份文件把两件事放在了一起，用同一个模型跑给你看：
+这份文件把两件事放在了一起，用同一个 LLM 跑给你看：
 
 1. **没有 cache 的生成流程长什么样**：每步重算整个前缀，只取最后一个位置的 logits；
 2. **KV cache 怎么实现这层复用**：每层缓存 K/V，decode 时只算新 token，历史直接读。
@@ -55,7 +55,7 @@ step 2: [E]     → 算 1 个位置，读 4 个历史 K/V → F
 
 无 cache 时，每一步的输入都包含整段前缀，所以每一层都要重新做 `QKV 投影 + attention + MLP`；而一个 step 真正有用的只有**最后一个位置**的输出，其余位置的结果全部丢弃。
 
-关键事实：**重复算出来的 K/V 和上一次完全相同**（同模型、同精度、同位置）。所以缓存不是近似，而是省掉纯浪费。文件里的 `check_numerics()` 会把这一点变成断言。
+关键事实：**重复算出来的 K/V 和上一次完全相同**（同 LLM、同精度、同位置）。所以缓存不是近似，而是省掉纯浪费。文件里的 `check_numerics()` 会把这一点变成断言。
 
 ## 第 1 部分：没有 cache 的流程
 
@@ -151,7 +151,7 @@ causal = (first_key_position + arange(k_len)) <= (past + arange(q_len)[:, None])
 
 ## 第 4 部分：`TinyModel` 与两条生成循环
 
-`TinyModel` 是一个 2 层、4 个 Q 头 / 2 个 KV 头（GQA）、d_model=32 的玩具模型，带绝对位置嵌入、残差和 MLP，没有 LayerNorm 和 RoPE——数学保持可读，但“K/V 是前缀和位置的函数”这一点不变。
+`TinyModel` 是一个 2 层、4 个 Q 头 / 2 个 KV 头（GQA）、d_model=32 的玩具 LLM，带绝对位置嵌入、残差和 MLP，没有 LayerNorm 和 RoPE——数学保持可读，但“K/V 是前缀和位置的函数”这一点不变。
 
 `forward(tokens, cache=None)` 的关键几行：
 

@@ -18,7 +18,7 @@
       "section": "第 1 部分：没有 cache 的流程",
       "code": ["function:generate", "class:TinyModel.forward"],
       "viz": "dual",
-      "hint": "generate(..., use_cache=False) 的循环体：每步把 prompt + 已生成的全部 token 重新喂进模型，只取最后一个位置的 logits。"
+      "hint": "generate(..., use_cache=False) 的循环体：每步把 prompt + 已生成的全部 token 重新喂进 LLM，只取最后一个位置的 logits。"
     },
     {
       "id": "layer-cache",
@@ -98,7 +98,7 @@
       "section": "代码阅读顺序",
       "code": ["class:LayerKVCache", "function:cached_attention", "class:TinyModel", "function:generate"],
       "viz": "none",
-      "hint": "缓存容器 → attention → 玩具模型 → 生成循环，最后看自测。"
+      "hint": "缓存容器 → attention → 玩具 LLM → 生成循环，最后看自测。"
     },
     {
       "id": "questions",

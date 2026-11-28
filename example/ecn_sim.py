@@ -9,7 +9,7 @@ Pure standard library: no switch, no NIC, no RDMA. One simplified switch queue
 alpha/rate update, and PFC XOFF/XON pauses. Three scenarios compare
 PFC-only / ECN+DCQCN / ECN+DCQCN+PFC, followed by an ECN threshold sweep.
 
-Numbers are normalized (量级/简化模型): one tick ~ 10 us, queue/rate in MB per
+Numbers are normalized (量级/简化 LLM): one tick ~ 10 us, queue/rate in MB per
 tick, link rate 10 MB/tick. Every printed number is produced below and checked
 by the assertions at the end.
 """
@@ -176,7 +176,7 @@ def scenario_row(r: dict) -> str:
 
 
 def main() -> None:
-    print("ECN + DCQCN + PFC ledger (简化模型；归一化单位，1 tick ≈ 10 us 量级)")
+    print("ECN + DCQCN + PFC ledger (简化 LLM；归一化单位，1 tick ≈ 10 us 量级)")
     print(f"params: C={LINK_MB:.0f} MB/tick, R0={R_MAX_MB:.1f}, R_MIN={R_MIN_MB:.1f}, "
           f"PKT={PKT_MB:.1f} MB, BUF={BUF_MB:.0f} MB")
     print(f"        ECN min/max per case, max_p={DEFAULT_MAX_P}; PFC XOFF={XOFF_MB:.0f}, "

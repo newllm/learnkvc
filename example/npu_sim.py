@@ -40,7 +40,7 @@ def ridge_point(tflops: float, bw_gbs: float) -> float:
 
 
 def main() -> None:
-    print("== 7B 模型：同一条 roofline，不同加速器 ==")
+    print("== 7B LLM：同一条 roofline，不同加速器 ==")
     print(f"{'加速器':<22}{'类型':<8}{'BF16':>7}{'HBM':>8}{'decode':>9}{'prefill':>10}{'拐点':>8}  软件栈")
     print(f"{'':22}{'':8}{'TFLOPS':>7}{'GB/s':>8}{'tok/s':>9}{'4K ms':>10}{'F/B':>8}")
     for name, kind, peak, bw, stack in ACCELERATORS:
@@ -60,9 +60,9 @@ def main() -> None:
 
     print("\n== 选型不是只看峰值 ==")
     rows = [
-        ("大模型训练", "NVIDIA GPU / 昇腾集群", "先看集合通信、框架支持、集群规模"),
+        ("LLM 训练", "NVIDIA GPU / 昇腾集群", "先看集合通信、框架支持、集群规模"),
         ("通用推理", "NVIDIA GPU / AMD GPU / 国产 GPU", "先看引擎与算子覆盖，再看带宽"),
-        ("信创 / 国产替代", "昇腾 NPU / 海光 DCU / 国产 GPGPU", "先验证模型与算子，再谈性价比"),
+        ("信创 / 国产替代", "昇腾 NPU / 海光 DCU / 国产 GPGPU", "先验证 LLM 与算子，再谈性价比"),
         ("小团队快速上线", "NVIDIA GPU 或成熟云服务", "生态与排障成本最低"),
     ]
     for scene, pick, why in rows:

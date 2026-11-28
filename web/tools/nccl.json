@@ -384,7 +384,7 @@
     "takeaway": {
       "why": "代码是本章的唯一事实来源：页面引用的每个数字都能在输出里找到，改参数即可复算。",
       "calc": "运行后把输出和你手算的 337.54 µs × 14 = 4.726 ms、183.8 KiB crossover 对照。",
-      "infer": "把 hidden / batch / dtype 换成你的模型，就能估出 decode 每层 all-reduce 的量级。"
+      "infer": "把 hidden / batch / dtype 换成你的 LLM，就能估出 decode 每层 all-reduce 的量级。"
     }
   },
   "check": {
@@ -439,7 +439,7 @@
         "options": [
           "GPU 数量必须是 2 的幂",
           "消息大小与链路延迟/带宽的相对关系（crossover 点）",
-          "模型参数量"
+          "LLM 参数量"
         ],
         "answer": 1,
         "why": "T = steps × (α + S/BW)。小消息时 α 主导，tree 步数少占优；大消息时每步带宽项主导，ring 的 S/N 分块更省带宽。crossover 由 α、BW、N 共同决定。"
@@ -515,7 +515,7 @@
         "id": "nccl-m1",
         "label": "TP 每层的 4 KiB 消息与层数",
         "bucket": "model",
-        "why": "消息大小由 batch × hidden × dtype 决定，层数决定 all-reduce 次数；这些是模型结构给的输入。"
+        "why": "消息大小由 batch × hidden × dtype 决定，层数决定 all-reduce 次数；这些是 LLM 结构给的输入。"
       },
       {
         "id": "nccl-g1",

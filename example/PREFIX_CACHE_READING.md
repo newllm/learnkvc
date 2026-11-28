@@ -106,7 +106,7 @@ def block_hash(parent_hash, tokens):
 
 这条链还带来一个免费的结论：**前缀匹配就是沿链走**。走不动的第一个块，就是命中的边界；不用做字符串匹配，也不用比较 token 数组。
 
-> 真实引擎还会在哈希里加模型名、LoRA 名、adapter、多模态 hash 等"salt"，避免不同模型/不同任务误共享。见文末"刻意没处理的问题"。
+> 真实引擎还会在哈希里加 LLM 名、LoRA 名、adapter、多模态 hash 等"salt"，避免不同 LLM/不同任务误共享。见文末"刻意没处理的问题"。
 
 ## `acquire()`：一次请求如何命中
 
@@ -146,7 +146,7 @@ candidates = [b for b in blocks if b.ref_count == 0 and not b.children]
 
 初学者最容易担心：复用别人的 K/V，结果会不会和重新算不一样？
 
-不会，因为 **K/V 只取决于"从位置 0 到该 token 的整条前缀"**（同模型、同精度、同 RoPE 位置）。两个请求的 token 前缀逐位相同，那一段的 K/V 就逐位相同，只是它们恰好属于不同的序列。
+不会，因为 **K/V 只取决于"从位置 0 到该 token 的整条前缀"**（同 LLM、同精度、同 RoPE 位置）。两个请求的 token 前缀逐位相同，那一段的 K/V 就逐位相同，只是它们恰好属于不同的序列。
 
 代码没有让你"相信"，而是让你"验证"：
 
@@ -223,7 +223,7 @@ req-y: [ prefix 12 tok ][ phrase ][ tail ]
 [t=1] admit  req-y  prompt=20 复用 4 块=16 tok    prefill= 4
 ```
 
-把 `block_hash` 改成只哈希 `tokens`，`verify_reuse_exact` 会立刻报 `req-y` 与全量重算不一致。这就是块哈希必须包含 `parent_hash` 的原因：**它编码的是"整条前缀"，不是"这 4 个 token"**。生产实现还会把模型名、LoRA、多模态哈希一起混进去，避免不同来源的块被误认为同一个。
+把 `block_hash` 改成只哈希 `tokens`，`verify_reuse_exact` 会立刻报 `req-y` 与全量重算不一致。这就是块哈希必须包含 `parent_hash` 的原因：**它编码的是"整条前缀"，不是"这 4 个 token"**。生产实现还会把 LLM 名、LoRA、多模态哈希一起混进去，避免不同来源的块被误认为同一个。
 
 ## 多次提问：多轮 vs 多请求
 

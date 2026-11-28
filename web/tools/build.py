@@ -376,6 +376,10 @@ def build_npu() -> dict:
     return build_doc_sim("npu")
 
 
+def build_transformer() -> dict:
+    return build_doc_sim("transformer")
+
+
 def build_ecn() -> dict:
     return build_doc_sim("ecn")
 
@@ -485,9 +489,10 @@ def main() -> None:
         "ecn": build_ecn(),
         "gpu": build_gpu(),
         "npu": build_npu(),
+        "transformer": build_transformer(),
         "opt": build_opt(),
     }
-    for ch in ("net", "train", "nccl", "cuda", "ecn", "gpu", "npu", "opt"):
+    for ch in ("net", "train", "nccl", "cuda", "ecn", "gpu", "npu", "transformer", "opt"):
         data["lessons"][ch] = data[ch]["lesson"]
     (DATA / "data.js").write_text(
         "window.LK_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n", encoding="utf-8"
@@ -508,7 +513,7 @@ def main() -> None:
     doc = [f"{ch}:{len(build['lesson']['think'])} think / {len(build['simOutput'].splitlines())} out"
            for ch, build in (("nccl", data["nccl"]), ("cuda", data["cuda"]),
                              ("ecn", data["ecn"]), ("gpu", data["gpu"]),
-                             ("npu", data["npu"]), ("opt", data["opt"]))]
+                             ("npu", data["npu"]), ("transformer", data["transformer"]), ("opt", data["opt"]))]
     print("doc chapters:", " · ".join(doc))
     print("built:", ", ".join(s["id"] for s in kv["steps"]))
 

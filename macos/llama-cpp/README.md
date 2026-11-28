@@ -1,11 +1,11 @@
 # 在 macOS 上用 llama.cpp 跑 Llama（Metal GPU）
 
-用 [llama.cpp](https://github.com/ggml-org/llama.cpp) 在 Mac 上直接跑 Llama 的 GGUF 量化模型，起一个 OpenAI 兼容服务，并用 `-c`、`-ngl`、`-fa`、`-ctk/-ctv` 这些底层参数观察 KV cache 和 Metal 卸载行为。默认模型（Llama 3.2 3B）只用于演示；**写代码请换 Coder 模型，见下文「用 llama.cpp 写代码」**。llama.cpp 是 Ollama 底层的推理引擎之一，这份示例和 [`../ollama/README.md`](../ollama/README.md) 是互补关系：
+用 [llama.cpp](https://github.com/ggml-org/llama.cpp) 在 Mac 上直接跑 Llama 的 GGUF 量化 LLM，起一个 OpenAI 兼容服务，并用 `-c`、`-ngl`、`-fa`、`-ctk/-ctv` 这些底层参数观察 KV cache 和 Metal 卸载行为。默认 LLM（Llama 3.2 3B）只用于演示；**写代码请换 Coder LLM，见下文「用 llama.cpp 写代码」**。llama.cpp 是 Ollama 底层的推理引擎之一，这份示例和 [`../ollama/README.md`](../ollama/README.md) 是互补关系：
 
 | | 这份示例（llama.cpp） | [`macos/ollama/`](../ollama/README.md) |
 | --- | --- | --- |
-| 定位 | 底层引擎，参数全暴露 | 一体化运行时 + 模型库 + 菜单栏 App |
-| 模型管理 | `-hf` 从 Hugging Face 拉 GGUF，或给本地 `.gguf` | `ollama pull`，官方模型库 |
+| 定位 | 底层引擎，参数全暴露 | 一体化运行时 + LLM 库 + 菜单栏 App |
+| LLM 管理 | `-hf` 从 Hugging Face 拉 GGUF，或给本地 `.gguf` | `ollama pull`，官方 LLM 库 |
 | 参数控制 | `-c`、`-ngl`、`-fa`、`-ctk/-ctv`、`-np`、`-b/-ub` … | `OLLAMA_*` 环境变量 + `num_ctx` |
 | 服务端口 | 默认 `9931`（v1.0） | 默认 `11434` |
 | 适合 | 调参、对照 KV cache、试新特性、单一二进制 | 日常使用、省心、自动更新 |
@@ -26,8 +26,8 @@ macos/llama-cpp/
   - [1. 官方脚本（Apple Silicon 推荐）](#1-官方脚本apple-silicon-推荐)
   - [2. Homebrew](#2-homebrew)
   - [3. 源码构建（想跟最新 master 时）](#3-源码构建想跟最新-master-时)
-- [模型从哪来](#模型从哪来)
-- [用 llama.cpp 写代码：模型怎么选](#用-llamacpp-写代码模型怎么选)
+- [LLM 从哪来](#llm-从哪来)
+- [用 llama.cpp 写代码：LLM 怎么选](#用-llamacpp-写代码llm-怎么选)
   - [启动与接入编辑器](#启动与接入编辑器)
   - [实际体验与建议](#实际体验与建议)
 - [对接 OpenCode（本地代码 Agent）](#对接-opencode本地代码-agent)
@@ -54,8 +54,8 @@ macos/llama-cpp/
 | --- | --- |
 | 系统 | macOS Sonoma（14）或更新（Apple Silicon 推荐） |
 | 芯片 | Apple Silicon：Metal GPU + 统一内存；Intel Mac：只能 CPU |
-| 内存 | 模型大小 + `-c` 对应的 KV cache + 运行时开销（见下文公式） |
-| 磁盘 | 模型放 `~/Library/Caches/llama.cpp`（默认缓存），一个 3B Q4 模型约 2 GB |
+| 内存 | LLM 大小 + `-c` 对应的 KV cache + 运行时开销（见下文公式） |
+| 磁盘 | LLM 放 `~/Library/Caches/llama.cpp`（默认缓存），一个 3B Q4 LLM 约 2 GB |
 | 网络 | 首次 `-hf` 需要访问 Hugging Face；国内可设 `HF_ENDPOINT=https://hf-mirror.com` |
 
 ## 安装（三种方式，选一种）
@@ -103,7 +103,7 @@ command -v llama        # ~/.local/bin/llama 或 /opt/homebrew/bin/llama
 llama version
 ```
 
-## 模型从哪来
+## LLM 从哪来
 
 llama.cpp 直接吃 GGUF 文件，三种来源：
 
@@ -122,13 +122,13 @@ llama serve -m ./Llama-3.2-3B-Instruct-Q4_K_M.gguf
 - macOS 的默认缓存目录是 `~/Library/Caches/llama.cpp`，可用 `LLAMA_CACHE` 改。
 - 国内网络：`HF_ENDPOINT=https://hf-mirror.com llama serve -hf ...`。
 - gated 仓库：`-hft <token>` 或环境变量 `HF_TOKEN`。
-- Ollama 的模型其实也是 GGUF blob，但它按 manifest 存放，不建议直接把 `~/.ollama/models/blobs/*` 指给 llama.cpp；从 HF 拉一份更稳。
+- Ollama 的 LLM 其实也是 GGUF blob，但它按 manifest 存放，不建议直接把 `~/.ollama/models/blobs/*` 指给 llama.cpp；从 HF 拉一份更稳。
 
-## 用 llama.cpp 写代码：模型怎么选
+## 用 llama.cpp 写代码：LLM 怎么选
 
-先说结论：**本文默认的 Llama 3.2 3B 是拿来演示 KV cache 的，不适合认真写代码**。它能回答简单语法问题，但代码能力、指令跟随和长代码上下文都明显弱于专门的 Coder 模型，容易编造 API 或依赖。真要用它写代码，把 `-hf` 换成下面的 Coder 模型（都是 GGUF，`llama serve -hf` 直接拉）：
+先说结论：**本文默认的 Llama 3.2 3B 是拿来演示 KV cache 的，不适合认真写代码**。它能回答简单语法问题，但代码能力、指令跟随和长代码上下文都明显弱于专门的 Coder LLM，容易编造 API 或依赖。真要用它写代码，把 `-hf` 换成下面的 Coder LLM（都是 GGUF，`llama serve -hf` 直接拉）：
 
-| 模型 | Hugging Face 仓库（示例） | Q4 体积 | 16 GB M2 上 | 适合 |
+| LLM | Hugging Face 仓库（示例） | Q4 体积 | 16 GB M2 上 | 适合 |
 | --- | --- | --- | --- | --- |
 | Qwen2.5-Coder-7B-Instruct | `unsloth/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M` | 4.36 GB | ✅ 推荐，`-c 8192`/`-c 16384` 都稳 | 日常补全、小项目、代码问答 |
 | Qwen2.5-Coder-14B-Instruct | `unsloth/Qwen2.5-Coder-14B-Instruct-GGUF:Q4_K_M` | 8.37 GB | ⚠️ 能跑，建议 `-c 2048` 且关掉大内存应用 | 质量更好、复杂重构 |
@@ -142,7 +142,7 @@ KV cache 也要算进内存（比 Llama 3.2 3B 更要注意）：
 
 - Qwen2.5-Coder-7B：28 层、4 个 KV 头、head_dim=128、fp16 → **56 KiB/token**；`-c 8192` ≈ 448 MiB，`-c 16384` ≈ 896 MiB。
 - Qwen2.5-Coder-14B：48 层、8 个 KV 头 → **192 KiB/token**；`-c 2048` ≈ 384 MiB，`-c 4096` ≈ 768 MiB。
-- 30B 级 MoE 的权重装不下时，Ollama 式的“自动缩上下文”在 llama.cpp 里没有，别硬开大 `-c`；宁可换小模型。
+- 30B 级 MoE 的权重装不下时，Ollama 式的“自动缩上下文”在 llama.cpp 里没有，别硬开大 `-c`；宁可换小 LLM。
 
 ### 启动与接入编辑器
 
@@ -172,12 +172,12 @@ llama serve -hf unsloth/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M \
 
 - 7B 在 M2 16 GB 上比较流畅，适合补全、写脚本、解释报错；复杂重构/长文件分析仍会力不从心。
 - 14B 质量更好但明显慢，`-c` 超过 4K 容易和系统抢内存；只在需要时用。
-- 想让模型“读整个仓库”，本地 16 GB 内存不现实，优先把相关文件/片段喂进上下文。
+- 想让 LLM“读整个仓库”，本地 16 GB 内存不现实，优先把相关文件/片段喂进上下文。
 - 不想折腾 llama.cpp 参数的话，Ollama 里有现成的 `qwen2.5-coder:7b` / `qwen2.5-coder:14b`，见 [`../ollama/README.md`](../ollama/README.md)。
 
 ## 对接 OpenCode（本地代码 Agent）
 
-[OpenCode](https://opencode.ai) 是一个终端里的开源编程 Agent：读项目、改文件、跑命令、调用工具。它支持 OpenAI 兼容的 provider，所以可以直接接 llama.cpp 的 `/v1` 服务。和 vLLM / LM Studio 不同，**llama.cpp 不在 OpenCode 的自动发现列表里**，需要手动写一个 custom provider 并显式列出模型。
+[OpenCode](https://opencode.ai) 是一个终端里的开源编程 Agent：读项目、改文件、跑命令、调用工具。它支持 OpenAI 兼容的 provider，所以可以直接接 llama.cpp 的 `/v1` 服务。和 vLLM / LM Studio 不同，**llama.cpp 不在 OpenCode 的自动发现列表里**，需要手动写一个 custom provider 并显式列出 LLM。
 
 ### 1. 启动 llama.cpp 服务
 
@@ -191,7 +191,7 @@ bash macos/llama-cpp/run.sh \
 
 内存账：权重 4.36 GB + 32K KV（56 KiB/token ≈ 1.75 GiB）+ 运行时约 1–2 GB，16 GB 机器能放下，但别同时开太多大应用。
 
-> 注意：Qwen2.5-Coder-7B 的代码能力好，但**不等价于 Agent 工具调用好**。实测在 Ollama 里它经常把工具调用输出成裸 JSON（不带 `<tool_call>` 标签），OpenCode/Cline 拿不到 `tool_calls`，表现为“只聊天不改文件”。如果遇到这种情况，Agent 场景换 `qwen3.5:4b`（Ollama，256K 原生、tools/thinking、MLX）或云端模型；Qwen2.5-Coder 更适合 FIM 补全和直接问答。
+> 注意：Qwen2.5-Coder-7B 的代码能力好，但**不等价于 Agent 工具调用好**。实测在 Ollama 里它经常把工具调用输出成裸 JSON（不带 `<tool_call>` 标签），OpenCode/Cline 拿不到 `tool_calls`，表现为“只聊天不改文件”。如果遇到这种情况，Agent 场景换 `qwen3.5:4b`（Ollama，256K 原生、tools/thinking、MLX）或云端 LLM；Qwen2.5-Coder 更适合 FIM 补全和直接问答。
 
 ### 2. 安装并配置 OpenCode
 
@@ -241,16 +241,16 @@ cp macos/llama-cpp/opencode.jsonc ~/.config/opencode/opencode.jsonc
 要点：
 
 - `baseURL` 必须带 `/v1`，且端口和你 `llama serve --port` 一致。
-- `models` 的 key 是 OpenCode 里的模型 ID，要和服务端 `-a/--alias` 对上；自定义 provider 不会自动发现模型，必须显式列。
+- `models` 的 key 是 OpenCode 里的 LLM ID，要和服务端 `-a/--alias` 对上；自定义 provider 不会自动发现 LLM，必须显式列。
 - `limit.context` 要和服务端 `-c` 对齐（这里都是 32768），否则 OpenCode 可能发出超预算的请求，直接被 llama.cpp 截断/报错。
 - llama.cpp 不带 `--api-key` 时不校验；如果带了，把 `settings.apiKey` 改成同一个值（或改用环境变量引用）。
 - 旧版 OpenCode 的写法是 `provider` + `npm` + `options`，当前版本是 `providers` + `package` + `settings`；按你装的版本选，别混用。
 
 ### 64K 上下文
 
-OpenCode 本身没有全局“默认 64K”的硬编码：不在 catalog 里的模型它会按 fallback 假设 200K context / 32K output，实际以 provider 返回或你在 `limit.context` 里写的值为准（见 [OpenCode models 文档](https://opencode.ai/docs/models/)）。**64K 来自 Ollama 的 OpenCode 接入建议**（“requires a context length of 64k or higher”，见 [Ollama OpenCode 文档](https://docs.ollama.com/integrations/opencode)）。在这台 16 GB 机器上要分两条路看：
+OpenCode 本身没有全局“默认 64K”的硬编码：不在 catalog 里的 LLM 它会按 fallback 假设 200K context / 32K output，实际以 provider 返回或你在 `limit.context` 里写的值为准（见 [OpenCode models 文档](https://opencode.ai/docs/models/)）。**64K 来自 Ollama 的 OpenCode 接入建议**（“requires a context length of 64k or higher”，见 [Ollama OpenCode 文档](https://docs.ollama.com/integrations/opencode)）。在这台 16 GB 机器上要分两条路看：
 
-- **Ollama 路线**：Ollama 会把 `num_ctx` 限制在模型训练长度内（源码 `llm/server.go` 里 `opts.NumCtx > trainCtx` 时直接压回，并打 `requested context size too large for model` 警告）。`qwen2.5-coder:7b` 是 32K，所以 `OLLAMA_CONTEXT_LENGTH=65536` 实际还是 32K。要用 Ollama 跑 64K，得换原生 64K+ 的模型（如 `llama3.1:8b` 的 128K，配合 `OLLAMA_KV_CACHE_TYPE=q8_0`），但它的代码能力不如 Qwen Coder。
+- **Ollama 路线**：Ollama 会把 `num_ctx` 限制在 LLM 训练长度内（源码 `llm/server.go` 里 `opts.NumCtx > trainCtx` 时直接压回，并打 `requested context size too large for model` 警告）。`qwen2.5-coder:7b` 是 32K，所以 `OLLAMA_CONTEXT_LENGTH=65536` 实际还是 32K。要用 Ollama 跑 64K，得换原生 64K+ 的 LLM（如 `llama3.1:8b` 的 128K，配合 `OLLAMA_KV_CACHE_TYPE=q8_0`），但它的代码能力不如 Qwen Coder。
 - **llama.cpp 路线**：可以显式 `-c 65536`，并用 YaRN 把 32K 的 Qwen2.5-Coder-7B 外推到 64K：
 
   ```bash
@@ -266,26 +266,26 @@ OpenCode 本身没有全局“默认 64K”的硬编码：不在 catalog 里的�
 
   用了 64K 就把 OpenCode 配置里的 `limit.context` 改成 `65536`，并确认 `curl http://127.0.0.1:9931/props` 里的 `n_ctx` 也是 65536。
 
-- **Qwen3.5 的 KV 比同尺寸稠密模型小**：它是混合注意力（32 层里只有 8 层 full attention，其余 linear attention），full attention 部分约 **32 KiB/token**，64K 只有约 2 GiB。所以 `qwen3.5:4b` 跑 64K 很轻松；`qwen3.5:9b`（权重 6.6–7.6 GB）跑 64K 会接近 10.7 GiB 的 Metal 预算，需要实测。
-- **结论**：16 GB 上 64K 是“能跑但别指望和原生 128K 模型一样好用”；认真做仓库级 Agent，建议更大内存的机器或云端模型。
+- **Qwen3.5 的 KV 比同尺寸稠密 LLM 小**：它是混合注意力（32 层里只有 8 层 full attention，其余 linear attention），full attention 部分约 **32 KiB/token**，64K 只有约 2 GiB。所以 `qwen3.5:4b` 跑 64K 很轻松；`qwen3.5:9b`（权重 6.6–7.6 GB）跑 64K 会接近 10.7 GiB 的 Metal 预算，需要实测。
+- **结论**：16 GB 上 64K 是“能跑但别指望和原生 128K LLM 一样好用”；认真做仓库级 Agent，建议更大内存的机器或云端 LLM。
 
 ### 3. 在项目里使用
 
 ```bash
 cd ~/code/your-project
 opencode                 # 打开 TUI，首次用 /models 选 llamacpp/qwen2.5-coder-7b
-# 或直接跑一次性任务（用配置里的默认模型）
+# 或直接跑一次性任务（用配置里的默认 LLM）
 opencode run "解释一下这个仓库的入口和主要模块"
 ```
 
-TUI 里 `/models` 可以切换模型，`/help` 看命令；OpenCode 会在上下文快满时自动压缩历史。
+TUI 里 `/models` 可以切换 LLM，`/help` 看命令；OpenCode 会在上下文快满时自动压缩历史。
 
 ### 4. 常见问题
 
 - **`/models` 里看不到 llamacpp**：配置文件放错位置、JSONC 语法错误，或 provider ID 拼错；确认 `opencode.jsonc` 在项目根或 `~/.config/opencode/`。
 - **请求 404/400**：`baseURL` 少了 `/v1`，或 `model` 和服务端 `-a` 别名不一致；先 `curl http://127.0.0.1:9931/v1/models` 确认。
-- **Agent 不调用工具 / 只聊天**：模型工具调用能力不足或上下文不够；先保证 `/v1/chat/completions` 正常，再换更强的 Coder 模型。llama.cpp v1 默认启用 `--jinja`，模板没问题。
-- **上下文超限**：把 `limit.context`、服务端 `-c`、模型原生窗口三者对齐；16 GB 上 7B 用 32K 是比较稳的上限。
+- **Agent 不调用工具 / 只聊天**：LLM 工具调用能力不足或上下文不够；先保证 `/v1/chat/completions` 正常，再换更强的 Coder LLM。llama.cpp v1 默认启用 `--jinja`，模板没问题。
+- **上下文超限**：把 `limit.context`、服务端 `-c`、LLM 原生窗口三者对齐；16 GB 上 7B 用 32K 是比较稳的上限。
 - **想换成 Ollama**：OpenCode 对 Ollama 有内置 provider 和自动发现，见 [`../ollama/README.md`](../ollama/README.md)。
 
 ## 启动服务
@@ -298,9 +298,9 @@ llama serve -hf bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M \
   --host 127.0.0.1 --port 9931 --metrics
 ```
 
-- `-c 4096`：上下文；**不要用默认的 `-c 0`**（0 表示用模型训练时的长度，Llama 3.2 是 128K，KV cache 会直接吃掉十几 GB）。
+- `-c 4096`：上下文；**不要用默认的 `-c 0`**（0 表示用 LLM 训练时的长度，Llama 3.2 是 128K，KV cache 会直接吃掉十几 GB）。
 - `-ngl auto`：让 llama.cpp 自动决定卸载多少层到 Metal；`all` 全上 GPU，`0` 纯 CPU。
-- `-a llama3.2-3b`：API 里的模型别名（`/v1/chat/completions` 的 `model` 字段）。
+- `-a llama3.2-3b`：API 里的 LLM 别名（`/v1/chat/completions` 的 `model` 字段）。
 - 服务起来后浏览器打开 `http://127.0.0.1:9931` 就是内置的 **Llama Chat** Web UI；不需要就加 `--no-webui`。
 
 默认监听 `127.0.0.1:9931`（v1.0 的默认端口；网上很多旧教程写 8080，是因为显式传了 `--port 8080`）。
@@ -319,15 +319,15 @@ bash macos/llama-cpp/run.sh --status              # 看 /props、上下文、吞
 bash macos/llama-cpp/run.sh --stop                # 停掉本脚本起的服务
 ```
 
-脚本的后台进程日志在 `~/.llama-cpp/llama-serve.log`，pid 在 `~/.llama-cpp/llama-serve.pid`。首次启动会下载模型，`/health` 在加载完成前返回 503，脚本会一直等到 200。
+脚本的后台进程日志在 `~/.llama-cpp/llama-serve.log`，pid 在 `~/.llama-cpp/llama-serve.pid`。首次启动会下载 LLM，`/health` 在加载完成前返回 503，脚本会一直等到 200。
 
 ### 常用参数速查
 
 | 参数 | 作用 |
 | --- | --- |
-| `-m PATH` | 本地 GGUF 模型 |
-| `-hf REPO[:QUANT]` | 从 Hugging Face 拉模型（quant 缺省按 Q4_K_M） |
-| `-c N` / `--ctx-size N` | 上下文长度；0 = 模型训练长度（通常很大，慎用） |
+| `-m PATH` | 本地 GGUF LLM |
+| `-hf REPO[:QUANT]` | 从 Hugging Face 拉 LLM（quant 缺省按 Q4_K_M） |
+| `-c N` / `--ctx-size N` | 上下文长度；0 = LLM 训练长度（通常很大，慎用） |
 | `-ngl N\|auto\|all` | 卸载到 GPU 的层数 |
 | `-fa on\|off\|auto` | FlashAttention，默认 auto |
 | `-ctk TYPE` / `-ctv TYPE` | K/V cache 的数据类型（`f16` / `q8_0` / `q4_0` …）；量化需要 `-fa on` |
@@ -339,7 +339,7 @@ bash macos/llama-cpp/run.sh --stop                # 停掉本脚本起的服务
 | `--host` / `--port` | 监听地址与端口（默认 `127.0.0.1:9931`） |
 | `--metrics` | 打开 Prometheus 指标端点 `/metrics` |
 | `--no-webui` | 关掉内置 Web UI |
-| `-a ALIAS` | API 模型别名 |
+| `-a ALIAS` | API LLM 别名 |
 | `--api-key KEY` | 给 API 加认证（非本机访问时建议加） |
 
 `llama serve --help` 输出全部参数；也可以看上游的 [server 文档](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)。
@@ -354,7 +354,7 @@ MODEL="llama3.2-3b"
 # 健康检查：加载中返回 503，就绪返回 200
 curl -s http://127.0.0.1:9931/health
 
-# 服务信息（上下文 n_ctx、槽位数、模型路径、chat template）
+# 服务信息（上下文 n_ctx、槽位数、LLM 路径、chat template）
 curl -s http://127.0.0.1:9931/props
 
 # OpenAI 兼容对话
@@ -362,7 +362,7 @@ curl -s http://127.0.0.1:9931/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}],\"stream\":false}"
 
-# OpenAI 兼容模型列表
+# OpenAI 兼容 LLM 列表
 curl -s http://127.0.0.1:9931/v1/models
 
 # llama.cpp 原生补全接口（不是 OpenAI 格式）
@@ -376,11 +376,11 @@ curl -s http://127.0.0.1:9931/metrics
 
 Python 用 `openai` SDK 时把 `base_url` 设为 `http://127.0.0.1:9931/v1`、`api_key` 随便填（如 `"llama"`，本地未开 `--api-key` 时会忽略）。
 
-多模态模型（如 Llama 3.2 Vision 的 GGUF 仓库）用 `-hf` 时如果仓库带 mmproj，会自动下载并在 `/v1/chat/completions` 里接受图片（base64 或 URL，具体看 `/props` 的 `modalities`）。
+多模态 LLM（如 Llama 3.2 Vision 的 GGUF 仓库）用 `-hf` 时如果仓库带 mmproj，会自动下载并在 `/v1/chat/completions` 里接受图片（base64 或 URL，具体看 `/props` 的 `modalities`）。
 
 ## 上下文与 KV cache：和本仓库的关系
 
-llama.cpp 的 `-c` 直接决定 KV cache 的总容量；默认 `-c 0` 会用模型训练长度（Llama 3.2 是 128K），所以日常一定要显式给一个值。
+llama.cpp 的 `-c` 直接决定 KV cache 的总容量；默认 `-c 0` 会用 LLM 训练长度（Llama 3.2 是 128K），所以日常一定要显式给一个值。
 
 - 每个 token 每层的 K/V 占用：
 
@@ -410,26 +410,26 @@ llama.cpp 的 `-c` 直接决定 KV cache 的总容量；默认 `-c 0` 会用模�
 - 先看日志确认 Metal 生效：启动日志里应有 `ggml_metal` / `offloaded N/M layers to GPU`；没有的话检查是不是用了 `-ngl 0` 或 Intel 机器。
 - 长 prompt（贴代码/文档）主要吃 prefill，`-b/-ub` 会影响 prefill 速度和显存峰值；短回复的延迟更依赖首 token 时间。
 - 用 `/metrics` 的 `prompt_tokens_seconds` / `predicted_tokens_seconds` 看吞吐；要跑基准用 `llama bench -m model.gguf -p 512 -n 128`。
-- 模型加载用 mmap（默认）时，首次加载慢、内存占用看起来“省”，但推理时仍会驻留；想避免换页可以试 `-lm mmap+mlock`（内存要够）。
+- LLM 加载用 mmap（默认）时，首次加载慢、内存占用看起来“省”，但推理时仍会驻留；想避免换页可以试 `-lm mmap+mlock`（内存要够）。
 - v1 的 `-fit on`（默认）会自动调整**没有显式指定**的参数以适配设备内存；显式给了 `-c`/`-ngl` 时以你的值为准。
 
 ## 和 Ollama / Docker 版的关系
 
 | | llama.cpp（本文） | Ollama（[`../ollama/`](../ollama/README.md)） | Docker Ollama（[`../../docker/ollama/`](../../docker/ollama/README.md)） |
 | --- | --- | --- | --- |
-| 模型管理 | `-hf` / 本地 GGUF | `ollama pull` 模型库 | 容器内 `ollama pull` |
+| LLM 管理 | `-hf` / 本地 GGUF | `ollama pull` LLM 库 | 容器内 `ollama pull` |
 | Metal GPU | 有 | 有 | 无（macOS 上 Docker 拿不到 GPU） |
 | 参数粒度 | 最细（`-c`、`-ngl`、`-fa`、`-ctk/-ctv`、`-b/-ub`） | 中（`OLLAMA_*`、`num_ctx`） | 中 |
 | 端口 | 9931 | 11434 | 宿主机映射 11434 |
 | 适合 | 调参/实验/对照 KV cache | 日常使用、省心 | 练 Docker、Linux 服务器 |
 
-llama.cpp 用 9931、Ollama 用 11434，端口不冲突，可以并存；但每套都会加载一份模型，同时跑要注意总内存。同一个端口不要起两个实例。
+llama.cpp 用 9931、Ollama 用 11434，端口不冲突，可以并存；但每套都会加载一份 LLM，同时跑要注意总内存。同一个端口不要起两个实例。
 
 ## 常见问题
 
 **`/health` 一直是 503**
 
-模型还在下载或加载。首次 `-hf` 要下载数 GB；用本脚本启动时看 `tail -f ~/.llama-cpp/llama-serve.log`，手动前台跑就在终端看进度；加载完成后返回 `{"status":"ok"}`。
+LLM 还在下载或加载。首次 `-hf` 要下载数 GB；用本脚本启动时看 `tail -f ~/.llama-cpp/llama-serve.log`，手动前台跑就在终端看进度；加载完成后返回 `{"status":"ok"}`。
 
 **地址被占用（`bind: address already in use`）**
 
@@ -439,13 +439,13 @@ lsof -nP -iTCP:9931 -sTCP:LISTEN
 
 可能是上一次没退出的 llama.cpp，或另一个脚本实例。本脚本起的用 `bash macos/llama-cpp/run.sh --stop`；手动起的在终端 `Ctrl+C`。
 
-**模型下载慢 / 失败**
+**LLM 下载慢 / 失败**
 
-设镜像 `HF_ENDPOINT=https://hf-mirror.com`；gated 仓库要 `HF_TOKEN`/`-hft`；已经下载过的模型在 `~/Library/Caches/llama.cpp`，重复启动不会重下。
+设镜像 `HF_ENDPOINT=https://hf-mirror.com`；gated 仓库要 `HF_TOKEN`/`-hft`；已经下载过的 LLM 在 `~/Library/Caches/llama.cpp`，重复启动不会重下。
 
 **内存不够 / 机器变卡**
 
-优先降 `-c`（4096 → 2048），再用 `-ctk q8_0 -ctv q8_0`，再换更小的 quant（Q4_K_M → Q3_K_M）或更小的模型；`-ngl` 调小会把层放回 CPU，反而更慢，除非显存真的不够。
+优先降 `-c`（4096 → 2048），再用 `-ctk q8_0 -ctv q8_0`，再换更小的 quant（Q4_K_M → Q3_K_M）或更小的 LLM；`-ngl` 调小会把层放回 CPU，反而更慢，除非显存真的不够。
 
 **确认 Metal 有没有用上**
 
@@ -459,9 +459,9 @@ llama.cpp 支持 RoPE 缩放（`--rope-scaling`、`--rope-scale` 等），但 KV
 
 确认启动时没加 `--no-webui`，并且监听地址是 `127.0.0.1`（或从别的机器访问时用 `--host 0.0.0.0`，并考虑 `--api-key`）。
 
-**Ollama 的模型能直接给 llama.cpp 用吗**
+**Ollama 的 LLM 能直接给 llama.cpp 用吗**
 
-不建议直接指 `~/.ollama/models/blobs`：那是按 manifest 组织的内部结构。用 `-hf` 从 HF 拉同一模型的 GGUF；如果只有 Hugging Face 原始权重，可以用 llama.cpp 的 [convert_hf_to_gguf.py](https://github.com/ggml-org/llama.cpp/blob/master/convert_hf_to_gguf.py) 自己转。
+不建议直接指 `~/.ollama/models/blobs`：那是按 manifest 组织的内部结构。用 `-hf` 从 HF 拉同一 LLM 的 GGUF；如果只有 Hugging Face 原始权重，可以用 llama.cpp 的 [convert_hf_to_gguf.py](https://github.com/ggml-org/llama.cpp/blob/master/convert_hf_to_gguf.py) 自己转。
 
 ## 清理 / 卸载
 
@@ -474,7 +474,7 @@ curl -LsSf https://llama.app/install.sh | sh
 
 # 彻底删除官方脚本装的二进制和缓存
 rm -rf ~/.llama-app ~/.local/bin/llama
-rm -rf ~/Library/Caches/llama.cpp      # 模型缓存，确认不再需要再删
+rm -rf ~/Library/Caches/llama.cpp      # LLM 缓存，确认不再需要再删
 
 # Homebrew 安装的
 brew uninstall llama.cpp
@@ -488,5 +488,5 @@ brew uninstall llama.cpp
 - server 参数与 API：<https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md>
 - 命令行工具：<https://github.com/ggml-org/llama.cpp/blob/master/tools/cli/README.md>
 - 官方安装脚本：<https://llama.app/install.sh>
-- Ollama 版（自动管理模型、菜单栏 App）：[`../ollama/README.md`](../ollama/README.md)
+- Ollama 版（自动管理 LLM、菜单栏 App）：[`../ollama/README.md`](../ollama/README.md)
 - Docker 版（Linux 容器 / CPU）：[`../../docker/ollama/README.md`](../../docker/ollama/README.md)

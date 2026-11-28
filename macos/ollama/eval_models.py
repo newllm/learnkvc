@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""在本地 Ollama 上对比模型的代码准确率 / 工具调用 / 速度。
+"""在本地 Ollama 上对比 LLM 的代码准确率 / 工具调用 / 速度。
 
 用法：
   python3 macos/ollama/eval_models.py
@@ -7,9 +7,9 @@
   python3 macos/ollama/eval_models.py --models qwen3.5:4b-q8_0 --tasks 8
 
 说明：
-  - 每题都带隐藏断言，模型只看到题目；生成的代码在子进程里跑断言，10s 超时。
-  - 默认关闭 thinking（只对支持 think 的模型发送 think:false，其他模型自动跳过）。
-  - 每个模型跑完会做一次 write_file 工具调用测试，检查 tool_calls 是否非空。
+  - 每题都带隐藏断言，LLM 只看到题目；生成的代码在子进程里跑断言，10s 超时。
+  - 默认关闭 thinking（只对支持 think 的 LLM 发送 think:false，其他 LLM 自动跳过）。
+  - 每个 LLM 跑完会做一次 write_file 工具调用测试，检查 tool_calls 是否非空。
   - 结果只是小样本参考：换成你自己仓库里的真实任务（带测试）更有意义。
 """
 
@@ -174,7 +174,7 @@ def tool_test(model, ctx):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--models", default="qwen3.5:4b,qwen3.5:9b", help="逗号分隔的模型名")
+    ap.add_argument("--models", default="qwen3.5:4b,qwen3.5:9b", help="逗号分隔的 LLM 名")
     ap.add_argument("--ctx", type=int, default=32768)
     ap.add_argument("--tasks", type=int, default=len(TASKS), help=f"跑前 N 题（共 {len(TASKS)}）")
     args = ap.parse_args()
