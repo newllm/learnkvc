@@ -4,6 +4,28 @@
   const D = window.LK_DATA;
   const TR = window.LK_TRACES && window.LK_TRACES.kv;
 
+  // learnkvc → whykvc：旧 localStorage 不删除，首次用原值填到新 key，
+  // 避免已学进度/主题/导航状态因为改名丢失。
+  (function migrateOldKeys() {
+    const pairs = {
+      "learnkvc.progress.v1": "whykvc.progress.v1",
+      "learnkvc.theme": "whykvc.theme",
+      "learnkvc.stepnav": "whykvc.stepnav",
+      "learnkvc.sectionnav": "whykvc.sectionnav",
+      "learnkvc.reflect.v1": "whykvc.reflect.v1",
+    };
+    try {
+      Object.keys(pairs).forEach((oldKey) => {
+        const oldValue = localStorage.getItem(oldKey);
+        if (oldValue !== null && localStorage.getItem(pairs[oldKey]) === null) {
+          localStorage.setItem(pairs[oldKey], oldValue);
+        }
+      });
+    } catch (e) {
+      /* file:// / privacy mode：忽略 */
+    }
+  })();
+
   if (!D || !TR) {
     document.body.innerHTML =
       '<p style="padding:2rem;color:#d7e2ee">数据缺失：先运行 <code>python3 web/tools/build.py</code>。</p>';
@@ -107,7 +129,7 @@
   let pagedCode = null;
 
   state.prefix = { step: 0, scenario: "shared", snap: 0, playing: false, timer: null };
-  state.paged = { step: 0, snap: 0, sel: "seq-b", playing: false, timer: null };
+  state.paged = { step: 0, snap: 0, sel: "seq-b", block: null, playing: false, timer: null };
   const CHAPTERS = ["kv", "prefix", "paged"];
   const DOC_CHAPTERS = ["transformer", "anatomy", "net", "train", "nccl", "cuda", "ecn", "gpu", "npu", "opt"];
   const ALL_CHAPTERS = CHAPTERS.concat(DOC_CHAPTERS);
@@ -420,6 +442,13 @@
         state.paged.sel = seq;
         renderPagedViz();
       },
+      setBlock(block) {
+        const snap = LK_TRACES.paged.snapshots[state.paged.snap] || LK_TRACES.paged.snapshots[0];
+        const hit = snap.blocks.find((b) => b.id === block);
+        state.paged.block = state.paged.block === block ? null : block;
+        if (state.paged.block !== null && hit && hit.owner) state.paged.sel = hit.owner;
+        renderPagedViz();
+      },
       togglePlay() {
         if (state.paged.playing) {
           stopPagedPlay();
@@ -523,7 +552,7 @@
 
   function navStore() {
     try {
-      return JSON.parse(localStorage.getItem("learnkvc.stepnav") || "{}") || {};
+      return JSON.parse(localStorage.getItem("whykvc.stepnav") || "{}") || {};
     } catch (e) {
       return {};
     }
@@ -531,7 +560,7 @@
 
   function saveNavStore() {
     try {
-      localStorage.setItem("learnkvc.stepnav", JSON.stringify(state.navCollapsed));
+      localStorage.setItem("whykvc.stepnav", JSON.stringify(state.navCollapsed));
     } catch (e) {
       /* localStorage unavailable */
     }
@@ -1183,8 +1212,10 @@
       const detail = e.detail || {};
       if (!VIEWS.includes(detail.view)) return;
       if (CHAPTERS.includes(detail.view) || DOC_CHAPTERS.includes(detail.view)) {
-        if (detail.stage && STAGE_NAMES.includes(detail.stage)) {
-          state.stages[detail.view] = detail.stage;
+        // 旧链接/题库里用 summary 表示「反思与总结」，路由统一成 reflect。
+        const stage = detail.stage === "summary" ? "reflect" : detail.stage;
+        if (stage && STAGE_NAMES.includes(stage)) {
+          state.stages[detail.view] = stage;
         } else if (typeof detail.step === "number") {
           state.stages[detail.view] = "explore";
           setChapterStep(detail.view, detail.step);
@@ -1256,7 +1287,7 @@
       btn.setAttribute("aria-pressed", String(light));
     }
     try {
-      localStorage.setItem("learnkvc.theme", theme);
+      localStorage.setItem("whykvc.theme", theme);
     } catch (e) {
       /* ignore */
     }
@@ -1265,7 +1296,7 @@
   function initTheme() {
     let theme = null;
     try {
-      theme = localStorage.getItem("learnkvc.theme");
+      theme = localStorage.getItem("whykvc.theme");
     } catch (e) {
       /* ignore */
     }

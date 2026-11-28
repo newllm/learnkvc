@@ -845,19 +845,19 @@
       {
         "q": "一个 48 层的 LLM，第 1 层和第 48 层的输出维度一样吗？",
         "options": [
-          "不一样，逐层变小",
           "一样，都是 hidden 维度",
+          "不一样，逐层变小",
           "不知道，取决于层数"
         ],
-        "answer": 1,
+        "answer": 0,
         "why": "层数加深不改变残差流宽度：每层输入输出都是 [n, hidden]。变的是每层新增的参数和计算，不是维度。"
       },
       {
         "q": "生成一个 token 时，LLM 的参数被完整读了几遍？",
         "options": [
-          "一遍，全部参数",
+          "只读 embedding",
           "只读这一步用到的部分（MoE 只读 top-k expert）",
-          "只读 embedding"
+          "一遍，全部参数"
         ],
         "answer": 1,
         "why": "dense LLM 每步要把全部权重扫一遍；MoE 每步只读激活的 expert 和共享部分。参数量决定显存，激活参数量决定每步读多少。"
@@ -866,10 +866,10 @@
         "q": "权重从磁盘到 GPU 显存，中间经过哪些站？",
         "options": [
           "磁盘 → GPU 显存，一步到位",
-          "磁盘 → CPU 内存 → H2D 拷贝 → GPU 显存",
-          "磁盘 → 显存 → 内存"
+          "磁盘 → 显存 → 内存",
+          "磁盘 → CPU 内存 → H2D 拷贝 → GPU 显存"
         ],
-        "answer": 1,
+        "answer": 2,
         "why": "先读进 host 内存（或 mmap），再由框架用 cudaMemcpyAsync 送到显存；量化格式还会在加载时反量化，或在 kernel 里边算边反量化。"
       }
     ],
@@ -916,24 +916,39 @@
     },
     "quiz": [
       {
-        "q": "一个 48 层的 LLM，第 1 层和第 48 层的输出维度一样吗？",
+        "q": "LLM 包里除了权重，还要哪些文件才能正确跑起来？",
         "options": [
-          "不一样，逐层变小",
-          "一样，都是 hidden 维度",
-          "不知道，取决于层数"
+          "config、tokenizer、chat template、generation_config 等",
+          "只需要权重文件",
+          "只需要 CUDA 驱动",
+          "只需要 KV cache"
         ],
-        "answer": 1,
-        "why": "层数加深不改变残差流宽度：每层输入输出都是 [n, hidden]。"
+        "answer": 0,
+        "why": "config 决定参数形状，tokenizer/template 决定输入怎么拼，generation_config 决定采样；它们和权重一起构成可运行的 LLM 包。",
+        "section": "LLM 包里除了权重还有什么"
       },
       {
         "q": "MoE 的「总参数」和「激活参数」为什么不同？",
         "options": [
-          "所有 expert 都参与每个 token",
+          "总参数只算 attention",
           "每个 token 只激活 top-k expert，但显存要放全部 expert",
-          "总参数只算 attention"
+          "所有 expert 都参与每个 token"
         ],
         "answer": 1,
-        "why": "router 每个 token 只选 top-k expert；总参数决定显存，激活参数决定每步读多少。"
+        "why": "MoE 每 token 只走 top-k expert，所以激活参数小；但所有 expert 都要驻留显存，总参数大。",
+        "section": "LLM 由什么组成"
+      },
+      {
+        "q": "推理引擎为什么倾向预分配 block pool / workspace，而不是每步临时申请显存？",
+        "options": [
+          "为了减少参数量",
+          "为了绕过 tokenizer",
+          "避免每步 malloc/拷贝的延迟与碎片，复用常驻显存",
+          "因为 GPU 不能 malloc"
+        ],
+        "answer": 2,
+        "why": "block pool、workspace、CUDA Graph 都是引擎管理的常驻资源；预分配避免每步分配/释放，减少碎片和 launch 等待。",
+        "section": "运行时状态：LLM 文件之外的那一半"
       }
     ]
   }

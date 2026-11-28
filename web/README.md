@@ -1,4 +1,4 @@
-# learnkvc 启发式阅读器（v2.8）
+# whykvc 启发式阅读器（v3.0）
 
 把第 1 章的阅读导图和源码放在同一个页面里，但主线不是「读文档」，而是**先回答、再看证据、最后归因和总结**：
 
@@ -15,9 +15,12 @@
 
 知识不是目标；目标是让你先形成假设，再用代码和 trace 修正它，最后能用自己的话解释「一次提问、多次提问、LLM / GPU / 引擎」。
 
+**先走核心路径（约 3 小时）**：LLM 结构 → 单请求 KV cache → Prefix cache → PagedAttention → 显存计算器；GPU / NPU / CUDA / 训练 / 网络 / 优化是进阶选修。完成本章的硬门槛是：归因已提交、至少 2 条反思、自己的总结、章节测验已提交（允许低分）。
+
+
 ## 打开
 
-GitHub Pages（需在仓库 Settings → Pages 选择 GitHub Actions）：<https://newllm.github.io/learnkvc/web/index.html>。
+GitHub Pages（需在仓库 Settings → Pages 选择 GitHub Actions）：<https://newllm.github.io/whykvc/web/index.html>。
 
 
 直接双击 `web/index.html`（数据已内联在 `data/*.js`，`file://` 可用，无需服务器、无需联网）。
@@ -78,11 +81,11 @@ python3 web/tools/build.py
 - 认识 GPU · CUDA 执行模型：`web/tools/cuda.json`（九节教程 + lesson；渲染器 `assets/cuda.js` + `assets/cuda.css`；仿真 `example/cuda_sim.py`，build 期运行并注入 stdout）
 - LLM 优化：`web/tools/opt.json`（十一节教程 + lesson；渲染器 `assets/opt.js` + `assets/opt.css`；仿真 `example/opt_sim.py`，build 期运行并注入 stdout）
 - LLM 训练：`web/tools/train.json`（章节 lesson 在同文件的 `lesson` 字段）（步骤/账本/并行/清单）+ `example/train_tiny.py`（build.py 只读源码，不执行）+ `example/train_sim.py`（build 期运行，注入真实输出）
-- 章节测验：每章 `lesson.quiz` 2 题（KV 三章在 `pedagogy.json` 的 lessons，文档章节在各自 `<chapter>.json` 的 lesson），总结页提交后计分；`lessons.<chapter>.quizAnswers/quizScore/quizSubmitted` 存 `localStorage`
+- 章节测验：每章 `lesson.quiz` **3 题**（KV 三章在 `pedagogy.json` 的 lessons，文档章节在各自 `<chapter>.json` 的 lesson；每题带 `section`，覆盖不同小节），总结页提交后计分；`lessons.<chapter>.quizAnswers/quizScore/quizSubmitted` 存 `localStorage`
 - Markdown 导出：总结页「导出 Markdown」把参考总结、我的总结、反思/归因、章节测验与整章内容写成 `.md` 下载；文档章节导出时用渲染器重建一次内容
-- 学习闭环：前测/后测分数、所选 GPU、访问过的视图/步骤都存 `localStorage`（key `learnkvc.progress.v1`），
+- 学习闭环：前测/后测分数、所选 GPU、访问过的视图/步骤都存 `localStorage`（key `whykvc.progress.v1`），
   学习反馈页据此生成前后对照；视图/步骤的访问由 `app.js` 在切换时通过 `LK.progress` 记录
-- 页面回归（可选）：`for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; done`
+- 页面回归：`for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; done && node web/tools/smoke.mjs`（headless Chrome，19 路由 × 1440/760）
 - 状态：`web/tools/collect_traces.py`
   - 装了 PyTorch：跑真实 `generate()` 得到 tokens / logits / 计数
   - 没装：用 README 记录的 token 序列 + `print_summary()` 的断言公式生成解析 trace（文件里会标注 `source: analytic`）
@@ -96,7 +99,7 @@ web/
 ├── DESIGN.md           # 设计稿（信息架构、三段式机制、P0–P13）
 ├── assets/
 │   ├── style.css
-│   ├── app.js          # hash 路由、十二个学习章节（含 9 个文档章节）+ 工具视图、步骤/滚动联动
+│   ├── app.js          # hash 路由、十三个学习章节（含 10 个文档章节）+ 工具视图、步骤/滚动联动
 │   ├── codeview.js     # Python 高亮 + 行号 + 代码区滚动
 │   ├── workshop.js     # 请回答 / 归因 / 总结 / 后测反馈 / 学习进度
 │   ├── anatomy.js      # LLM 结构章节：组成 / 层与维度 / token 流水线 / GPU 加载 / kernel / 仿真
@@ -118,6 +121,7 @@ web/
 └── tools/
     ├── build.py
     ├── collect_traces.py
+    ├── smoke.mjs          # headless Chrome 冒烟（19 路由 × 1440/760）
     ├── steps.json
     ├── pedagogy.json
     ├── net.json / train.json

@@ -507,12 +507,13 @@
       {
         "q": "要让交换机对 RDMA 流量做 ECN 标记，host 侧首先要把报文标成什么？",
         "options": [
+          "CE（已拥塞）",
           "Not-ECT",
-          "ECT（可标记）",
-          "CE（已拥塞）"
+          "ECT（可标记）"
         ],
-        "answer": 1,
-        "why": "ECN 的两位里，Not-ECT 不参与标记，ECT(0)/ECT(1) 表示可标记；交换机只对 ECT 流量按队列 WRED 打 CE。host 还要配合 DSCP/TC 映射。"
+        "answer": 2,
+        "why": "只有 ECT 报文会被交换机按 WRED 概率标 CE；Not-ECT 不参与 ECN，CE 已经是拥塞标记。",
+        "section": "一条 ECN 标记的旅程"
       },
       {
         "q": "为什么 PFC 只应对必要的 lossless 队列开启？",
@@ -522,18 +523,31 @@
           "PFC 只支持 InfiniBand"
         ],
         "answer": 0,
-        "why": "PFC 是链路级暂停，可能连锁传播；全队列开启会把局部拥塞放大成全局暂停甚至 deadlock，还会 HOL 阻塞同端口业务。只保护 RDMA lossless 队列，并靠 ECN/DCQCN 提前降速。"
+        "why": "PFC pause 会让上游暂停并可能连锁扩散；只对必须无损的队列开启，并配合 watchdog 防风暴。",
+        "section": "RDMA 业务优先级与 PFC 设计"
+      },
+      {
+        "q": "为什么无损网络要给 PFC 留 headroom？",
+        "options": [
+          "因为 ECN 需要更多 buffer",
+          "从 XOFF 发出到上游真正停发，链路上还有在途包，headroom 不够会先溢出",
+          "为了防止 CNP 丢包",
+          "为了给 GPU 留显存"
+        ],
+        "answer": 1,
+        "why": "PFC 是 hop-by-hop 反压，XOFF 生效前链路上仍有在途数据；headroom 要覆盖这段反应时间，否则 pause 还没生效就溢出。",
+        "section": "如何实现无损"
       }
     ],
     "think": [
       {
         "q": "PFC 和 ECN/DCQCN 的分工是什么？",
         "options": [
-          "ECN 提前细粒度降速，PFC 在队列接近溢出时兜底",
+          "两者互斥，只能开一个",
           "PFC 负责提前降速，ECN 负责暂停链路",
-          "两者互斥，只能开一个"
+          "ECN 提前细粒度降速，PFC 在队列接近溢出时兜底"
         ],
-        "answer": 0,
+        "answer": 2,
         "why": "ECN/DCQCN 在队列还小的时候标记 CE、让发送端降速；PFC 在 XOFF 处暂停上游，防止已经来不及降速的流量丢包。推荐组合是 ECN 阈值低于 PFC XOFF、PFC 只对 lossless 队列开。"
       },
       {
@@ -549,11 +563,11 @@
       {
         "q": "ECN 的阈值应该比 PFC XOFF 高还是低？",
         "options": [
-          "低：让 ECN 先标记、先降速，PFC 只兜底",
           "高：让 PFC 先触发，ECN 再补",
+          "低：让 ECN 先标记、先降速，PFC 只兜底",
           "无所谓，两者独立"
         ],
-        "answer": 0,
+        "answer": 1,
         "why": "ECN max 必须低于 PFC XOFF（例如 max=5、XOFF=6），否则队列先到 XOFF 触发 pause，ECN 根本来不及生效（仿真里 6/12 就退化成只有 PFC）。"
       }
     ],

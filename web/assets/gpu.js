@@ -14,37 +14,40 @@
   const G = (LK.gpu = LK.gpu || {});
 
   // Order-of-magnitude numbers, same as example/gpu_sim.py.
-  const CPU = { name: "CPU 32-core", tflops: 8, bw: 80, lanes: 512, cache: 128 };
+  const CPUS = {
+    desktop: { id: "desktop", name: "CPU 桌面 16c", tflops: 4, bw: 80, lanes: 256, cache: 32 },
+    server: { id: "server", name: "CPU 服务器 32c", tflops: 8, bw: 400, lanes: 512, cache: 128 },
+  };
   const GPUS = [
-    { id: "h100", name: "H100 SXM", tflops: 990, bw: 3350, lanes: 16896, cache: 50, mem: "HBM3 80 GiB" },
-    { id: "a100", name: "A100 SXM", tflops: 312, bw: 2039, lanes: 13824, cache: 40, mem: "HBM2e 80 GiB" },
-    { id: "rtx4090", name: "RTX 4090", tflops: 165, bw: 1008, lanes: 16384, cache: 72, mem: "GDDR6X 24 GiB" },
-    { id: "ascend910b", name: "Ascend 910B", tflops: 376, bw: 1600, lanes: null, cache: null, mem: "HBM2e 64 GiB" },
-    { id: "hcu", name: "HCU（海光 DCU）", tflops: 200, bw: 1000, lanes: null, cache: null, mem: "HBM ~32 GiB" },
+    { id: "h100", name: "H100 SXM", tflops: 990, bw: 3350, lanes: 16896, cache: 50, mem: "HBM3 80 GB" },
+    { id: "a100", name: "A100 SXM", tflops: 312, bw: 2039, lanes: 13824, cache: 40, mem: "HBM2e 80 GB" },
+    { id: "rtx4090", name: "RTX 4090", tflops: 165, bw: 1008, lanes: 16384, cache: 72, mem: "GDDR6X 24 GB" },
+    { id: "ascend910b", name: "Ascend 910B", tflops: 376, bw: 1600, lanes: null, cache: null, mem: "HBM2e 64 GB" },
+    { id: "hcu", name: "HCU（海光 DCU）", tflops: 200, bw: 1000, lanes: null, cache: null, mem: "HBM ~32 GB" },
   ];
   const METRICS = {
     tflops: {
-      label: "FP16/BF16 TFLOPS（dense）", unit: "TFLOPS", cpu: CPU.tflops, get: (g) => g.tflops,
-      note: "GPU 用 Tensor Core + 更多 lane；CPU 峰值按 AVX512-BF16（~8 TFLOPS）。",
+      label: "FP16/BF16 TFLOPS（dense）", unit: "TFLOPS", cpu: (c) => c.tflops, get: (g) => g.tflops,
+      note: "GPU 用 Tensor Core + 更多 lane；CPU 峰值按 AVX512-BF16，桌面约 4、服务器约 8 TFLOPS。",
     },
     bw: {
-      label: "内存带宽", unit: "GB/s", cpu: CPU.bw, get: (g) => g.bw,
-      note: "DDR5 双通道 ~80 GB/s vs HBM3 3.35 TB/s；decode 是 memory-bound，直接吃这个差距。",
+      label: "内存带宽", unit: "GB/s", cpu: (c) => c.bw, get: (g) => g.bw,
+      note: "桌面 DDR5 双通道 ~80 GB/s、服务器 8 通道 ~400 GB/s vs HBM3 3.35 TB/s；decode 是 memory-bound。",
     },
     lanes: {
-      label: "核数 / FP32 lane 数", unit: "lanes", cpu: CPU.lanes, get: (g) => g.lanes,
-      note: "CPU 32×16=512；GPU 132 SM×128=16896；NPU/DCU 的 lane 计数口径不同。",
+      label: "核数 / FP32 lane 数", unit: "lanes", cpu: (c) => c.lanes, get: (g) => g.lanes,
+      note: "CPU 桌面 16×16=256、服务器 32×16=512；GPU 132 SM×128=16896；NPU/DCU 的 lane 计数口径不同。",
     },
     cache: {
-      label: "L3 / L2 缓存容量", unit: "MiB", cpu: CPU.cache, get: (g) => g.cache,
-      note: "CPU 的 L3 容量更大，但 GPU 的 L2 带宽更高、服务高并发访问；容量不是全部。",
+      label: "L3 / L2 缓存容量", unit: "MiB", cpu: (c) => c.cache, get: (g) => g.cache,
+      note: "CPU 桌面 L3 32 MiB、服务器 128 MiB；GPU 的 L2 带宽更高、服务高并发访问；容量不是全部。",
     },
   };
 
   const CACHE_LINE = 128;
   const SECTOR = 32;
 
-  const cmpState = { metric: "tflops", gpu: "h100" };
+  const cmpState = { metric: "tflops", gpu: "h100", cpu: "server" };
   const hierState = { side: "gpu", idx: 2, hl: false };
   const scenState = { idx: 2 };
   const pathState = { mode: 0 };
@@ -133,11 +136,13 @@
       '<p class="note">账本假设：' + esc(roof.assumption) + "</p>" +
       '<div class="gpu-formula"><b>roofline 拐点</b><p>' + esc(roof.ridge) + "</p></div>" +
       '<div class="table-wrap"><table class="tagtable"><thead><tr>' +
-      "<th>workload</th><th>FLOPs</th><th>字节</th><th>CPU</th><th>GPU</th><th>差距</th><th>bound</th>" +
+      "<th>workload</th><th>FLOPs</th><th>字节</th><th>CPU 桌面</th><th>CPU 服务器</th><th>GPU</th>" +
+      "<th>差距 桌/服</th><th>bound</th>" +
       "</tr></thead><tbody>" +
       arr(roof.rows).map((r) =>
         "<tr><td><b>" + esc(r.workload) + "</b></td><td>" + esc(r.flops) + "</td><td>" + esc(r.bytes) +
-        "</td><td>" + esc(r.cpu) + "</td><td>" + esc(r.gpu) + "</td><td>" + esc(r.ratio) +
+        "</td><td>" + esc(r.cpuDesktop) + "</td><td>" + esc(r.cpuServer) + "</td><td>" + esc(r.gpu) +
+        "</td><td>" + esc(r.ratioDesktop) + " / " + esc(r.ratioServer) +
         "</td><td>" + esc(r.bound) + "</td></tr>"
       ).join("") + "</tbody></table></div>" +
       '<p class="note">' + esc(sec.note) + "</p>";
@@ -237,6 +242,9 @@
       ctl("指标", '<select data-cmp="metric">' +
         Object.keys(METRICS).map((k) => option(k, METRICS[k].label, cmpState.metric)).join("") +
         "</select>") +
+      ctl("CPU 档位", '<select data-cmp="cpu">' +
+        Object.values(CPUS).map((c) => option(c.id, c.name, cmpState.cpu)).join("") +
+        "</select>") +
       ctl("GPU 档位", '<select data-cmp="gpu">' +
         GPUS.map((g) => option(g.id, g.name, cmpState.gpu)).join("") +
         "</select>") +
@@ -246,6 +254,7 @@
       sel.addEventListener("change", () => {
         const f = sel.dataset.cmp;
         if (f === "metric") cmpState.metric = sel.value;
+        else if (f === "cpu") cmpState.cpu = sel.value;
         else cmpState.gpu = sel.value;
         updateCompare(host);
       });
@@ -258,7 +267,8 @@
     if (!body) return;
     const metric = METRICS[cmpState.metric] || METRICS.tflops;
     const gpu = GPUS.filter((g) => g.id === cmpState.gpu)[0] || GPUS[0];
-    const cpuV = metric.cpu;
+    const cpu = CPUS[cmpState.cpu] || CPUS.server;
+    const cpuV = metric.cpu(cpu);
     const gpuV = metric.get(gpu);
     const max = Math.max(cpuV, gpuV === null || gpuV === undefined ? 0 : gpuV);
     const bar = (label, value, cls) => {
@@ -274,7 +284,7 @@
     }
     body.innerHTML =
       '<div class="compare">' +
-      stat("CPU", fmtValue(cpuV, metric), CPU.name + " · 量级值") +
+      stat("CPU", fmtValue(cpuV, metric), cpu.name + " · 量级值") +
       stat("GPU", gpuV === null || gpuV === undefined ? "n/a" : fmtValue(gpuV, metric), gpu.name + " · " + gpu.mem) +
       stat("差距", ratioText, metric.label) +
       "</div>" +

@@ -58,12 +58,12 @@
       }
     ],
     "rules": [
-      "AdamW + BF16 的经验值：参数状态约 16 B/参数（权重 2 + 梯度 2 + 优化器 12）。7B ≈ 113 GiB，30B ≈ 455 GiB，还没算激活。",
+      "AdamW + BF16 的经验值：参数状态约 16 B/参数（权重 2 + 梯度 2 + 优化器 12）。7B ≈ 122 GB，30B ≈ 488 GB，还没算激活。",
       "激活通常比参数状态小，但长上下文 + 大 batch 时会反超；激活重算、micro-batch、序列并行都是冲它来的。",
       "推理只留权重和 KV；训练至少多出梯度、优化器状态和激活三笔，所以同一张卡推理能跑、训练不一定能跑。"
     ],
     "calcLead": "选 LLM、精度、并行方式，看每张卡要装多少；公式就在结果下面，可以手算核对。",
-    "calcNote": "估算不含 CUDA context、通信 buffer、碎片和临时 workspace（这里固定预留 2 GiB）。真实框架通常还要多 10–20%，请留余量。"
+    "calcNote": "估算不含 CUDA context、通信 buffer、碎片和临时 workspace（这里固定预留 2 GB）。真实框架通常还要多 10–20%，请留余量。"
   },
   "parallelSection": {
     "title": "3 · 并行与省显存：DP / ZeRO / FSDP / TP / PP",
@@ -169,34 +169,48 @@
       {
         "q": "训练显存里，哪一项通常随 batch × seq × layers 增长，而不是只随参数量增长？",
         "options": [
-          "激活",
-          "优化器状态",
           "权重",
-          "梯度"
+          "梯度",
+          "激活",
+          "优化器状态"
         ],
-        "answer": 0,
-        "why": "权重/梯度/优化器状态与参数量 N 成正比；激活与 layers × batch × seq × hidden 成正比，长上下文/大 batch 时可能成为最大项。"
+        "answer": 2,
+        "why": "权重/梯度/优化器状态与参数量 N 成正比；激活与 layers × batch × seq × hidden 成正比，长上下文/大 batch 时可能成为最大项。",
+        "section": "训练显存账本：权重 / 梯度 / 优化器 / 激活"
       },
       {
         "q": "为什么 TP 一般限制在单机 NVLink 域内？",
         "options": [
+          "每层两次 all-reduce，消息频繁且延迟敏感，跨机后通信容易成为瓶颈",
           "因为 TP 只能切分 2 张卡",
-          "因为 TP 会减少显存占用",
-          "每层两次 all-reduce，消息频繁且延迟敏感，跨机后通信容易成为瓶颈"
+          "因为 TP 会减少显存占用"
         ],
-        "answer": 2,
-        "why": "TP 把每层矩阵切开，attention/MLP 后各一次 all-reduce，频率高、消息相对小；NVLink 的带宽和延迟远好于跨机 IB/RoCE，所以通常限制在单机并优先保证低延迟。"
+        "answer": 0,
+        "why": "TP 把每层矩阵切开，attention/MLP 后各一次 all-reduce，频率高、消息相对小；NVLink 的带宽和延迟远好于跨机 IB/RoCE。",
+        "section": "并行与省显存：DP / ZeRO / FSDP / TP / PP"
+      },
+      {
+        "q": "一次训练 step 的正确顺序是？",
+        "options": [
+          "loss → optimizer → forward",
+          "forward → loss → backward → optimizer step",
+          "backward → forward → loss",
+          "optimizer → forward → backward"
+        ],
+        "answer": 1,
+        "why": "一次 step：前向算激活和 loss，反向算梯度，optimizer 更新参数；梯度累积时 optimizer 可能隔几步才执行。",
+        "section": "训练 vs 推理：一次 step 的四个动作"
       }
     ],
     "think": [
       {
         "q": "AdamW + BF16 训练，参数状态大约占多少 B/参数？",
         "options": [
-          "约 16 B（权重 2 + 梯度 2 + 优化器 12）",
+          "约 2 B",
           "约 4 B",
-          "约 2 B"
+          "约 16 B（权重 2 + 梯度 2 + 优化器 12）"
         ],
-        "answer": 0,
+        "answer": 2,
         "why": "权重和梯度各 2 B，AdamW 的 m/v 是 fp32 共 8 B，再加 fp32 master 4 B，合计约 16 B/参数；还没算激活。"
       },
       {
@@ -212,11 +226,11 @@
       {
         "q": "激活重算（checkpointing）省显存，代价是什么？",
         "options": [
-          "反向时重算 forward，多约 30% 计算",
           "降低权重精度",
+          "反向时重算 forward，多约 30% 计算",
           "减少并发数"
         ],
-        "answer": 0,
+        "answer": 1,
         "why": "forward 只存每层输入，反向时重新计算中间激活；用计算换显存，通常多 30% 左右计算量。"
       }
     ],

@@ -6,7 +6,7 @@
 (function () {
   const LK = (window.LK = window.LK || {});
   const S = (LK.sectionnav = LK.sectionnav || {});
-  const STORE = "learnkvc.sectionnav";
+  const STORE = "whykvc.sectionnav";
   const esc = (s) =>
     String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 

@@ -5,45 +5,45 @@
       "tag": "LLM 构成",
       "q": "下面哪一组完整描述了「一个 LLM」的构成？",
       "options": [
-        "只有权重参数",
         "参数 + 结构（层数/hidden/头数）+ tokenizer/模板/生成配置",
+        "只有权重参数",
         "参数 + KV cache",
         "只有 config.json"
       ],
-      "answer": 1,
+      "answer": 0,
       "why": "权重只是 LLM 包里最大的文件。config 决定参数形状，tokenizer/chat template 决定输入怎么拼，generation_config 决定采样；这些都属于 LLM 包。",
       "summary": "考什么：LLM ≠ 只有参数",
-      "detail": "权重是数字；结构是 config 里的层数/hidden/头数/专家数；tokenizer、chat template、generation_config 决定文本怎么进 LLM、怎么采样。它们合起来才是「LLM 包」。"
+      "detail": "先区分「参数」和「让参数跑起来的配置 / 分词 / 模板」。再看每个文件改变的是形状、输入格式，还是采样行为。"
     },
     {
       "id": "q2",
       "tag": "一次提问",
       "q": "有 KV cache 后，decode 每步还会重新投影历史 token 的 K/V 吗？",
       "options": [
-        "会，每步都重算一遍",
-        "不会，只投影新 token，历史直接读缓存",
         "只重算第一层",
-        "只重算最后一层"
+        "不会，只投影新 token，历史直接读缓存",
+        "只重算最后一层",
+        "会，每步都重算一遍"
       ],
       "answer": 1,
       "why": "历史 K/V 已经在缓存里；新 token 只需要自己的 Q/K/V，再用 Q 去读全部历史 K/V。",
       "summary": "考什么：decode 每步到底重算什么",
-      "detail": "prefill 已把 prompt 的 K/V 写入缓存。decode 时新 token 重新投影自己的 Q/K/V，历史 K/V 直接从缓存读，mask 用绝对位置。"
+      "detail": "先分清 prefill 和 decode 各处理多少 token。decode 时哪些张量是新的、哪些已经在缓存里？把 Q、K、V 分开想。"
     },
     {
       "id": "q3",
       "tag": "多次提问",
       "q": "同一会话的多轮对话 vs 多个请求共享前缀，哪一种同时省计算和显存？",
       "options": [
+        "两者都不省",
         "多轮对话",
         "多个请求共享前缀",
-        "两者都省显存",
-        "两者都不省"
+        "两者都省显存"
       ],
-      "answer": 1,
+      "answer": 2,
       "why": "多轮复用历史 K/V，省重复 prefill，但历史 KV 仍随轮数增长；共享前缀的块按引用计数共享，只算一次、只存一份。",
       "summary": "考什么：多轮和多请求省的不是一回事",
-      "detail": "多轮：省重复 prefill 计算，不省显存。多请求共享前缀：块被多个请求引用，计算和显存都省，代价是引擎要维护哈希/引用/淘汰。"
+      "detail": "画两条时间线：同一会话的连续轮次，vs 多个请求共享前缀。分别比较「重复计算」和「显存占用」两件事。"
     },
     {
       "id": "q4",
@@ -51,14 +51,14 @@
       "q": "block table 里存的是什么？",
       "options": [
         "每个 token 的 K/V 值",
-        "逻辑块 → 物理块号的映射",
         "LLM 权重",
-        "采样参数"
+        "采样参数",
+        "逻辑块 → 物理块号的映射"
       ],
-      "answer": 1,
+      "answer": 3,
       "why": "block table 是 per-sequence 的索引：第 i 个逻辑块落在哪个物理块；K/V 本身在物理块池里。",
       "summary": "考什么：逻辑地址和物理地址分开",
-      "detail": "逻辑上请求看到连续上下文，物理上块可以散落在池子里；block_table[i] 给出第 i 个逻辑块对应的物理块号。"
+      "detail": "先想逻辑块和物理块为什么要分开。block table 是每个序列的一张索引表；问自己表里存的是块号，还是 K/V 数值。"
     },
     {
       "id": "q5",
@@ -73,37 +73,37 @@
       "answer": 0,
       "why": "KV 随上下文 × 并发增长；激活随本次 token 数（prefill chunk）变化；workspace/CUDA context 近固定。",
       "summary": "考什么：运行时三笔账",
-      "detail": "参数固定；KV 随上下文×并发；prefill 激活随 chunk 的 token 数；workspace、CUDA context、CUDA Graph 是近固定的常驻成本。"
+      "detail": "把运行状态按生命周期分成常驻、每请求、每步三类；再看哪一类会随上下文长度增长。"
     },
     {
       "id": "q6",
       "tag": "三层分工",
       "q": "块哈希、引用计数、LRU 淘汰主要由谁负责？",
       "options": [
-        "LLM",
         "GPU",
         "推理引擎",
-        "tokenizer"
+        "tokenizer",
+        "LLM"
       ],
-      "answer": 2,
+      "answer": 1,
       "why": "LLM 定义 K/V 怎么算，GPU 提供算力和显存，引擎负责块分配、共享、淘汰与调度。",
       "summary": "考什么：缓存策略归引擎",
-      "detail": "这里问的是「谁决定缓存策略」：哈希、ref_count、free list、淘汰时机都是引擎的缓存管理；LLM 和 GPU 不决定这些。"
+      "detail": "把「算什么」「在哪执行」「怎么分配和淘汰」分开。哈希、引用计数、LRU 更接近模型定义、GPU 指令，还是运行时系统？"
     },
     {
       "id": "q7",
       "tag": "GPU 与 CPU",
       "q": "batch=1 的 decode 每生成一个 token，主要受什么限制？",
       "options": [
-        "HBM 显存带宽（要读权重 + 全部历史 KV）",
+        "CPU 主频",
         "GPU 的 FP16 算力",
-        "PCIe 带宽",
-        "CPU 主频"
+        "HBM 显存带宽（要读权重 + 全部历史 KV）",
+        "PCIe 带宽"
       ],
-      "answer": 0,
+      "answer": 2,
       "why": "decode 每步只算很少的 FLOP，却要把权重和历史 KV 从 HBM 读一遍；算术强度低，瓶颈在带宽而不是算力。",
       "summary": "考什么：decode 是 memory-bound",
-      "detail": "用 roofline 看：每步 FLOP ≈ 2×激活参数，但字节 = 权重 + KV；decode 的算术强度远低于拐点，时间约等于字节 / 带宽。"
+      "detail": "用 roofline 看 decode 一步：FLOPs 很少，但要搬权重和历史 KV。先算算术强度，再判断落在拐点哪一侧。"
     },
     {
       "id": "q8",
@@ -111,14 +111,14 @@
       "q": "8 卡做 ring all-reduce 一个 1 GiB 的消息，每张卡大约发送/接收多少字节？",
       "options": [
         "1 GiB（一份完整消息）",
-        "约 1.75 GiB（2(n−1)/n × S）",
         "8 GiB（每卡一份完整消息）",
-        "64 MiB（S/n）"
+        "64 MiB（S/n）",
+        "约 1.75 GiB（2(n−1)/n × S）"
       ],
-      "answer": 1,
+      "answer": 3,
       "why": "ring all-reduce 分 reduce-scatter 与 all-gather 两阶段，每阶段每卡搬 (n−1)/n × S，合计 2(n−1)/n × S；n=8 时约 1.75S。",
       "summary": "考什么：ring 的通信量不是「传一圈一份数据」",
-      "detail": "每个 rank 在环上只把 chunk 传给右邻居；reduce-scatter 和 all-gather 各 n−1 步、每步 S/n，总字节 = 2(n−1)/n × S，n 很大时趋近 2S。"
+      "detail": "画 8 个 rank 的环，分别数 reduce-scatter 和 all-gather 的步数与每步消息大小；注意每卡发出、收到和网络总流量的区别。"
     },
     {
       "id": "q9",
@@ -133,22 +133,22 @@
       "answer": 0,
       "why": "PFC 在队列将满时暂停发送端，是最后一道防丢包闸门；ECN 在队列更早的阶段标记拥塞，让 DCQCN 先降速，避免频繁 pause。",
       "summary": "考什么：PFC 与 ECN/DCQCN 是分层配合，不是二选一",
-      "detail": "ECN min/max 应低于 PFC XOFF；交换机只对 lossless 队列开 ECN/PFC；CNP 需要高优先级不被丢，才能把拥塞信号带回发送端。"
+      "detail": "先分清两个动作：提前降速 vs 最后暂停。再看 ECN 标记、CNP 和 PFC pause 分别发生在队列的什么位置。"
     },
     {
       "id": "q10",
       "tag": "优化技术",
       "q": "LLM 量化为什么对 decode 特别有效？",
       "options": [
-        "decode 是 memory-bound，权重/KV 字节降下来时间直接下降",
-        "量化让 GPU 的 FP16 算力翻倍",
         "量化会减少 LLM 层数",
-        "量化能自动增加上下文长度"
+        "decode 是 memory-bound，权重/KV 字节降下来时间直接下降",
+        "量化能自动增加上下文长度",
+        "量化让 GPU 的 FP16 算力翻倍"
       ],
-      "answer": 0,
+      "answer": 1,
       "why": "decode 每步主要成本是把权重和 KV 从 HBM 读出来；权重/ KV 量化直接减少字节，memory-bound 的时间近似按字节比例下降。",
       "summary": "考什么：量化省的是字节，不是 FLOPs",
-      "detail": "W4A16 把权重从 16 bit 压到 4 bit；KV cache 量化把每 token KV 从 FP16 压到 FP8/INT8。decode 收益大，prefill 是否受益还取决于 Tensor Core 对低精度的支持。"
+      "detail": "分别看 prefill 和 decode 的瓶颈；量化减少的是字节还是 FLOPs，哪个阶段对字节更敏感？"
     }
   ],
   "stepThink": {
@@ -365,15 +365,15 @@
         "tag": "LLM 构成",
         "q": "config.json、tokenizer、chat_template、safetensors 里，哪些是「参数」？",
         "options": [
-          "全部都是",
+          "tokenizer 和 chat_template",
           "只有 safetensors 里的权重",
-          "config 和 tokenizer",
-          "tokenizer 和 chat_template"
+          "全部都是",
+          "config 和 tokenizer"
         ],
         "answer": 1,
         "why": "safetensors 才是权重张量；config 是结构，tokenizer/template 决定输入，generation_config 决定采样。",
         "summary": "考什么：参数只是 LLM 包的一部分",
-        "detail": "权重是参数；config/tokenizer/template/generation_config 是 LLM 包里的非参数文件，但会改变 LLM 的行为。",
+        "detail": "先把「参数」和「非参数文件」分开；再判断哪些文件改变权重形状，哪些只改变输入输出格式。",
         "suggest": {
           "view": "anatomy"
         }
@@ -383,15 +383,15 @@
         "tag": "一次提问",
         "q": "8-token prompt 生成 7 个新 token，有 cache 时位置前向共多少次？",
         "options": [
-          "92 次",
           "15 次",
           "8 次",
-          "64 次"
+          "14 次",
+          "92 次"
         ],
-        "answer": 1,
-        "why": "prefill 一次算 8 个位置，之后 7 步每步 1 个新位置：8+7=15。",
+        "answer": 2,
+        "why": "prefill 一次算 8 个位置；7 个新 token 中第一个由 prefill 的 logits 产生，之后 6 步各算 1 个新位置：8+6=14。",
         "summary": "考什么：prefill + decode 的位置前向",
-        "detail": "把「prefill 一次看 n 个」和「decode 每步 1 个」分开数，不要把前缀重算算进去。",
+        "detail": "把生成 7 个新 token 拆成 prefill 和 decode 两段；注意第一个新 token 是哪一步产生的。",
         "suggest": {
           "view": "kv",
           "step": 2
@@ -402,15 +402,15 @@
         "tag": "多次提问",
         "q": "多轮对话到第 N 轮，KV cache 省的是什么？",
         "options": [
-          "省显存，历史只存一份",
-          "省重复 prefill 历史，但历史 KV 仍占显存",
           "省权重加载",
-          "什么都不省"
+          "什么都不省",
+          "省显存，历史只存一份",
+          "省重复 prefill 历史，但历史 KV 仍占显存"
         ],
-        "answer": 1,
+        "answer": 3,
         "why": "历史 K/V 被复用，不再重算；但它们仍在缓存里，随轮数增长。",
         "summary": "考什么：多轮省计算不省显存",
-        "detail": "每一轮只 prefill 新的用户消息；历史 K/V 读缓存。显存仍随历史长度增长。",
+        "detail": "多轮对话里，历史 K/V 是否被复用？它们是否仍占显存？分别回答「省计算」和「省显存」。",
         "suggest": {
           "view": "prefix",
           "step": 11
@@ -421,15 +421,15 @@
         "tag": "分页",
         "q": "gather() 按什么把物理块还原成逻辑顺序？",
         "options": [
-          "按物理块号排序",
           "按 block table 的逻辑顺序",
+          "按物理块号排序",
           "按 token id",
           "按哈希值"
         ],
-        "answer": 1,
+        "answer": 0,
         "why": "按 block table 顺序取块，块内按 offset 拼接；物理块号可以乱序。",
         "summary": "考什么：逻辑顺序由 block table 决定",
-        "detail": "逻辑连续、物理不连续；gather 只认 block table 和块内 offset，不认物理块号大小。",
+        "detail": "先想逻辑顺序存在哪里、物理位置存在哪里；gather 需要的是块号还是 token 数值？",
         "suggest": {
           "view": "paged",
           "step": 7
@@ -440,15 +440,15 @@
         "tag": "运行时状态",
         "q": "长上下文 decode 一步，时间主要花在哪？",
         "options": [
-          "重新算全部 attention 矩阵",
+          "分配 block table",
           "读全部历史 KV + 权重",
-          "加载 tokenizer",
-          "分配 block table"
+          "重新算全部 attention 矩阵",
+          "加载 tokenizer"
         ],
         "answer": 1,
         "why": "每生成 1 个 token 要读一遍历史 K/V（32K 时约 3 GiB/请求）和权重；计算量很小，带宽是瓶颈。",
         "summary": "考什么：decode 是带宽 bound",
-        "detail": "decode 的激活很小，但要把该请求的整段 KV 从 HBM 读出来；上下文越长，每步读得越多，tok/s 越低。",
+        "detail": "decode 一步的 FLOPs 和字节分别是什么量级？长上下文主要增加哪一部分？",
         "suggest": {
           "view": "anatomy"
         }
@@ -466,7 +466,7 @@
         "answer": 2,
         "why": "LLM 只定义需要哪些状态；GPU 提供显存/执行；分配、复用、捕获、释放由引擎/框架管理。",
         "summary": "考什么：运行时状态的管家",
-        "detail": "LLM 决定形状，GPU 提供 HBM 和 kernel，引擎决定 block 池、workspace、CUDA Graph 怎么分配复用。",
+        "detail": "把 workspace、CUDA Graph、block pool 按生命周期和归属分类：模型、GPU 硬件、还是引擎？",
         "suggest": {
           "view": "kv",
           "stage": "summary"
@@ -477,15 +477,15 @@
         "tag": "GPU 与 CPU",
         "q": "同一 LLM 上，decode 比 prefill 更容易受带宽限制，主要原因是？",
         "options": [
-          "decode 每步只算 1 个 token，但要读全量权重 + 全部历史 KV",
-          "decode 的 FLOPs 比 prefill 大",
           "prefill 不需要读权重",
-          "decode 不需要 KV cache"
+          "decode 不需要 KV cache",
+          "decode 的 FLOPs 比 prefill 大",
+          "decode 每步只算 1 个 token，但要读全量权重 + 全部历史 KV"
         ],
-        "answer": 0,
+        "answer": 3,
         "why": "decode 的算术强度极低：FLOP 很少，却要读完整权重与随上下文增长的 KV；prefill 一次算很多 token，算术强度高得多。",
         "summary": "考什么：prefill 与 decode 的 roofline 位置不同",
-        "detail": "prefill 每个权重被很多 token 复用，容易 compute-bound；decode batch=1 时权重每个 token 只复用一次，时间 ≈ (权重 + KV) / 带宽。",
+        "detail": "prefill 一次处理很多 token，decode 一次只处理一个；哪种更容易复用权重？算术强度差在哪？",
         "suggest": {
           "view": "gpu",
           "step": 3
@@ -504,7 +504,7 @@
         "answer": 0,
         "why": "decode 每步只处理 1 个 token，all-reduce 消息很小但每层都要同步；计算时间短，固定延迟和 launch 开销占比高，所以小消息更看延迟。",
         "summary": "考什么：decode 的 TP 通信是延迟敏感型",
-        "detail": "prefill 消息大、带宽主导；decode 消息小、每层都发，延迟和同步次数主导。选 tree/LL/NVLS 或同机 NVLink 都是为了压小消息延迟。",
+        "detail": "TP 的 all-reduce 每层都要做；比较 prefill 和 decode 的消息大小、次数和固定延迟占比。",
         "suggest": {
           "view": "nccl",
           "step": 5
@@ -515,15 +515,15 @@
         "tag": "无损网络",
         "q": "ECN 的 min/max 阈值相对 PFC 的 XOFF，应该怎么设？",
         "options": [
+          "无损网络不需要 ECN",
           "ECN 阈值更低，先于 PFC 触发降速",
           "ECN 阈值更高，让 PFC 先兜底",
-          "两者必须相等",
-          "无损网络不需要 ECN"
+          "两者必须相等"
         ],
-        "answer": 0,
+        "answer": 1,
         "why": "ECN 要在队列还早的时候就标记 CE、让 DCQCN 降速；如果 ECN max 高于 PFC XOFF，PFC 会先触发，ECN 就失效了。",
         "summary": "考什么：ECN 必须早于 PFC 生效",
-        "detail": "典型关系是 ECN min < ECN max < PFC XOFF；只对 lossless 队列开 ECN，并保证 CNP 高优先级不被丢。阈值过高/过低都会让吞吐或 pause 变差。",
+        "detail": "先画队列水位：ECN 标记和 PFC pause 分别在什么水位触发？哪个应该更早？",
         "suggest": {
           "view": "ecn",
           "step": 7
@@ -534,15 +534,15 @@
         "tag": "优化技术",
         "q": "FlashAttention 主要省的是什么？",
         "options": [
-          "HBM 读写（避免 N×N 分数矩阵物化）",
           "FLOPs（把 O(N²) 计算降到 O(N)）",
           "LLM 参数量",
+          "HBM 读写（避免 N×N 分数矩阵物化）",
           "显存容量（把 KV 直接删掉）"
         ],
-        "answer": 0,
+        "answer": 2,
         "why": "FlashAttention 用 tiling + online softmax 把 N×N 中间矩阵留在片上，HBM 流量从 O(N²) 降到 O(N)；FLOPs 仍是 O(N²)。",
         "summary": "考什么：FlashAttention 是 IO 优化，不是算力优化",
-        "detail": "prefill 序列越长收益越大；decode q=1 时没有 N×N 可省，收益主要来自减少 KV 重读和 split-K/FlashDecoding 的并行度。",
+        "detail": "FlashAttention 不改变 FLOPs 的量级；它改变的是中间矩阵放在哪里、HBM 读写多少。",
         "suggest": {
           "view": "opt",
           "step": 3
@@ -566,22 +566,22 @@
         {
           "q": "缓存里存的「K/V」是 attention 的什么？",
           "options": [
+            "attention 的输出",
             "每层的 K 和 V 投影结果",
-            "每层的 Q 投影结果",
-            "attention 的输出"
+            "每层的 Q 投影结果"
           ],
-          "answer": 0,
+          "answer": 1,
           "why": "每层把 hidden 投影成 Q/K/V；Q 只属于当前 token，K/V 属于历史，所以要缓存 K/V，而不是 Q 或 attention 输出。"
         },
         {
           "q": "8 个生成 token 从 92 次位置前向降到 15 次，省下的 77 次里有哪次是必须的吗？",
           "options": [
-            "没有，全是重复计算",
             "每次都必须，只是省了显存",
-            "只有第一次必须"
+            "只有第一次必须",
+            "没有，全是重复计算"
           ],
-          "answer": 0,
-          "why": "被省掉的都是前缀 token 的重复位置前向；真正必须的是 prefill 的 8 个位置 + 之后 7 个新 token。"
+          "answer": 2,
+          "why": "被省掉的 77 次都是前缀 token 的重复位置前向；真正必须的是 prefill 的 8 个位置 + 之后 7 个新 token。"
         }
       ],
       "reflect": [
@@ -636,18 +636,32 @@
             "Q 和 K/V 都从缓存读"
           ],
           "answer": 0,
-          "why": "历史 token 的 K/V 已在 prefill/decode 时写入缓存；新 token 只需投影自己的 Q/K/V，再用 Q 去读全部历史 K/V。"
+          "why": "decode 的 query 只有当前 token，必须新投影；历史 token 的 K/V 已在 prefill 写入缓存，直接读。",
+          "section": "cached_attention：缓存如何接上注意力"
         },
         {
           "q": "有 KV cache 时，mask 为什么不能只写简单的下三角？",
           "options": [
-            "滑动窗口可能丢弃最早的 key，key 下标不再等于绝对位置",
-            "因为 GQA 改变了头数",
             "因为 softmax 必须用 float32",
-            "因为 KV cache 只能存一层"
+            "滑动窗口可能丢弃最早的 key，key 下标不再等于绝对位置",
+            "因为 KV cache 只能存一层",
+            "因为 GQA 改变了头数"
           ],
-          "answer": 0,
-          "why": "截断后缓存里的第 0 个 key 可能对应绝对位置 first_key_position；mask 要按 first_key_position + 绝对位置构造，而不是从 0 开始的下三角。"
+          "answer": 1,
+          "why": "窗口淘汰旧 key 后，缓存下标 0 不再对应绝对位置 0；必须用 first_key_position 还原绝对位置再建 mask。",
+          "section": "为什么不能只写 is_causal=True"
+        },
+        {
+          "q": "LayerKVCache.append 把新 K/V 拼到哪个维度？",
+          "options": [
+            "kv_heads 维（dim=1）",
+            "head_dim 维（dim=-1）",
+            "sequence 维（dim=-2）",
+            "batch 维（dim=0）"
+          ],
+          "answer": 2,
+          "why": "K/V 布局是 (batch, kv_heads, sequence_length, head_dim)，新 token 追加在 sequence 维，所以用 dim=-2。",
+          "section": "append()：在 seq 维拼接 K/V"
         }
       ]
     },
@@ -656,9 +670,9 @@
         {
           "q": "两个请求共享同一段 system prompt，第二个请求还需要重新 prefill 这段前缀吗？",
           "options": [
-            "需要，每个请求必须重算",
+            "只有完全相同的请求才能复用",
             "不需要，命中块就直接复用",
-            "只有完全相同的请求才能复用"
+            "需要，每个请求必须重算"
           ],
           "answer": 1,
           "why": "前缀缓存按块哈希匹配；只要这段前缀的块还在池里，就能直接复用已算好的 K/V，只 prefill 自己的尾巴。"
@@ -666,21 +680,21 @@
         {
           "q": "块能被多个请求共享，靠的是什么？",
           "options": [
+            "把块改成只读",
             "复制三份",
-            "引用计数",
-            "把块改成只读"
+            "引用计数"
           ],
-          "answer": 1,
+          "answer": 2,
           "why": "块用 ref_count 记录多少请求持有；释放请求只减计数，块仍留在池里等复用，淘汰时只动 ref=0 的叶子。"
         },
         {
           "q": "池子满了，应该淘汰哪个块？",
           "options": [
-            "最久没用的任意块",
             "没有引用且没有孩子的叶子块里最久没用的",
-            "编号最大的块"
+            "编号最大的块",
+            "最久没用的任意块"
           ],
-          "answer": 1,
+          "answer": 0,
           "why": "有引用的块被请求占着；有孩子的块被淘汰会把孩子的链断掉。所以只在「空闲叶子」里按 last_used 选 LRU。"
         }
       ],
@@ -726,24 +740,38 @@
         {
           "q": "块的身份为什么是 hash(父块, 本块 token)，而不是只哈希这 4 个 token？",
           "options": [
-            "相同 token 在不同上下文里 K/V 不同，必须把前缀路径编进身份",
             "为了让哈希更快",
+            "相同 token 在不同上下文里 K/V 不同，必须把前缀路径编进身份",
             "为了减少块池容量",
             "因为 token 数必须是 4"
           ],
-          "answer": 0,
-          "why": "只哈希本块会把不同上下文里的相同片段误认为同一块，导致错误复用；带上父哈希，前缀匹配就是沿哈希链走。"
+          "answer": 1,
+          "why": "前缀不同，后面相同 token 的 K/V 也不同；父哈希把「路径」编码进块身份，避免错误共享。",
+          "section": "块的身份：hash(parent, tokens)"
         },
         {
-          "q": "prefix cache 满了时，为什么只能淘汰「没有引用且没有孩子」的叶子块？",
+          "q": "两个请求共享同一个块时，块池里实际存了几份 K/V？",
           "options": [
-            "有引用的块被请求占着；有孩子的块被淘汰会让孩子的链断掉",
-            "因为叶子块一定最旧",
-            "因为非叶子块不能读",
-            "因为 GPU 只能释放叶子块"
+            "零份，命中时重新计算",
+            "取决于 GPU 的 L2 大小",
+            "一份，引用计数为 2",
+            "两份，每个请求各一份"
+          ],
+          "answer": 2,
+          "why": "块池存一份物理 K/V，ref_count 记录多少请求引用；release 只减计数，减到 0 才可能淘汰。",
+          "section": "ref_count 与 LRU：什么时候能淘汰"
+        },
+        {
+          "q": "块池从 8 块缩到 4 块时，命中率为什么可能明显下降？",
+          "options": [
+            "LRU 会提前淘汰仍可复用的空闲前缀块，后续请求只能重算",
+            "块越大，哈希越慢",
+            "哈希函数在池子变小时会改变",
+            "GPU 带宽随池子变小而下降"
           ],
           "answer": 0,
-          "why": "ref_count > 0 的块不能动；父块是子块哈希链的一部分，淘汰父块会让子块不可达、无法再复用。"
+          "why": "池子小，长前缀的块链更容易被 LRU 挤掉；命中率下降来自可用块不足，不是哈希或硬件变了。",
+          "section": "场景 2：池子小，LRU 开始淘汰"
         }
       ]
     },
@@ -752,21 +780,21 @@
         {
           "q": "连续布局的 KV cache 为什么既容易碎片化、又难以共享？",
           "options": [
-            "因为必须按最大长度预留、块之间不能交叉引用",
+            "因为 token 太长",
             "因为 GPU 不支持连续内存",
-            "因为 token 太长"
+            "因为必须按最大长度预留、块之间不能交叉引用"
           ],
-          "answer": 0,
+          "answer": 2,
           "why": "连续布局要一次性预留 max_len，长度不一时内部浪费；前缀共享需要不同请求指向同一段物理内存，连续布局做不到。"
         },
         {
           "q": "block table 存的是什么？",
           "options": [
-            "每个 token 的 K/V 值",
             "逻辑块 → 物理块号的映射",
+            "每个 token 的 K/V 值",
             "LLM 权重"
           ],
-          "answer": 1,
+          "answer": 0,
           "why": "block table 是 per-sequence 的索引：第 i 个逻辑块放在哪个物理块。K/V 本身在物理块池里。"
         },
         {
@@ -822,24 +850,38 @@
         {
           "q": "append 一个 token 时，写到哪个物理块的哪个 slot 是怎么定的？",
           "options": [
-            "slot = length % block_size；slot=0 时分配新物理块",
             "slot = length / block_size；总是写第一块",
             "slot 由哈希决定",
+            "slot = length % block_size；slot=0 时分配新物理块",
             "slot = token id % block_size"
           ],
-          "answer": 0,
-          "why": "每个请求维护 length 和 block table；块内槽位由 length 对 block_size 取模决定，跨块时分配新块并追加到块表。"
+          "answer": 2,
+          "why": "length 对 block_size 取余得到块内 slot；余数为 0 说明要开新逻辑块，从空闲池分配物理块。",
+          "section": "写入：append() 怎么落块"
         },
         {
-          "q": "block table 里存的是什么？",
+          "q": "gather 按什么顺序把物理块拼回逻辑 token？",
           "options": [
-            "逻辑块号 → 物理块号的映射",
-            "每个 token 的 K/V 值",
-            "LLM 权重",
-            "采样参数"
+            "按 block table 的逻辑块顺序，块内按 slot 顺序",
+            "按 token id 排序",
+            "按释放顺序倒序",
+            "按物理块号从小到大"
           ],
           "answer": 0,
-          "why": "K/V 本身在物理块池里；block table 是 per-sequence 的索引，告诉 kernel 第 i 个逻辑块应该去哪个物理块取数。"
+          "why": "block table 的每一项给出第 i 个逻辑块对应的物理块号；gather 按表取块，块内按 offset 还原。",
+          "section": "读取：gather() 怎么还原逻辑顺序"
+        },
+        {
+          "q": "分页 KV 的内部碎片主要来自哪里？",
+          "options": [
+            "block table 指针本身",
+            "每个序列最后一块里没用满的 slot",
+            "GPU 页表太大",
+            "物理块号不连续"
+          ],
+          "answer": 1,
+          "why": "块按固定大小分配，最后一块通常用不满；这是块内浪费，不是物理块不连续造成的外部碎片。",
+          "section": "为什么需要 PagedAttention"
         }
       ]
     }

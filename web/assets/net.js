@@ -353,9 +353,9 @@
   }
 
   function bytes(n) {
-    if (n >= 2 ** 30) return (n / 2 ** 30).toFixed(2) + " GiB";
-    if (n >= 2 ** 20) return (n / 2 ** 20).toFixed(1) + " MiB";
-    if (n >= 2 ** 10) return (n / 2 ** 10).toFixed(1) + " KiB";
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + " GB";
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + " MB";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + " KB";
     return Math.round(n) + " B";
   }
 
@@ -377,9 +377,13 @@
     const kvB = preset.math.kv_bytes * kvScale * pd.prompt;
     const bw = (pd.bwGbps / 8) * 1e9;
     const transferMs = pd.latencyUs / 1000 + (kvB / bw) * 1000;
-    const prefillFlops = 2 * preset.math.active * pd.prompt +
-      4 * preset.layers * preset.q_heads * preset.head_dim * pd.prompt * pd.prompt;
-    const prefillMs = (prefillFlops / (gpu.bf16 * 1e12 * pd.prefillGpus)) * 1000;
+    const gemmFlops = 2 * preset.math.active * pd.prompt;
+    const attnFlops = 4 * preset.layers * preset.q_heads * preset.head_dim * pd.prompt * pd.prompt;
+    const prefillFlops = gemmFlops + attnFlops;
+    const prefillDenom = gpu.bf16 * 1e12 * pd.prefillGpus;
+    const gemmMs = (gemmFlops / prefillDenom) * 1000;
+    const attnMs = (attnFlops / prefillDenom) * 1000;
+    const prefillMs = gemmMs + attnMs;
     const decodeBytes = preset.math.active * 2 + kvB;
     const tpotMs = (decodeBytes / (gpu.bandwidth * 1e9 * pd.decodeGpus)) * 1000;
     const ttftMs = prefillMs + transferMs + tpotMs;
@@ -434,7 +438,8 @@
       '<div class="pd-formula"><b>账本</b><p>' +
       "KV = " + bytes(preset.math.kv_bytes * kvScale) + "/tok × " + fmt(pd.prompt) + " = " + bytes(kvB) + "；" +
       "transfer = " + pd.latencyUs + " µs + " + bytes(kvB) + " / " + (pd.bwGbps / 8) + " GB/s = " + transferMs.toFixed(1) + " ms；" +
-      "prefill ≈ 2 × active × prompt / (" + gpu.bf16 + " TFLOPS × " + pd.prefillGpus + ") = " + prefillMs.toFixed(0) + " ms；" +
+      "prefill = GEMM（2 × active × prompt）" + gemmMs.toFixed(0) + " ms + attention（4 × layers × q_heads × head_dim × prompt²）" +
+      attnMs.toFixed(0) + " ms = " + prefillMs.toFixed(0) + " ms；" +
       "TPOT ≈ (激活权重 + KV) / (" + gpu.bandwidth + " GB/s × " + pd.decodeGpus + ") = " + tpotMs.toFixed(1) + " ms。" +
       "</p></div>" +
 

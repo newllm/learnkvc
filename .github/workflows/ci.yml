@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    paths:
+      - "web/**"
+      - "example/**"
+      - "AGENTS.md"
+      - "README.md"
+      - "docs/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "example/**"
+      - "AGENTS.md"
+      - "README.md"
+      - "docs/**"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Rebuild data + headless smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Rebuild web data
+        run: python3 web/tools/build.py
+
+      - name: Syntax-check web JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(web/assets/*.js web/assets/viz/*.js web/tools/smoke.mjs)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No JavaScript files found under web/assets/" >&2
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            echo "node --check $file"
+            node --check "$file"
+          done
+
+      - name: Set up Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          install-dependencies: true
+
+      - name: Headless smoke (CDP)
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: node web/tools/smoke.mjs
+        timeout-minutes: 5

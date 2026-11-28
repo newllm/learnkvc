@@ -81,7 +81,7 @@
     const m = math(c);
     const ctx = state.ctx;
     const weightsGb = state.quant === "q4" ? m.q4_gb : m.bf16_gb;
-    const kvGib = (ctx * m.kv_bytes) / 1073741824;
+    const kvGb = (ctx * m.kv_bytes) / 1e9;
     const h2dSec = weightsGb / 25;
 
     el.innerHTML =
@@ -90,7 +90,7 @@
       packageSection(data.files) +
       layersSection(preset, c, m) +
       pipeline(data.timeline, preset, c) +
-      gpuLoad(data.gpuLoad, weightsGb, kvGib, h2dSec, state.quant, ctx) +
+      gpuLoad(data.gpuLoad, weightsGb, kvGb, h2dSec, state.quant, ctx) +
       kernelsTable(data.kernels) +
       gpuFunctionMap(data.gpuFunctions) +
       runtimeSection(data.runtime, preset, c, m) +
@@ -280,20 +280,20 @@
   function runtimeSection(rt, preset, c, m) {
     const ctx = state.rtCtx;
     const batch = state.rtBatch;
-    const gib = 1024 * 1024 * 1024;
-    const kv = (ctx * m.kv_bytes * batch) / gib;
+    const GB = 1e9;
+    const kv = (ctx * m.kv_bytes * batch) / GB;
     const chunk = Math.min(ctx, 2048);
     const perTok =
       2 * (c.hidden + m.q_dim + 2 * m.kv_dim +
         (c.experts ? c.top_k * c.expert_inter * 2 : c.ffn));
-    const act = (chunk * perTok) / gib;
+    const act = (chunk * perTok) / GB;
     const fixed = 1.5;
     const weights = state.quant === "q4" ? m.q4_gb : m.bf16_gb;
     const total = weights + kv + act + fixed;
     const bar = (label, gb, cls) =>
       '<div class="memrow ' + cls + '"><span>' + label + "</span>" +
       '<div class="membar"><i style="width:' + Math.max(1, (gb / total) * 100) + '%"></i></div>' +
-      "<b>" + gb.toFixed(2) + " GiB</b></div>";
+      "<b>" + gb.toFixed(2) + " GB</b></div>";
 
     return (
       '<h2 class="sec-title">8 · 运行时状态：LLM 文件之外的那一半</h2>' +
@@ -321,10 +321,10 @@
       bar("杂项", fixed, "r") +
       "</div>" +
       '<div class="calcgrid">' +
-      stat("权重（固定）", weights.toFixed(1) + " GiB", state.quant === "q4" ? "Q4" : "BF16") +
-      stat("KV（ctx × batch）", kv.toFixed(2) + " GiB", fmt(ctx) + " × " + batch + " × " + calc.bytes(m.kv_bytes / 1024) + "/token") +
-      stat("prefill 激活", act.toFixed(2) + " GiB", "chunk " + fmt(chunk) + " token × " + calc.bytes(perTok / 1024) + "/token") +
-      stat("合计（估算）", total.toFixed(1) + " GiB", "未计框架/分配器碎片") +
+      stat("权重（固定）", weights.toFixed(1) + " GB", state.quant === "q4" ? "Q4" : "BF16") +
+      stat("KV（ctx × batch）", kv.toFixed(2) + " GB", fmt(ctx) + " × " + batch + " × " + calc.bytes(m.kv_bytes / 1024) + "/token") +
+      stat("prefill 激活", act.toFixed(2) + " GB", "chunk " + fmt(chunk) + " token × " + calc.bytes(perTok / 1024) + "/token") +
+      stat("合计（估算）", total.toFixed(1) + " GB", "未计框架/分配器碎片") +
       "</div>" +
       '<p class="note">decode 每步只处理 1 个 token，激活远小于 prefill；长上下文时 KV 是最大项（decode 每步还要把整段 KV 读一遍，带宽 bound）。prefix cache 命中时，共享 KV 只存一份。</p>' +
       '<div class="table-wrap"><table class="tagtable"><thead><tr>' +
@@ -460,12 +460,12 @@
 
   /* ----------------------------------------------------------- GPU loading */
 
-  function gpuLoad(stages, weightsGb, kvGib, h2dSec, quant, ctx) {
+  function gpuLoad(stages, weightsGb, kvGb, h2dSec, quant, ctx) {
     const sizes = {
       disk: calc.gb(weightsGb),
       ram: calc.gb(weightsGb),
       h2d: calc.gb(weightsGb) + " · ~" + h2dSec.toFixed(1) + " s @25GB/s",
-      vram: calc.gb(weightsGb) + " 权重 + " + kvGib.toFixed(2) + " GiB KV + 激活",
+      vram: calc.gb(weightsGb) + " 权重 + " + kvGb.toFixed(2) + " GB KV + 激活",
     };
     return (
       '<h2 class="sec-title">5 · GPU 如何加载参数</h2>' +

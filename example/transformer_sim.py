@@ -45,7 +45,7 @@ def main() -> None:
     print("== 1. 自注意力：N² 的计算，换 O(1) 的路径长度 ==")
     print(f"{'seq':>8}{'score 元素':>15}{'attention TFLOPs':>19}{'KV cache':>13}")
     for n in (1024, 4096, 16384, 65536, 131072):
-        print(f"{n:>8}{attn_score_elems(n):>15,}{attn_tflops(n):>19.1f}{kv_bytes(n)/2**30:>12.1f}G")
+        print(f"{n:>8}{attn_score_elems(n):>15,}{attn_tflops(n):>19.1f}{kv_bytes(n)/1e9:>12.1f}GB")
 
     assert attn_score_elems(4096) == 16 * attn_score_elems(1024)
     assert attn_score_elems(16384) == 256 * attn_score_elems(1024)

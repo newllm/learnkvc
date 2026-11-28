@@ -94,12 +94,12 @@
       const n = +input.value;
       const scores = HEADS * n * n;
       const tflops = 4 * LAYERS * HEADS * n * n * HEAD_DIM / 1e12;
-      const kv = (2 * LAYERS * KV_HEADS * HEAD_DIM * n * BYTES) / 2 ** 30;
+      const kv = (2 * LAYERS * KV_HEADS * HEAD_DIM * n * BYTES) / 1e9;
       val.textContent = n.toLocaleString();
       nums.innerHTML =
         '<div><span>注意力分数元素</span><b>' + scores.toLocaleString() + "</b></div>" +
         '<div><span>attention TFLOPs</span><b>' + tflops.toFixed(1) + "</b></div>" +
-        '<div><span>KV cache</span><b>' + kv.toFixed(1) + " GiB</b></div>";
+        '<div><span>KV cache</span><b>' + kv.toFixed(1) + " GB</b></div>";
     };
     input.addEventListener("input", draw);
     draw();

@@ -1,4 +1,4 @@
-# learnkvc 交互式阅读器 · 设计稿
+# whykvc 交互式阅读器 · 设计稿
 
 把「阅读导图」和「示例代码」合并成同一个页面：**左侧步骤导航（可收缩）、中间代码、右侧讲解，底部保留前后步与计数器**，每一步都能看到「代码执行到哪一行、内部状态变成什么样」，还能改参数、看计数器、回放动画。
 
@@ -40,7 +40,7 @@
 | 请回答 | 10 题前测，覆盖 LLM 构成 / 一次提问 / 多轮 / 多请求 / 三层分工等 | `web/tools/pedagogy.json` |
 | ① 探索（第 1 章） | 14 步代码 ↔ 讲解联动；每步先放「请回答」再展开证据 | `kv_cache.py` + `KV_CACHE_READING.md` |
 | ② Prefix 章的「多次提问」步骤 | 多轮对话 / 多请求共享前缀模拟器，现场比较 prefill 与 KV 占用 | `traces.reuse` |
-| 每章「反思与总结」内嵌归因 | 3 张卡分到「LLM / GPU / 引擎」，提交后才能完成本章 | `pedagogy.json` |
+| 每章「反思与总结」内嵌归因 | 3 张卡分到「LLM / GPU / 引擎」；归因 + 至少 2 条反思 + 我的总结 + 章节测验提交后才能完成本章 | `pedagogy.json` |
 | ④ LLM 结构 | 三段式：LLM 组成、参数/维度/层数、参数如何参与 token 生成、GPU 加载、kernel 表、GPU 函数地图、运行时、结构仿真 | `anatomy.json` + `anatomy.js` + `structure_sim.py` |
 | ④b LLM 训练 | 三段式章节：训练 step、显存账本、并行/省显存、最小训练脚本 + 每卡显存计算器 | `train.json` + `train_tiny.py` |
 | ④c 推理网络 · 总览 | 三段式章节：NCCL collectives/ring 模拟、RoCE/RDMA、PD 分离 + KV 传输计算器 | `net.json` + `net.js` |
@@ -90,7 +90,7 @@
 - **后测（评分）**：同概念换问法的 10 题，提交后生成反馈。
 - **问题两层**：每题都有「考什么」一句话概要 + 可展开的「背景 / 怎么想」详细描述，帮助理解题意但不泄露答案。
 - **反馈页**：前测/后测分数、变化、按概念对照（提升/维持/退步/仍需复习）、学习完成度（探索步骤数、访问视图数）、错题回看按钮（直达对应章节步骤/视图）；最后的总结也是「概要 + 详细描述」两层。
-- 完成度记录：`app.js` 在切换视图/步骤时写 `LK.progress`（`learnkvc.progress.v1`）。
+- 完成度记录：`app.js` 在切换视图/步骤时写 `LK.progress`（`whykvc.progress.v1`）。
 
 ## 3.58 三段式章节（v2.4）
 
@@ -102,16 +102,25 @@
 | --- | --- | --- |
 | 请回答 | 3 道预测题（选完才揭示，不计分） | 3 题都想过 → `lessons.<ch>.think` |
 | 探索阅读 | 现有 steps：代码 ↔ 讲解 ↔ 可视化 | 记录 `exploreMax` |
-| 反思与总结 | 2–4 个开放问题 + 可折叠参考；3 张归因卡；参考总结（概要+详细）+ 用户自己的总结 + 2 题章节测验 + 导出 Markdown | 提交归因后点「完成本章」→ `reflect` + `summary`；测验提交 → `quizScore` |
+| 反思与总结 | 2–4 个开放问题 + 可折叠参考；3 张归因卡；我的总结 → 3 题章节测验 → 参考总结（概要+详细）+ 导出 Markdown | 归因 + 至少 1–2 条反思 + 我的总结 + 章节测验提交后，才能点「完成本章」→ `reflect` + `summary`；测验提交 → `quizScore` |
 
 - 左侧轨道直接显示三阶段与完成状态（请回答/探索阅读/反思与总结），探索阶段下面展开步骤列表；KV 三章的切换放在顶栏「认识 KVCache」菜单，不在左栏重复。非探索阶段仍保留三阶段，隐藏步骤列表、代码 pane / 可视化 / 底部控制条。
 - 未完成时显示锁定页：每章状态 + 「去学习」按钮。
 
 ## 3.59 章节测验、Markdown 导出与移动代码抽屉（v2.6）
 
-- **章节测验**：每章 `lesson.quiz` 2 题（KV 三章在 `pedagogy.json`，文档章节在各自 JSON 的 lesson），渲染在反思与总结页的参考总结与「我的总结」之后；提交前不显示对错，提交后显示 `quizScore`、每题解释与「重做章节测验」。状态存 `lessons.<chapter>.quizAnswers / quizScore / quizSubmitted`，学习反馈页汇总各章得分。
-- **Markdown 导出**：总结页「导出 Markdown」生成 `learnkvc-<chapter>.md`，包含参考总结、我的总结、反思/归因、章节测验和整章内容；文档章节导出时用对应渲染器在游离 DOM 重建教程并转 Markdown，KV 三章直接取 steps 的讲解 HTML。浏览器端用 Blob + `<a download>`，`file://` 也可用。
+- **章节测验**：每章 `lesson.quiz` 3 题且带 `section`（KV 三章在 `pedagogy.json`，文档章节在各自 JSON 的 lesson），渲染在「我的总结」之后、参考总结之前；提交前不显示对错，提交后显示 `quizScore`、每题解释与「重做章节测验」。状态存 `lessons.<chapter>.quizAnswers / quizScore / quizSubmitted`，学习反馈页汇总各章得分。
+- **Markdown 导出**：总结页「导出 Markdown」生成 `whykvc-<chapter>.md`，包含参考总结、我的总结、反思/归因、章节测验和整章内容；文档章节导出时用对应渲染器在游离 DOM 重建教程并转 Markdown，KV 三章直接取 steps 的讲解 HTML。浏览器端用 Blob + `<a download>`，`file://` 也可用。
 - **移动代码抽屉**：≤980px 时 KV 代码 pane 默认 `code-collapsed`，只保留 pane header（文件 + 「展开代码 ▾」），点击展开为 42vh 的可滚动代码区；按钮 `aria-expanded` 同步，桌面隐藏。代码区不再固定占 42vh，正文获得更多首屏空间。
+
+## 3.60 可信测评、完成门槛与单位统一（v2.9）
+
+- **测评**：修正后测 b2（8-token prompt + 7 个新 token → 8 + 6 = 14）；前/后测的 `detail` 改写为「背景 / 怎么想」，不出现正确选项原文；选项在题库中打散，避免答案集中在 A/B；每章章节测验扩到 3 题并新增 `section` 字段，覆盖不同小节，删掉与 think 题重复的题目。
+- **完成门槛**：`完成本章` 需要归因已提交、至少 2 条反思、自己的总结非空、章节测验已提交（允许低分）；不再只凭归因或空总结拿 ✓。
+- **顺序**：反思 → 归因 → 我的总结 → 章节测验 → 参考总结 → 完成/导出；参考总结不再提前出现在测验之前。
+- **路线图**：顶部新增「KV 核心路径」（LLM 结构 → KV → Prefix → Paged → 显存计算器，约 3 小时）以及「进阶选修」说明；13 章不再等价推荐。
+- **数字与单位**：容量内部统一 byte，展示用十进制 GB/MB；`calc.js`、`train.js`、`gpu_sim.py`、`train_sim.py` 一致；CPU 分桌面（2ch ~80 GB/s）与服务器（8ch ~400 GB/s）两档；PD 公式补齐 attention 项；CUDA 的「两个数量级」改为约 17.8×。`build.py` 的 `check_question_bank` / `check_question_numbers` / `check_sim_units` 拦截回归。
+- **测试与交互**：`.github/workflows/ci.yml` 跑 build + `node --check` + `web/tools/smoke.mjs`（19 路由 × 1440/760，active view / console error / 横向溢出）；修复 paged 物理块点击与复用高亮、反馈页 `stage: "summary"` 的跳转。
 
 ## 3.6 LLM 结构（v2.1）
 
@@ -119,7 +128,7 @@
 - 「LLM 包里除了权重还有什么」：config / safetensors+index / tokenizer / chat template / generation_config / modeling 代码 / 量化 metadata，标明是否参数与归属；
 - 「运行时状态」：常驻（权重、block pool、workspace、CUDA Graph）/ 每请求（block table、KV blocks、seq 状态）/ 每步（hidden、QKV、logits）/ 请求结束后（prefix cache 空闲块）；上下文与并发滑杆实时联动 KV、prefill 激活、常驻杂项与合计；附生命周期表和「LLM 定义 / GPU 提供 / 引擎管理」分工。
 
-**v2.7 / v3 补充**：LLM 结构改为三段式章节（`#anatomy/think|explore|reflect`），探索阶段 10 节：组成、LLM 包、层与维度、token 流水线、GPU 加载、kernel 表、GPU 函数地图、运行时状态、`structure_sim.py` 仿真、自查；左栏使用章节轨道。显存计算器仍是工具，左侧小节导航（`assets/sectionnav.js`）从 `h2.sec-title` 收集 4 个 section，滚动高亮、点击跳转、页面重渲染后重建，折叠到 36px（`learnkvc.sectionnav`），窄屏默认收起成顶部条。GPU 函数地图按矩阵计算、归一化/激活、采样、CUDA 运行时、引擎侧分 5 组共 27 条函数；附一次 decode 的 14 步调用链与「常见误区」口径。
+**v2.7 / v3 补充**：LLM 结构改为三段式章节（`#anatomy/think|explore|reflect`），探索阶段 10 节：组成、LLM 包、层与维度、token 流水线、GPU 加载、kernel 表、GPU 函数地图、运行时状态、`structure_sim.py` 仿真、自查；左栏使用章节轨道。显存计算器仍是工具，左侧小节导航（`assets/sectionnav.js`）从 `h2.sec-title` 收集 4 个 section，滚动高亮、点击跳转、页面重渲染后重建，折叠到 36px（`whykvc.sectionnav`），窄屏默认收起成顶部条。GPU 函数地图按矩阵计算、归一化/激活、采样、CUDA 运行时、引擎侧分 5 组共 27 条函数；附一次 decode 的 14 步调用链与「常见误区」口径。
 
 用户需要先有「LLM 长什么样」的直觉，否则 KV cache 只是名词。LLM 结构现为三段式章节，探索阶段仍按「先猜 → 证据」组织：
 
@@ -246,7 +255,7 @@ LLM 训练是三段式章节（`#train`）：请回答 3 题 → 探索 6 节（
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ learnkvc · 启发式阅读  请回答  认识GPU▾  认识KVCache▾  推理网络▾  认识 LLM▾  LLM 优化▾  学习反馈  [暗/亮] │
+│ whykvc · 启发式阅读  请回答  认识GPU▾  认识KVCache▾  推理网络▾  认识 LLM▾  LLM 优化▾  学习反馈  [暗/亮] │
 ├──────────────────────────┬───────────────────────────────────────────┤
 │ 代码（sticky，可滚动）   │ 讲解卡（跟随当前 step）                    │
 │                          │ ┌───────────────────────────────────────┐ │
@@ -446,7 +455,7 @@ web/
 | P8 ✅ | 认识 GPU（`gpu.json` + `gpu.js` + `gpu_sim.py`）：CPU/GPU/NPU 分工、LLM 适配、显存与 L1/L2、CUDA/ROCm/昇腾/HCU 生态 | 已完成：10 节、4 个互动、三段式可完成 |
 | P9 ✅ | ECN + DCQCN 无损网络（`ecn.json` + `ecn.js` + `ecn_sim.py`）：ECN/WRED、CNP/DCQCN、交换机/服务器配置、组网、PFC、优先级与阈值 | 已完成：10 节、4 个互动、三段式可完成 |
 | P10 ✅ | LLM 优化（`opt.json` + `opt.js` + `opt_sim.py`）：瓶颈地图、FlashAttention、PagedAttention、量化、投机解码、调度与结构、选型 | 已完成：11 节、4 个互动、三段式可完成 |
-| P11 ✅ | 章节测验（每章 2 题计分）+ Markdown 导出（总结/整章）+ 移动端代码抽屉 | 已完成：测验计分与反馈汇总、导出 `.md`、980px 以下抽屉 |
+| P11 ✅ | 章节测验（每章 3 题计分）+ Markdown 导出（总结/整章）+ 移动端代码抽屉 | 已完成：测验计分与反馈汇总、导出 `.md`、980px 以下抽屉 |
 | P12 ✅ | NPU 与国产算力（`npu.json` + `npu.js` + `npu_sim.py`）：GPU/NPU/ASIC、厂商地图、软件栈、选型 | 已完成：8 节、厂商筛选、三段式可完成 |
 | P13 ✅ | Transformer 与 LLM（`transformer.json` + `transformer.js` + `transformer_sim.py`）：自注意力、架构、缩放、为什么胜出 | 已完成：9 节、序列滑杆、三段式可完成 |
 | P14 ✅ | LLM 结构转为三段式章节（`anatomy.json` + `anatomy.js` + `structure_sim.py`）：参数/层/维度/GPU 加载/kernel 地图/运行时 + 10 节仿真 | 已完成：三段式、10 节、仿真输出、章节测验 |

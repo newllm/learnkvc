@@ -158,7 +158,7 @@
       },
       {
         "level": "HBM3",
-        "capacity": "80 GiB",
+        "capacity": "80 GB",
         "latency": "~500–800 cycles",
         "bandwidth": "3.35 TiB/s（3350 GB/s）",
         "why": "容量大、离得远；decode 每步读权重和 KV，主要卡在这个带宽上。"
@@ -171,7 +171,7 @@
       "L2 是第二道复用：权重被所有 SM 共享，L2 命中能让一份 HBM 读取服务多个 block；但长上下文的 KV 太大，L2 装不下。",
       "数量级提醒：不同架构差 1.5–2 倍；换卡要重算 SM 数、shared 容量、HBM 带宽和峰值算力。"
     ],
-    "note": "本章的 H100 级参数：132 SM、64 warps/SM、65536 regs/SM、228 KiB shared/SM、50 MiB L2、80 GiB HBM3、3.35 TB/s、990 TFLOPS BF16 峰值。"
+    "note": "本章的 H100 级参数：132 SM、64 warps/SM、65536 regs/SM、228 KiB shared/SM、50 MiB L2、80 GB HBM3、3.35 TB/s、990 TFLOPS BF16 峰值。"
   },
   "coalesce": {
     "title": "4 · Coalescing：一次 memory transaction 值多少字节",
@@ -246,7 +246,7 @@
     ],
     "points": [
       "decode：每 token 只有 2 × active params FLOPs（3.35B → 6.7 GFLOP），却要读 6.7 GB 权重加 KV；AI ≈ 0.94 FLOP/B，远低于拐点 295.5，落在带宽斜线。",
-      "batch 放大能摊薄权重，但每请求 KV 随 batch 线性增长：AI = 2Nb / (2N + b·seq·KV/token)，会饱和在 2N/(seq·KV/token) ≈ 16.6（seq=4096），仍离拐点两个数量级。",
+      "batch 放大能摊薄权重，但每请求 KV 随 batch 线性增长：AI = 2Nb / (2N + b·seq·KV/token)，会饱和在 2N/(seq·KV/token) ≈ 16.6（seq=4096），仍离拐点约 18×。",
       "prefill：M=4096 时同一份权重做 4096 倍的 FLOPs，AI ≈ 3863.8 FLOP/B，越过拐点，进入 compute-bound；时间由 27.72 ms 的计算决定。",
       "所以 prefill 看 Tensor Core 利用率和 MFU，decode 看 HBM 字节数；优化方向不同，不能拿一个指标套两个阶段。"
     ],
@@ -373,7 +373,7 @@
       },
       {
         "q": "decode 的 AI 只有 0.94 FLOP/B，把 batch 加到 64 能到拐点吗？",
-        "a": "不能。忽略 KV 时 AI 约等于 batch，但每请求 KV 随 batch 线性增长，AI 会饱和在 2N/(seq·KV/token) ≈ 16.6（seq=4096），离 295.5 还有两个数量级。所以 decode 始终是 memory-bound，优化要找「少读字节」，不是「堆 batch 冲拐点」。"
+        "a": "不能。忽略 KV 时 AI 约等于 batch，但每请求 KV 随 batch 线性增长，AI 会饱和在 2N/(seq·KV/token) ≈ 16.6（seq=4096），离 295.5 还有约 17.8×。所以 decode 始终是 memory-bound，优化要找「少读字节」，不是「堆 batch 冲拐点」。"
       },
       {
         "q": "CUDA Graph 能提升 GPU 计算速度吗？",
@@ -395,51 +395,65 @@
         "q": "block=1024（32 warps）、regs/thread=32、shared/block=16 KiB 时，为什么每 SM 只能常驻 2 个 block？",
         "options": [
           "每个 block 占 32 warps，64 个 warp slot 只够 2 个；寄存器也刚好只够 2 个",
-          "因为 shared memory 只够 2 个 block",
-          "因为 HBM 带宽不够"
+          "因为 HBM 带宽不够",
+          "因为 shared memory 只够 2 个 block"
         ],
         "answer": 0,
-        "why": "1024 线程 = 32 warps，warp slot 64/32 = 2；每个 block 需要 32×1024=32768 个寄存器，65536/32768=2。shared 16 KiB 不是限制（228/16=14）。"
+        "why": "1024 线程 = 32 warps，warp slot 64/32 = 2；寄存器 32×1024=32768，65536/32768=2；两个上限都卡在 2。",
+        "section": "执行模型：grid / block / warp / SM"
       },
       {
         "q": "CUDA Graph 主要优化什么？",
         "options": [
-          "减少 HBM 字节数",
-          "减少 attention 的 FLOPs",
+          "提高 GPU 时钟频率",
           "减少 CPU 侧 kernel launch 开销与 GPU 空转",
-          "提高 GPU 时钟频率"
+          "减少 HBM 字节数",
+          "减少 attention 的 FLOPs"
+        ],
+        "answer": 1,
+        "why": "CUDA Graph 把多次 launch 录成一张图、一次提交，省 CPU 开销与 GPU 等待；不改变 kernel 计算和 HBM 字节。",
+        "section": "CUDA Graph：把 launch 开销藏起来"
+      },
+      {
+        "q": "shared memory 和 L1 共用同一块片上 SRAM；把 carveout 调大给 shared，会带来什么取舍？",
+        "options": [
+          "寄存器数量变多",
+          "occupancy 一定翻倍",
+          "shared 容量变大，但 L1 cache 变小，可能降低全局访问命中率",
+          "HBM 容量变大"
         ],
         "answer": 2,
-        "why": "graph 把多次 launch 录成一张图、一次提交，省 CPU 开销与 GPU 等待；它不改变 kernel 计算、HBM 字节和 FLOPs，瓶颈移到 GPU 后收益就到顶。"
+        "why": "H100 每个 SM 的 L1/shared 共享 256 KiB SRAM，carveout 决定两者比例；调大 shared 会压缩 L1，全局访存命中率可能下降。",
+        "section": "内存层级：从寄存器到 HBM 的阶梯"
       }
     ],
     "think": [
       {
         "q": "一个 block 最多能被调度到几个 SM 上？",
         "options": [
+          "32 个（每个 warp 一个）",
           "1 个",
-          "和 block 数一样多",
-          "32 个（每个 warp 一个）"
+          "和 block 数一样多"
         ],
-        "answer": 0,
+        "answer": 1,
         "why": "block 是调度单位，整个 block 只能落在一个 SM 上；所以它内部的 shared memory 和 __syncthreads 才能工作。"
       },
       {
         "q": "32 个线程各读 4 B、地址连续，会触及几个 32 B sector？",
         "options": [
-          "4 个",
+          "32 个",
           "8 个",
-          "32 个"
+          "4 个"
         ],
-        "answer": 0,
+        "answer": 2,
         "why": "32 × 4 B = 128 B 连续地址，正好是 4 个 32 B sector；这是 coalesced 访问的理想情况，有效带宽 100%。"
       },
       {
         "q": "H100 级 decode 的 arithmetic intensity 约 0.94 FLOP/B，说明什么？",
         "options": [
           "落在带宽斜线，是 memory-bound",
-          "算力已经打满，应该继续堆 FLOPS",
-          "KV 可以不用读"
+          "KV 可以不用读",
+          "算力已经打满，应该继续堆 FLOPS"
         ],
         "answer": 0,
         "why": "拐点是 295.5 FLOP/B，0.94 远在左侧，说明每搬 1 B 只做不到 1 次浮点运算，时间由 HBM 带宽决定，而不是 Tensor Core 算力。"

@@ -649,52 +649,66 @@
       {
         "q": "PagedAttention 主要解决什么问题？",
         "options": [
-          "减少 attention 的 FLOPs",
           "把权重压到 4 bit",
           "KV 的显存管理与碎片/共享，是引擎层优化",
-          "替代 continuous batching"
+          "替代 continuous batching",
+          "减少 attention 的 FLOPs"
         ],
-        "answer": 2,
-        "why": "它用 block table 把逻辑 token 映射到物理 block，减少内部碎片、支持跨请求共享/回收，并支撑不同长度请求的 continuous batching；它不减少 KV 字节或 attention FLOPs。"
+        "answer": 1,
+        "why": "PagedAttention 用 block table 管理 KV 物理块，解决碎片、共享和按需分配；它不减少 attention FLOPs。",
+        "section": "PagedAttention：把 KV 当成虚拟内存来管"
       },
       {
         "q": "投机解码在什么情况下可能不划算？",
         "options": [
-          "接受率 α 低或草稿成本 c 高，加速比可能小于 1",
+          "只要 GPU 显存够大就一定划算",
           "LLM 参数越多越不划算",
-          "只要 GPU 显存够大就一定划算"
+          "接受率 α 低或草稿成本 c 高，加速比可能小于 1"
+        ],
+        "answer": 2,
+        "why": "投机解码的加速比取决于接受率和草稿成本；α 低或 c 高时，验证/草稿开销会吃掉收益。",
+        "section": "投机解码与多 token 预测"
+      },
+      {
+        "q": "continuous batching 主要改善什么？",
+        "options": [
+          "让不同请求的 prefill/decode 动态拼批，减少 GPU 空转、提高吞吐",
+          "消除 KV cache",
+          "减少 attention FLOPs",
+          "降低权重精度"
         ],
         "answer": 0,
-        "why": "speedup=(1−α^(γ+1))/((1−α)(1+cγ))。α 低时接受 token 少，c 高或 γ 大时草稿成本超过收益，加速比 <1；适合低并发、decode-bound、接受率高的场景。"
+        "why": "continuous batching 在请求完成时立即换入新请求，保持 batch 利用率，减少 GPU 空转；不改变单请求计算量。",
+        "section": "调度与系统：让 GPU 不空转"
       }
     ],
     "think": [
       {
         "q": "做 LLM 优化时，第一步应该做什么？",
         "options": [
+          "先加更多 GPU",
           "定位瓶颈：用 roofline/带宽/显存/launch/通信指标判断 bound",
-          "把最新论文里的技术全部打开",
-          "先加更多 GPU"
+          "把最新论文里的技术全部打开"
         ],
-        "answer": 0,
+        "answer": 1,
         "why": "不同 workload 的瓶颈不同：prefill 常 compute-bound，decode 常 memory-bound，长上下文可能容量/带宽受限，多卡可能通信受限。先测量再选技术，避免把优化做在非瓶颈上。"
       },
       {
         "q": "FlashAttention 主要省的是什么？",
         "options": [
-          "HBM 流量：避免把 N×N 分数/概率矩阵写回再读",
+          "权重显存：把 LLM 参数变小",
           "FLOPs：把 attention 的 O(N²) 计算降成 O(N)",
-          "权重显存：把 LLM 参数变小"
+          "HBM 流量：避免把 N×N 分数/概率矩阵写回再读"
         ],
-        "answer": 0,
+        "answer": 2,
         "why": "FlashAttention 用 tiling + online softmax 把 N×N 中间结果留在 SRAM，HBM 只搬 Q/K/V/O；FLOPs 仍是 O(N²)。所以它主要加速 IO/带宽受限的 attention（prefill 大 N 收益最大），decode q=1 收益很小。"
       },
       {
         "q": "量化为什么对 decode 特别有效？",
         "options": [
           "decode 是 memory-bound，减少权重/KV 字节直接减少时间",
-          "因为量化减少了 FLOPs",
-          "因为量化提高了 GPU 时钟"
+          "因为量化提高了 GPU 时钟",
+          "因为量化减少了 FLOPs"
         ],
         "answer": 0,
         "why": "decode batch=1 时算术强度很低，时间由 HBM 字节数决定；权重/KV 从 BF16 降到 FP8/INT4，字节近似按比例下降，decode 时间也近似按比例下降。量化不改变 FLOPs 数量级，也不改时钟。"

@@ -5,6 +5,7 @@
   const LK = (window.LK = window.LK || {});
   const T = (LK.train = LK.train || {});
   const fmt = (n) => Number(n).toLocaleString("en-US");
+  const GB = 1e9;
 
   const state = {
     presetId: "qwen7b",
@@ -21,14 +22,14 @@
     offload: false,
   };
 
-  function gib(bytes) {
-    return bytes / 2 ** 30;
+  function gb(bytes) {
+    return bytes / GB;
   }
 
-  function gbfmt(gb) {
-    if (gb >= 1024) return (gb / 1024).toFixed(2) + " TiB";
-    if (gb >= 10) return gb.toFixed(1) + " GiB";
-    return gb.toFixed(2) + " GiB";
+  function gbfmt(value) {
+    if (value >= 1024) return (value / 1024).toFixed(2) + " TB";
+    if (value >= 10) return value.toFixed(1) + " GB";
+    return value.toFixed(2) + " GB";
   }
 
   T.render = function (el, data, world) {
@@ -51,10 +52,10 @@
     const layersPerStage = preset.layers / state.pp;
     const actFactor = state.ckpt ? 2.5 : 12;
     const act = (layersPerStage * state.batch * state.seq * preset.hidden * actFactor * wb) / state.tp;
-    const overhead = 2 * 2 ** 30;
+    const overhead = 2 * GB;
     const onGpuOpt = state.offload ? 0 : optimizer;
     const total = weights + grads + onGpuOpt + act + overhead;
-    const usable = gpu.vram * 2 ** 30 * (gpu.unified ? 0.75 : 0.9);
+    const usable = gpu.vram * GB * (gpu.unified ? 0.75 : 0.9);
     const tone = total > usable ? "bad" : total > usable * 0.9 ? "warn" : "ok";
     const perSample =
       (layersPerStage * state.seq * preset.hidden * actFactor * wb) / state.tp;
@@ -71,15 +72,15 @@
     const bar = (label, bytes, cls) =>
       '<div class="memrow ' + cls + '"><span>' + label + "</span>" +
       '<div class="membar"><i style="width:' + Math.max(1, (bytes / total) * 100) + '%"></i></div>' +
-      "<b>" + gbfmt(gib(bytes)) + "</b></div>";
+      "<b>" + gbfmt(gb(bytes)) + "</b></div>";
 
     const formula =
       "N = " + fmt(N) + "；权重 = N × " + wb + " B / (TP " + state.tp + " × PP " + state.pp +
-      (state.zero === 3 ? " × ZeRO-3 DP " + state.dp : "") + ") = " + gbfmt(gib(weights)) + "；" +
-      "梯度 = " + gbfmt(gib(grads)) + "；优化器 = " + (state.offload ? "已 offload 到 CPU" : gbfmt(gib(optimizer))) + "；" +
+      (state.zero === 3 ? " × ZeRO-3 DP " + state.dp : "") + ") = " + gbfmt(gb(weights)) + "；" +
+      "梯度 = " + gbfmt(gb(grads)) + "；优化器 = " + (state.offload ? "已 offload 到 CPU" : gbfmt(gb(optimizer))) + "；" +
       "激活 = " + (preset.layers / state.pp).toFixed(0) + " 层 × batch " + state.batch + " × seq " +
       fmt(state.seq) + " × hidden " + fmt(preset.hidden) + " × " + actFactor + " × " + wb + " B / TP " +
-      state.tp + " = " + gbfmt(gib(act)) + "。";
+      state.tp + " = " + gbfmt(gb(act)) + "。";
 
     el.innerHTML =
       '<p class="kicker">' + esc(data.kicker) + "</p>" +
@@ -157,7 +158,7 @@
       "</div></div>" +
       '<div class="gpu-specs">' +
       '<div class="spec"><span>显存</span><b>' + gpu.vram + " GB" + (gpu.unified ? "（统一）" : "") + "</b></div>" +
-      '<div class="spec"><span>训练可用</span><b>' + gbfmt(usable / 2 ** 30) + "</b></div>" +
+      '<div class="spec"><span>训练可用</span><b>' + gbfmt(usable / GB) + "</b></div>" +
       '<div class="spec"><span>总卡数</span><b>DP ' + state.dp + " × TP " + state.tp + " × PP " + state.pp +
       " = " + totalGpus + "</b></div>" +
       "</div></div>" +
@@ -165,11 +166,11 @@
       '<div class="calc-result">' +
       '<div class="compare">' +
       '<div class="stat"><div class="stat-label">每卡峰值</div><div class="stat-value ' + tone + '">' +
-      gbfmt(gib(total)) + '</div><div class="stat-sub">参数状态 ' + gbfmt(gib(weights + grads + onGpuOpt)) +
-      " + 激活 " + gbfmt(gib(act)) + " + 预留 2 GiB</div></div>" +
+      gbfmt(gb(total)) + '</div><div class="stat-sub">参数状态 ' + gbfmt(gb(weights + grads + onGpuOpt)) +
+      " + 激活 " + gbfmt(gb(act)) + " + 预留 2 GB</div></div>" +
       '<div class="stat"><div class="stat-label">放得下吗</div><div class="stat-value ' + tone + '">' +
       (tone === "ok" ? "宽裕" : tone === "warn" ? "紧张" : "放不下") +
-      '</div><div class="stat-sub">可用预算 ≈ ' + gbfmt(usable / 2 ** 30) +
+      '</div><div class="stat-sub">可用预算 ≈ ' + gbfmt(usable / GB) +
       "（显存 × " + (gpu.unified ? "75%" : "90%") + "）</div></div>" +
       "</div>" +
       '<div class="membars">' +
@@ -182,7 +183,7 @@
       '<p class="note train-formula">' + esc(formula) + "</p>" +
       '<p class="note">' + batchNote +
       (state.offload && optimizer > 0
-        ? " offload 的优化器状态需要额外 CPU 内存 ≈ " + gbfmt(gib(optimizer)) + "。"
+        ? " offload 的优化器状态需要额外 CPU 内存 ≈ " + gbfmt(gb(optimizer)) + "。"
         : "") +
       "</p>" +
       '<p class="note">' + esc(data.ledgerSection.calcNote) + "</p>" +

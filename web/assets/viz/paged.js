@@ -16,6 +16,8 @@
     const length = snap.lengths[sel] || 0;
     const waste = table.length * tr.block_size - length;
     const used = snap.blocks.filter((b) => b.owner).length;
+    const focus = ctx.state.block;
+    const reused = snap.event === "reuse" ? new Set(tr.reused_by_c || []) : new Set();
 
     const prevOwners = {};
     if (prev) prev.blocks.forEach((b) => (prevOwners[b.id] = b.owner));
@@ -47,7 +49,8 @@
             const slots = Math.max(0, Math.min(tr.block_size, len - logical * tr.block_size));
             const block = snap.blocks.find((b) => b.id === bid);
             return (
-              '<button class="btrow' + (bid === table[0] ? "" : "") + '" data-block="' + bid + '">' +
+              '<button class="btrow' + (bid === focus ? " focus" : "") +
+              (reused.has(bid) ? " reused" : "") + '" data-block="' + bid + '">' +
               '<span class="btlogic">#' + logical + "</span>" +
               '<span class="btid">b' + bid + "</span>" +
               '<span class="btslots">' + slots + "/" + tr.block_size + " slot</span>" +
@@ -70,7 +73,9 @@
           "pblock" +
           (b.owner ? " pinned" : " idle") +
           (newBlocks.has(b.id) ? " new" : "") +
-          ((snap.tables[sel] || []).includes(b.id) ? " mine" : "");
+          ((snap.tables[sel] || []).includes(b.id) ? " mine" : "") +
+          (b.id === focus ? " focus" : "") +
+          (reused.has(b.id) ? " reused" : "");
         const slots = Array.from({ length: tr.block_size }, (_, s) =>
           '<i class="' + (s < b.used ? "on" : "") + '"></i>'
         ).join("");
@@ -110,7 +115,8 @@
       '<div class="seqcards">' + seqCards + "</div></div>" +
       '<div class="pane"><h4 class="mini-title">物理块池（8 块）</h4>' +
       '<div class="blockpool" style="grid-template-columns: repeat(4, 1fr)">' + pool + "</div>" +
-      '<p class="note">绿色 = 被请求占用；灰 = 空闲；黄 = 本事件新分配；蓝框 = 当前选中序列的块。</p></div>' +
+      '<p class="note">绿色 = 被请求占用；灰 = 空闲；黄 = 本事件新分配；蓝框 = 当前选中序列的块' +
+      (reused.size ? "；橙框 = 本次复用的块 b" + [...reused].join("/b") : "") + "。</p></div>" +
       "</div>" +
       '<p class="note">' + esc(step.hint) + "</p>";
 
@@ -125,7 +131,7 @@
       b.addEventListener("click", () => ctx.setSel(b.dataset.seq))
     );
     el.querySelectorAll("[data-block]").forEach((b) =>
-      b.addEventListener("click", () => ctx.setSel(ctx.state.sel))
+      b.addEventListener("click", () => ctx.setBlock(+b.dataset.block))
     );
   };
 })();

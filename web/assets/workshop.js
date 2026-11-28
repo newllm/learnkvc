@@ -11,11 +11,12 @@
   const go = (view, step, stage) =>
     document.dispatchEvent(new CustomEvent("lk:navigate", { detail: { view, step, stage } }));
 
-  const gib = (tokens, kib) => ((tokens * kib) / 1024 / 1024).toFixed(2);
+  // KV 体积统一按十进制 GB 展示（与 GPU 标称 24GB/80GB 对齐）。
+  const kvGb = (tokens, kib) => ((tokens * kib * 1024) / 1e9).toFixed(2);
 
   /* ============================================ progress + think tests */
 
-  const PROGRESS_KEY = "learnkvc.progress.v1";
+  const PROGRESS_KEY = "whykvc.progress.v1";
   const LEARNING_VIEWS = ["think", "kv", "prefix", "paged", "transformer", "anatomy", "train", "net", "nccl", "cuda", "ecn", "gpu", "npu", "opt"];
   const EMPTY_PROGRESS = { pre: null, post: null, gpu: "rtx4090", views: [], steps: [] };
 
@@ -78,10 +79,12 @@
     const m = preset.math;
     const gpu = context.gpus.find((g) => g.id === p.gpu) || context.gpus[0];
     const ctx = context.kvContext || 32768;
-    const kvGib = (ctx * m.kv_bytes) / 1073741824;
-    const need = m.weights_q4_gb + kvGib + 1.5;
-    const tone = gpu.unified ? "bad" : gpu.vram >= need + 2 ? "ok" : gpu.vram >= need ? "warn" : "bad";
-    const readBytes = m.active * (4.85 / 8) + ctx * m.kv_bytes;
+    const kvBytes = ctx * m.kv_bytes;
+    const runtimeBytes = 1.5 * 1073741824;
+    const need = (m.weights_q4_gb * 1e9 + kvBytes + runtimeBytes) / 1e9;
+    const spare = gpu.vram - need;
+    const tone = gpu.unified ? "bad" : spare >= 2 ? "ok" : spare >= 0 ? "warn" : "bad";
+    const readBytes = m.active * (4.85 / 8) + kvBytes;
     const decodeMax = gpu.bandwidth ? (gpu.bandwidth * 1e9) / readBytes : 0;
     const flops = 2 * m.active * 10000 + 4 * preset.layers * preset.q_heads * preset.head_dim * 1e8;
     const prefillMin = gpu.bf16 ? flops / (gpu.bf16 * 1e12) : 0;
@@ -89,7 +92,7 @@
       tone === "ok"
         ? "显存宽裕，可以开更长上下文"
         : tone === "warn"
-        ? "能跑，但只剩 1–2 GB，上下文和并发都要克制"
+        ? "能跑，但只剩约 " + spare.toFixed(1) + " GB，上下文和并发都要克制"
         : "放不下 / 会大量 offload，需要更小量化或更大显存";
     return (
       '<div class="learnctx">' +
@@ -128,8 +131,8 @@
       csspec("PCIe", gpu.pcie ? "≈" + gpu.pcie + " GB/s" : "—") +
       "</div>" +
       '<p class="fit ' + tone + '">' + esc(preset.name) + " Q4 " + gb(m.weights_q4_gb) +
-      " + " + (ctx / 1024).toFixed(0) + "K KV " + kvGib.toFixed(2) + " GiB + 运行时 ≈ " +
-      need.toFixed(1) + " GB → " + esc(fitText) + "</p>" +
+      " + " + (ctx / 1024).toFixed(0) + "K KV " + (kvBytes / 1e9).toFixed(2) +
+      " GB + 运行时 ≈ " + need.toFixed(1) + " GB → " + esc(fitText) + "</p>" +
       '<p class="note">decode 理论上限 ≈ <b>' + Math.round(decodeMax) + " tok/s</b>" +
       "（每步读激活权重 + 全部 KV）；10K prefill 计算下限 ≈ <b>" + prefillMin.toFixed(1) +
       " s</b>。实际通常再差 2–3 倍。</p>" +
@@ -249,6 +252,15 @@
     ] }
   ];
 
+  // 收束定位：先给一条 3 小时的 KV 核心路径，其余章节明确标成进阶选修。
+  const CORE_PATH = [
+    { view: "anatomy", label: "LLM 结构", time: "40 分钟", href: "#anatomy/think" },
+    { view: "kv", label: "单请求 KV cache", time: "45 分钟", href: "#kv/think" },
+    { view: "prefix", label: "Prefix cache", time: "45 分钟", href: "#prefix/think" },
+    { view: "paged", label: "PagedAttention", time: "40 分钟", href: "#paged/think" },
+    { view: "calc", label: "显存计算器", time: "15 分钟", href: "#calc" },
+  ];
+
   function roadmapHTML() {
     const done = (view) => {
       try { return !!(LK.progress.lesson(view) && LK.progress.lesson(view).summary); }
@@ -275,11 +287,25 @@
         "</div>";
     }).join("");
 
+    const core = CORE_PATH.map((c, i) => {
+      const ok = c.view !== "calc" && done(c.view);
+      return (i ? '<span class="rm-core-arrow" aria-hidden="true">→</span>' : "") +
+        '<a class="rm-core-step' + (ok ? " done" : "") + '" href="' + esc(c.href) + '">' +
+        '<span class="n">' + String(i + 1).padStart(2, "0") + "</span>" +
+        "<b>" + esc(c.label) + "</b><small>" + esc(c.time) + (ok ? " · ✓" : "") + "</small></a>";
+    }).join("");
+
     return '<section class="roadmap" aria-labelledby="roadmap-title">' +
       '<div class="roadmap-head"><div><p class="kicker">学习路线图</p>' +
-      '<h2 id="roadmap-title">从 GPU 到 LLM 优化：点一下就开始</h2></div>' +
-      '<span class="roadmap-meta">5 个阶段 · 13 章 · 1 个工具</span></div>' +
-      '<p class="roadmap-note">按推荐顺序推进；也可以直接点任意章节跳转。带 ✓ 的是已完成章节。</p>' +
+      '<h2 id="roadmap-title">先走 KV 核心路径，再按需选学</h2></div>' +
+      '<span class="roadmap-meta">核心 5 站 · 约 3 小时 · 进阶 9 章</span></div>' +
+      '<div class="rm-core">' +
+      '<div class="rm-core-head"><div><p class="kicker">KV 核心路径</p>' +
+      "<h3>从 LLM 结构到显存账本</h3></div><span>约 3 小时 · 5 站</span></div>" +
+      '<div class="rm-core-steps">' + core + "</div>" +
+      '<p class="rm-core-note">只学 KV 就走这条；GPU / NPU / CUDA / 训练 / 网络 / 优化是进阶选修，按工作场景挑。</p>' +
+      "</div>" +
+      '<p class="roadmap-note"><b>完整地图 · 进阶选修</b>：带 ✓ 的是已完成章节；也可以直接点任意章节跳转。</p>' +
       '<div class="rm-route">' +
       '<a class="rm-endpoint rm-start" href="#think"><span class="rm-dot">00</span><span><b>请回答 · 前测</b><small>先猜，再学</small></span></a>' +
       phases +
@@ -428,7 +454,7 @@
         .join("") +
       "</div>" +
       '<p class="note">当前缓存里的历史：<b>' + fmt(last.kv_tokens) + " tok</b> ≈ " +
-      gib(last.kv_tokens, reuse.token_kib) + " GiB（96 KiB/token）。" +
+      kvGb(last.kv_tokens, reuse.token_kib) + " GB（96 KiB/token）。" +
       "无论用不用 cache，这些历史 K/V 都要留在显存里 —— <b>多轮对话省的是重复计算，不省显存</b>。</p>" +
       thinkBox(
         "多轮对话里，缓存越攒越多，为什么还是划算？它省的到底是什么？",
@@ -462,8 +488,8 @@
       '<div class="compare">' +
       stat("累计 prefill · 不共享", fmt(ncPrefill) + " tok", "每个请求都重新算 system") +
       stat("累计 prefill · 共享前缀", fmt(cPrefill) + " tok", "system 只算一次，之后只算新问题") +
-      stat("KV 占用 · 不共享", fmt(ncKv) + " tok", "≈ " + gib(ncKv, reuse.token_kib) + " GiB") +
-      stat("KV 占用 · 共享", fmt(cKv) + " tok", "≈ " + gib(cKv, reuse.token_kib) + " GiB") +
+      stat("KV 占用 · 不共享", fmt(ncKv) + " tok", "≈ " + kvGb(ncKv, reuse.token_kib) + " GB") +
+      stat("KV 占用 · 共享", fmt(cKv) + " tok", "≈ " + kvGb(cKv, reuse.token_kib) + " GB") +
       "</div>" +
       '<div class="sharedblocks">' +
       '<div class="block shared"><b>共享前缀块</b><span>' + fmt(reuse.system) + " tok · 引用计数 " + n + "</span></div>" +
@@ -649,7 +675,7 @@
   /* ============================================================== reflect */
 
   const attrState = { assign: {}, submitted: false };
-  const STORE_KEY = "learnkvc.reflect.v1";
+  const STORE_KEY = "whykvc.reflect.v1";
 
   function loadNotes() {
     try {
@@ -979,11 +1005,22 @@
     const submitted = !!p.quizSubmitted;
     const score = p.quizScore || 0;
     const answered = quiz.filter((q, i) => answers[i] !== undefined).length;
+    // 完成本章的门槛：归因已提交 + 至少 1–2 条反思 + 章节测验已提交（允许低分）
+    // + 自己写过总结。只看点击/停留时长的完成度没有意义。
+    const minReflect = Math.min(2, promptList.length);
+    const reflectionDone = filled >= minReflect;
+    const quizDone = quiz.length === 0 || submitted;
+    const summaryDone = !!(p.summaryText || "").trim();
+    const gateOpen = attrDone && reflectionDone && quizDone && summaryDone;
     const rerender = () => W.renderStageReview(el, chapter, prompts, attribution, summary, onChange);
+
+    const gateItem = (ok, label, todo) =>
+      '<span class="cc-item ' + (ok ? "ok" : "todo") + '">' + (ok ? "✓ " : "○ ") +
+      esc(ok ? label : todo) + "</span>";
 
     const quizHTML = quiz.length
       ? '<h3 class="sec-title">章节测验 · ' + quiz.length + " 题</h3>" +
-        '<p class="hint">读完后用两题检查是否真的掌握；提交后显示得分与解释。</p>' +
+        '<p class="hint">读完后用 ' + quiz.length + " 题检查是否真的掌握；提交后显示得分与解释。</p>" +
         '<div class="quiz">' +
         quiz.map((q, i) => {
           const chosen = answers[i];
@@ -1028,22 +1065,58 @@
       ).join("") +
       '<h3 class="sec-title">归因：这一步是谁的工作？</h3>' +
       '<div id="stage-attr"></div>' +
-      '<h3 class="sec-title">总结：参考 vs 我的版本</h3>' +
-      '<div class="summarycard"><b>参考总结 · 概要</b><p>' + esc(summary.brief) + "</p>" +
-      '<details><summary>详细描述</summary><p>' + esc(summary.detail) + "</p></details></div>" +
+      '<h3 class="sec-title">总结：先写我的版本</h3>' +
       '<div class="rprompt"><label for="stage-summary">我的总结</label>' +
       '<textarea id="stage-summary" rows="5">' + esc(p.summaryText || "") + "</textarea></div>" +
       quizHTML +
+      '<h3 class="sec-title">参考总结</h3>' +
+      '<div class="summarycard"><b>参考总结 · 概要</b><p>' + esc(summary.brief) + "</p>" +
+      '<details><summary>详细描述</summary><p>' + esc(summary.detail) + "</p></details></div>" +
+      '<div class="complete-check" id="stage-gate" aria-live="polite">' +
+      gateItem(attrDone, "归因已提交", "先提交归因") +
+      gateItem(reflectionDone, "反思已写 " + filled + " / " + minReflect,
+        "反思还差 " + Math.max(0, minReflect - filled) + " 条（至少 " + minReflect + " 条）") +
+      gateItem(summaryDone, "我的总结已写", "我的总结未写") +
+      gateItem(quizDone, quiz.length ? "章节测验已提交 " + score + " / " + quiz.length : "本章无测验",
+        "章节测验未提交") +
+      "</div>" +
       '<div class="reuse-actions"><button class="btn primary" id="stage-review-done" ' +
-      (attrDone ? "" : "disabled") + ">" +
+      (gateOpen || complete ? "" : "disabled") + ">" +
       (complete ? "已完成的章 · 重新标记" : "完成本章 →") + "</button>" +
       '<button class="btn ghost" id="stage-export-md">导出 Markdown</button>' +
-      (!attrDone
-        ? '<span class="tool-note">先提交归因才能完成本章</span>'
-        : complete
-          ? '<span class="tool-note">完成于 ' + new Date(p.summaryAt).toLocaleString() + "</span>"
-          : '<span class="tool-note">完成本章后会标记整章进度</span>') +
+      (complete
+        ? '<span class="tool-note">完成于 ' + new Date(p.summaryAt).toLocaleString() + "</span>"
+        : '<span class="tool-note" id="stage-gate-note">' +
+          (gateOpen ? "条件已满足，可以标记完成" : "完成条件：归因 + 至少 " + minReflect + " 条反思 + 我的总结 + 章节测验") +
+          "</span>") +
       "</div>";
+
+    const refreshGate = () => {
+      const lesson = lessonOf(chapter);
+      const savedNow = lesson.reflectText || {};
+      const filledNow = promptList.filter((q, i) => (savedNow[q.id || i] || "").trim()).length;
+      const summaryNow = !!(lesson.summaryText || "").trim();
+      const quizNow = quiz.length === 0 || !!lesson.quizSubmitted;
+      const attrNow = !attr.length || !!lesson.attributionSubmitted;
+      const open = attrNow && filledNow >= minReflect && quizNow && summaryNow;
+      const progress = el.querySelector(".qprogress span");
+      if (progress) progress.textContent = "反思已写 " + filledNow + " / " + promptList.length;
+      const gate = el.querySelector("#stage-gate");
+      if (gate) {
+        gate.innerHTML =
+          gateItem(attrNow, "归因已提交", "先提交归因") +
+          gateItem(filledNow >= minReflect, "反思已写 " + filledNow + " / " + minReflect,
+            "反思还差 " + Math.max(0, minReflect - filledNow) + " 条（至少 " + minReflect + " 条）") +
+          gateItem(summaryNow, "我的总结已写", "我的总结未写") +
+          gateItem(quizNow, quiz.length ? "章节测验已提交 " + (lesson.quizScore || 0) + " / " + quiz.length : "本章无测验",
+            "章节测验未提交");
+      }
+      const done = el.querySelector("#stage-review-done");
+      if (done && !lesson.summary) done.disabled = !open;
+      const note = el.querySelector("#stage-gate-note");
+      if (note) note.textContent = open ? "条件已满足，可以标记完成"
+        : "完成条件：归因 + 至少 " + minReflect + " 条反思 + 我的总结 + 章节测验";
+    };
 
     el.querySelectorAll("[data-ref]").forEach((ta) =>
       ta.addEventListener("input", () => {
@@ -1051,6 +1124,7 @@
         const all = Object.assign({}, prev.reflectText || {});
         all[ta.dataset.ref] = ta.value;
         saveLesson(chapter, { reflectText: all });
+        refreshGate();
       })
     );
     W.renderStageAttribution(el.querySelector("#stage-attr"), chapter, attr, () => {
@@ -1058,7 +1132,10 @@
       if (onChange) onChange();
     });
     const ta = el.querySelector("#stage-summary");
-    ta.addEventListener("input", () => saveLesson(chapter, { summaryText: ta.value }));
+    ta.addEventListener("input", () => {
+      saveLesson(chapter, { summaryText: ta.value });
+      refreshGate();
+    });
     el.querySelectorAll("[data-cq]").forEach((b) =>
       b.addEventListener("click", () => {
         if (submitted) return;
@@ -1088,6 +1165,15 @@
       });
     }
     el.querySelector("#stage-review-done").addEventListener("click", () => {
+      const btn = el.querySelector("#stage-review-done");
+      if (btn.disabled) return;
+      const lesson = lessonOf(chapter);
+      const savedNow = lesson.reflectText || {};
+      const filledNow = promptList.filter((q, i) => (savedNow[q.id || i] || "").trim()).length;
+      const summaryNow = (ta.value || "").trim();
+      const quizNow = quiz.length === 0 || !!lesson.quizSubmitted;
+      const attrNow = !attr.length || !!lesson.attributionSubmitted;
+      if (!lesson.summary && (!attrNow || filledNow < minReflect || !summaryNow || !quizNow)) return;
       saveLesson(chapter, {
         reflect: true,
         summary: true,
@@ -1325,7 +1411,7 @@
     const parts = [
       "# " + label,
       "",
-      "> 来自 learnkvc 交互式学习页 · " + new Date().toLocaleString(),
+      "> 来自 whykvc 交互式学习页 · " + new Date().toLocaleString(),
       "",
       "## 参考总结",
       "",
@@ -1366,7 +1452,7 @@
       if (p.quizSubmitted) parts.push("得分：" + (p.quizScore || 0) + " / " + content.quiz.length, "");
     }
     parts.push("## 本章内容", "", chapterContentMarkdown(chapter), "");
-    downloadMarkdown("learnkvc-" + chapter + ".md", parts.join("\n"));
+    downloadMarkdown("whykvc-" + chapter + ".md", parts.join("\n"));
   }
 
 

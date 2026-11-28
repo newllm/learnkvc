@@ -28,11 +28,12 @@
     gpu: "rtx4090",
   };
 
-  function gib(bytes) {
-    return bytes / 1073741824;
-  }
-  function gbfmt(gb) {
-    return gb >= 1 ? gb.toFixed(2) + " GiB" : (gb * 1024).toFixed(0) + " MiB";
+  // 内部一律用 byte；展示时容量用十进制 GB（与 GPU 的 24GB/80GB 标称一致），
+  // 不再把 GB 数值贴上 GiB 标签。KiB/MiB 只用于二进制缓存/块大小的说明。
+  const GB = 1e9;
+  const GIB = 1073741824;
+  function fmtMem(bytes) {
+    return bytes >= GB ? (bytes / GB).toFixed(2) + " GB" : (bytes / 1e6).toFixed(0) + " MB";
   }
 
   C.render = function (el, data) {
@@ -42,13 +43,14 @@
     const q = QUANTS[state.quant];
     const kv = KVDTYPES[state.kv];
 
-    const weightsGb = (m.total * q.bits) / 8 / 1e9;
+    const weightsBytes = (m.total * q.bits) / 8;
     const kvBytesPerToken = m.kv_bytes * kv.scale;
-    const kvTotalGb = (state.ctx * state.batch * kvBytesPerToken) / 1e9;
-    const runtimeGb = 1.5;
-    const totalGb = weightsGb + kvTotalGb + runtimeGb;
-    const usable = gpu.unified ? gpu.vram * 0.67 : gpu.vram;
-    const tone = totalGb > usable ? "bad" : totalGb > usable - 2 ? "warn" : "ok";
+    const kvBytes = state.ctx * state.batch * kvBytesPerToken;
+    // 运行时杂项按 1.5 GiB 量级估；明确换算成 byte，避免和十进制 GB 混加。
+    const runtimeBytes = 1.5 * GIB;
+    const totalBytes = weightsBytes + kvBytes + runtimeBytes;
+    const usableBytes = (gpu.unified ? gpu.vram * 0.67 : gpu.vram) * GB;
+    const tone = totalBytes > usableBytes ? "bad" : totalBytes > usableBytes - 2 * GB ? "warn" : "ok";
 
     const prefillFlops =
       2 * m.active * state.ctx +
@@ -57,10 +59,10 @@
     const decodeBytes = (m.active * q.bits) / 8 + state.ctx * state.batch * kvBytesPerToken;
     const decodeTok = gpu.bandwidth ? (gpu.bandwidth * 1e9) / decodeBytes : 0;
 
-    const bar = (label, gb, cls) =>
+    const bar = (label, bytes, cls) =>
       '<div class="memrow ' + cls + '"><span>' + label + "</span>" +
-      '<div class="membar"><i style="width:' + Math.max(1, (gb / totalGb) * 100) + '%"></i></div>' +
-      "<b>" + gbfmt(gb) + "</b></div>";
+      '<div class="membar"><i style="width:' + Math.max(1, (bytes / totalBytes) * 100) + '%"></i></div>' +
+      "<b>" + fmtMem(bytes) + "</b></div>";
 
     el.innerHTML =
       '<p class="kicker">P4 · 显存与速度估算</p>' +
@@ -117,15 +119,15 @@
       '<h2 class="sec-title">2 · 显存账本：权重 + KV + 运行时</h2>' +
       '<div class="compare">' +
       '<div class="stat"><div class="stat-label">总占用</div><div class="stat-value">' +
-      gbfmt(totalGb) + '</div><div class="stat-sub">权重 ' + gbfmt(weightsGb) + " + KV " +
-      gbfmt(kvTotalGb) + " + 运行时 " + runtimeGb + " GiB</div></div>" +
+      fmtMem(totalBytes) + '</div><div class="stat-sub">权重 ' + fmtMem(weightsBytes) + " + KV " +
+      fmtMem(kvBytes) + " + 运行时 " + fmtMem(runtimeBytes) + "</div></div>" +
       '<div class="stat"><div class="stat-label">这条配置能跑吗</div><div class="stat-value ' + tone +
       '">' + (tone === "ok" ? "宽裕" : tone === "warn" ? "紧张" : "放不下") +
-      '</div><div class="stat-sub">可用预算 ≈ ' + gbfmt(usable) + "（" +
-      (gpu.unified ? "统一内存按 67% 估算" : "显存") + "）</div></div>" +
+      '</div><div class="stat-sub">可用预算 ≈ ' + fmtMem(usableBytes) + "（" +
+      (gpu.unified ? "统一内存按 67% 估算" : "显存（十进制 GB）") + "）</div></div>" +
       "</div>" +
-      '<div class="membars">' + bar("权重", weightsGb, "w") + bar("KV cache", kvTotalGb, "k") +
-      bar("运行时", runtimeGb, "r") + "</div>" +
+      '<div class="membars">' + bar("权重", weightsBytes, "w") + bar("KV cache", kvBytes, "k") +
+      bar("运行时", runtimeBytes, "r") + "</div>" +
       '<h2 class="sec-title">3 · 速度上限：prefill 与 decode</h2>' +
       '<div class="compare calc-est">' +
       '<div class="stat"><div class="stat-label">prefill 计算量（n=' + fmt(state.ctx) + '）</div><div class="stat-value">' +

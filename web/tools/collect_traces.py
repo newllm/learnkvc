@@ -256,7 +256,7 @@ def prefix_trace() -> dict:
     after every admit/decode phase, for the interactive chapter."""
     import importlib.util
 
-    mod_name = "learnkvc_prefix_demo"
+    mod_name = "whykvc_prefix_demo"
     spec = importlib.util.spec_from_file_location(mod_name, EXAMPLES / "prefix_cache_demo.py")
     mod = importlib.util.module_from_spec(spec)
     # dataclasses resolves ``cls.__module__`` through sys.modules; register the

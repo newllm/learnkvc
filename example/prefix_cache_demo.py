@@ -38,7 +38,7 @@ from typing import Iterable, Optional, Sequence
 
 BLOCK_SIZE = 4
 MASK64 = (1 << 64) - 1
-HASH_SEED = b"learnkvc/prefix-cache/v1"
+HASH_SEED = b"whykvc/prefix-cache/v1"
 VOCAB_SIZE = 1000
 
 

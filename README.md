@@ -1,13 +1,13 @@
-# learnkvc
+# whykvc
 
 用一个仓库讲清 **LLM 推理与训练**：3 份最小可运行的 KV cache 示例、10 份纯 Python 仿真、1 个零依赖交互式学习页，外加 Docker / macOS 跑真实 LLM 的实操。
 
 每个结论都有可执行代码和断言；不需要 LLM 权重，clone 下来就能跑。
 
-- **开始学习**：[在线交互页（前测 + 学习路线图）](https://newllm.github.io/learnkvc/web/#think) · [本地打开](web/index.html#think)（双击即可，离线可用）
+- **开始学习**：[在线交互页（前测 + 学习路线图）](https://newllm.github.io/whykvc/web/#think) · [本地打开](web/index.html#think)（双击即可，离线可用）
 - **分章入口**：[认识 GPU](web/index.html#gpu) · [认识 LLM](web/index.html#transformer) · [认识 KVCache](web/index.html#kv) · [推理网络](web/index.html#net) · [LLM 优化](web/index.html#opt) · [学习反馈](web/index.html#feedback)
 
-[![learnkvc 交互式学习页：KV cache 探索页](docs/images/reader.png)](https://newllm.github.io/learnkvc/web/#kv/explore)
+[![whykvc 交互式学习页：KV cache 探索页](docs/images/reader.png)](https://newllm.github.io/whykvc/web/#kv/explore)
 
 ## 为什么需要 KV Cache
 
@@ -64,8 +64,9 @@ python3 web/tools/build.py
 | LLM 优化 | 优化地图（FlashAttention / 量化 / 投机解码 / 调度 / 选型） | 先找瓶颈，再选 2–3 个高杠杆技术 | `opt_sim.py` |
 | 显存计算器 | 工具页：权重 + KV + 运行时是否放得下 | 顶栏一级入口，不进三段式 | `anatomy.json` |
 
+- 核心路径（约 3 小时）：LLM 结构 → 单请求 KV cache → Prefix cache → PagedAttention → 显存计算器；GPU / NPU / CUDA / 训练 / 网络 / 优化为进阶选修。
 - 前测 10 题：提交前不显示对错；学完做后测，得到按概念对照、学习完成度与错题回看。
-- 每章「总结」内嵌 2 题**章节测验**（提交后计分、显示解释），学习反馈页汇总各章得分；「导出 Markdown」会把参考总结、你的总结/反思/归因/测验和整章内容写成一个 `.md` 文件。
+- 每章「总结」内嵌 **3 题章节测验**（覆盖不同小节，提交后计分、显示解释），学习反馈页汇总各章得分；完成本章还要求至少 2 条反思、自己的总结和章节测验提交；「导出 Markdown」会把参考总结、你的总结/反思/归因/测验和整章内容写成一个 `.md` 文件。
 - 移动端（≤980px）代码 pane 默认折叠为「展开代码」抽屉，不占正文空间。
 - 路由：`#think`、`#gpu`、`#kv`、`#net`、`#anatomy`、`#train`、`#opt`、`#feedback`；章节内可深链到步骤，如 `#cuda/3`、`#ecn/7`。
 - 页面零依赖、经典 `<script>`，双击 `web/index.html` 即可离线使用。
@@ -122,8 +123,9 @@ python3 web/tools/build.py
 ## 验证
 
 ```bash
-python3 web/tools/build.py                       # 生成 data.js / traces.js，含断言
+python3 web/tools/build.py                       # 生成 data.js / traces.js，含题目/数字/单位断言
 for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; done
+node web/tools/smoke.mjs                          # headless Chrome：19 路由 × 2 视口
 ```
 
 仓库为纯静态页，`file://` 直接打开即可；所有示例可独立运行且输出确定性。

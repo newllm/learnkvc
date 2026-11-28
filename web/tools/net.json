@@ -271,33 +271,47 @@
       {
         "q": "PD 分离在什么情况下可能不划算？",
         "options": [
+          "decode 不需要读权重",
           "prefill 和 decode 必须放同一张卡才能跑",
-          "prompt 很短、网络慢，KV 迁移的开销可能盖过收益",
-          "decode 不需要读权重"
+          "prompt 很短、网络慢，KV 迁移的开销可能盖过收益"
         ],
-        "answer": 1,
-        "why": "PD 的收益来自 prefill/decode 独立扩缩容与资源隔离，代价是每请求把 KV 从 prefill 池搬到 decode 池；prompt 短或网络慢时，迁移时间会抵消收益。"
+        "answer": 2,
+        "why": "PD 的收益来自资源隔离和独立扩缩容，代价是 KV 迁移；短 prompt、慢网络时迁移占比高，可能不划算。",
+        "section": "PD 分离：prefill 与 decode 拆开"
       },
       {
         "q": "同样大小的 all-reduce，小消息时 tree 往往比 ring 快，主要原因是？",
         "options": [
+          "tree 的步数 O(log N)，小消息以固定延迟为主",
           "tree 每步都传整块，所以带宽更高",
-          "ring 不能做 all-reduce",
-          "tree 的步数 O(log N)，小消息以固定延迟为主"
+          "ring 不能做 all-reduce"
         ],
-        "answer": 2,
-        "why": "ring 需要 2(N−1) 步，每步 α + S/(N·BW)；小消息时 α 占主导，tree 的 O(log N) 步数更少。大消息时 ring 每步只传 S/N，带宽利用率更高。"
+        "answer": 0,
+        "why": "小消息时间由每步固定延迟主导；tree 的步数是 O(log N)，比 ring 的 O(N) 少，所以更快。",
+        "section": "NCCL：集合通信、算法与传输"
+      },
+      {
+        "q": "RoCEv2 里 PFC 和 ECN/DCQCN 的分工是什么？",
+        "options": [
+          "PFC 提前降速，ECN 暂停链路",
+          "ECN 提前细粒度降速，PFC 在队列接近溢出时兜底暂停",
+          "两者只能开一个",
+          "ECN 负责重传"
+        ],
+        "answer": 1,
+        "why": "ECN 在队列还早时标记 CE，让 DCQCN 细粒度降速；PFC 在接近溢出时暂停上游，是最后一道防丢包闸门。",
+        "section": "RoCE / RDMA：无损网络与调参"
       }
     ],
     "think": [
       {
         "q": "decode 时 TP 的 all-reduce 消息很小，为什么不能忽略？",
         "options": [
-          "消息小，但每层都做、对延迟敏感",
+          "只影响显存，不影响速度",
           "只有 prefill 才需要",
-          "只影响显存，不影响速度"
+          "消息小，但每层都做、对延迟敏感"
         ],
-        "answer": 0,
+        "answer": 2,
         "why": "decode 每步只处理 1 个 token，all-reduce 的固定延迟和每层同步占比很高；小消息看延迟，大消息才看带宽。"
       },
       {
@@ -313,11 +327,11 @@
       {
         "q": "NCCL_DEBUG=INFO 里看到 NET/Socket，最先查什么？",
         "options": [
-          "IB/RoCE 网卡、GID index、容器 RDMA 透传",
           "LLM 参数量",
+          "IB/RoCE 网卡、GID index、容器 RDMA 透传",
           "batch size 和 temperature"
         ],
-        "answer": 0,
+        "answer": 1,
         "why": "NET/Socket 表示没走 RDMA；优先确认 NCCL_IB_HCA、NCCL_IB_GID_INDEX、show_gids 和 ibv_devinfo 的 link state。"
       }
     ],
