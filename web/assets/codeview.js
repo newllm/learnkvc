@@ -110,6 +110,20 @@
         }
       }
 
+      // Only keep the line ranges that belong to the current step. Line
+      // numbers stay original, so the snippet is still traceable to the file.
+      function showOnly(ranges) {
+        const keep = new Set();
+        for (const r of ranges || []) {
+          for (let n = r.start; n <= r.end && n <= els.length; n++) keep.add(n);
+        }
+        for (let i = 0; i < els.length; i++) {
+          const visible = keep.has(i + 1);
+          els[i].hidden = !visible;
+          els[i].style.display = visible ? "" : "none";
+        }
+      }
+
       function scrollToLine(line) {
         const el = els[line - 1];
         if (!el) return;
@@ -122,7 +136,7 @@
         container.scrollTop = Math.max(0, top - container.clientHeight * 0.32);
       }
 
-      return { highlight: highlightRanges, scrollToLine };
+      return { highlight: highlightRanges, showOnly, scrollToLine };
     },
   };
 })();

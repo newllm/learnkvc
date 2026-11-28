@@ -1091,6 +1091,63 @@ textarea::-webkit-scrollbar-thumb,
 
 body[data-view="paged"] .timeline { display: flex; }
 
+/* KV 三章：左侧步骤导航 + 右侧单列展开（代码 → 讲解/可视化） */
+@media (min-width: 981px) {
+  #view-kv .chapter,
+  #view-prefix .chapter,
+  #view-paged .chapter {
+    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-rows: 1fr;
+  }
+  #view-kv .chapter.nav-collapsed,
+  #view-prefix .chapter.nav-collapsed,
+  #view-paged .chapter.nav-collapsed {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+  #view-kv .chapter > .stepnav,
+  #view-prefix .chapter > .stepnav,
+  #view-paged .chapter > .stepnav { grid-column: 1; grid-row: 1; }
+  #view-kv .kv-main,
+  #view-prefix .kv-main,
+  #view-paged .kv-main {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  #view-kv .kv-main > .code-pane,
+  #view-prefix .kv-main > .code-pane,
+  #view-paged .kv-main > .code-pane {
+    flex: 0 0 auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  #view-kv .kv-main > .code-pane .code-scroll,
+  #view-prefix .kv-main > .code-pane .code-scroll,
+  #view-paged .kv-main > .code-pane .code-scroll {
+    flex: 0 0 auto;
+    height: auto;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 8px;
+  }
+  #view-kv .kv-main > .right-pane,
+  #view-prefix .kv-main > .right-pane,
+  #view-paged .kv-main > .right-pane {
+    flex: 0 0 auto;
+    min-height: auto;
+    overflow: visible;
+    padding: 18px 22px 40px;
+  }
+  #view-kv .chapter.no-code .kv-main > .code-pane,
+  #view-prefix .chapter.no-code .kv-main > .code-pane,
+  #view-paged .chapter.no-code .kv-main > .code-pane { display: none; }
+}
+
 .paged-grid { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 12px; margin: 12px 0; }
 .pane { padding: 10px 12px; background: #0c121a; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
 .ptoks { display: flex; flex-wrap: wrap; gap: 3px; margin: 6px 0; }
@@ -1504,6 +1561,30 @@ body[data-view="paged"] .timeline { display: flex; }
   .chapter.code-collapsed .code-scroll { display: none; }
   .code-toggle { display: inline-flex; align-items: center; }
   .view:not(.stage-explore) .chapter { grid-template-rows: 1fr; }
+  #view-kv .chapter,
+  #view-prefix .chapter,
+  #view-paged .chapter { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  #view-kv .chapter > .stepnav,
+  #view-prefix .chapter > .stepnav,
+  #view-paged .chapter > .stepnav { grid-column: 1; grid-row: 1; }
+  #view-kv .kv-main,
+  #view-prefix .kv-main,
+  #view-paged .kv-main { grid-column: 1; grid-row: 2; min-height: 0; overflow-y: auto; }
+  #view-kv .kv-main > .code-pane,
+  #view-prefix .kv-main > .code-pane,
+  #view-paged .kv-main > .code-pane { border-right: 0; border-bottom: 1px solid var(--line); }
+  #view-kv .kv-main > .right-pane,
+  #view-prefix .kv-main > .right-pane,
+  #view-paged .kv-main > .right-pane { min-height: auto; overflow: visible; padding: 14px 14px 40px; }
+  #view-kv .kv-main .code-scroll,
+  #view-prefix .kv-main .code-scroll,
+  #view-paged .kv-main .code-scroll { height: auto; max-height: none; overflow-x: auto; overflow-y: hidden; }
+  #view-kv .chapter.code-collapsed .kv-main .code-scroll,
+  #view-prefix .chapter.code-collapsed .kv-main .code-scroll,
+  #view-paged .chapter.code-collapsed .kv-main .code-scroll { display: none; }
+  #view-kv .chapter.no-code .kv-main > .code-pane,
+  #view-prefix .chapter.no-code .kv-main > .code-pane,
+  #view-paged .chapter.no-code .kv-main > .code-pane { display: none; }
 }
 
 html[data-theme="light"] .stepnav-item:hover { background: #eef3f8; }

@@ -131,6 +131,11 @@
   state.prefix = { step: 0, scenario: "shared", snap: 0, playing: false, timer: null };
   state.paged = { step: 0, snap: 0, sel: "seq-b", block: null, playing: false, timer: null };
   const CHAPTERS = ["kv", "prefix", "paged"];
+  // 按路线图的完整地图顺序串起所有章节；最后一章读完去学习反馈。
+  const LEARNING_ORDER = [
+    "gpu", "npu", "cuda", "transformer", "anatomy", "train",
+    "kv", "prefix", "paged", "net", "nccl", "ecn", "opt",
+  ];
   const DOC_CHAPTERS = ["transformer", "anatomy", "net", "train", "nccl", "cuda", "ecn", "gpu", "npu", "opt"];
   const ALL_CHAPTERS = CHAPTERS.concat(DOC_CHAPTERS);
   const DOC_SECTIONS = {
@@ -202,18 +207,34 @@
       '<span class="sep">|</span>省 <b>' + s.wasted + "</b> 个位置";
   }
 
+  function resetKvScroll(right) {
+    const main = right && right.closest(".kv-main");
+    if (main) main.scrollTop = 0;
+    else if (right) right.scrollTop = 0;
+  }
+
+  function applyStepCode(view, container, step) {
+    const ranges = (step && step.codeRanges) || [];
+    const hasCode = ranges.length > 0;
+    const chapter = container && container.closest(".chapter");
+    if (chapter) chapter.classList.toggle("no-code", !hasCode);
+    if (!view) return hasCode;
+    view.showOnly(hasCode ? ranges : []);
+    view.highlight(hasCode ? ranges : []);
+    return hasCode;
+  }
+
   function renderStep() {
     const step = kv.steps[state.step];
     if (LK.progress) LK.progress.recordStep(step.id);
     renderDoc(step, state.step);
-    const right = document.getElementById("right-pane");
-    if (right) right.scrollTop = 0;
+    resetKvScroll(document.getElementById("right-pane"));
     if (codeView) {
-      codeView.highlight(step.codeRanges);
-      if (step.codeRanges.length) codeView.scrollToLine(step.codeRanges[0].start);
-      el.codeMeta.textContent = step.codeRanges.length
-        ? "高亮 " + step.codeRanges.map((r) => r.start + "–" + r.end).join(" · ") + " 行"
-        : "讲解步骤";
+      const hasCode = applyStepCode(codeView, el.code, step);
+      if (hasCode) codeView.scrollToLine(step.codeRanges[0].start);
+      el.codeMeta.textContent = hasCode
+        ? "本节代码 " + step.codeRanges.map((r) => r.start + "–" + r.end).join(" · ") + " 行"
+        : "本节无代码";
     }
     renderViz();
     renderCounters();
@@ -361,14 +382,13 @@
       '<p class="hint">' + esc(step.hint) + "</p>" + think +
       '<div class="doc-body">' + step.bodyHTML + "</div>" +
       '<div class="doc-foot">讲解：' + docLink + " · 代码：" + codeLink + "</div>";
-    const right = document.getElementById("prefix-right");
-    if (right) right.scrollTop = 0;
+    resetKvScroll(document.getElementById("prefix-right"));
     if (prefixCode) {
-      prefixCode.highlight(step.codeRanges);
-      if (step.codeRanges.length) prefixCode.scrollToLine(step.codeRanges[0].start);
-      el.prefixCodeMeta.textContent = step.codeRanges.length
-        ? "高亮 " + step.codeRanges.map((r) => r.start + "–" + r.end).join(" · ") + " 行"
-        : "讲解步骤";
+      const hasCode = applyStepCode(prefixCode, el.prefixCode, step);
+      if (hasCode) prefixCode.scrollToLine(step.codeRanges[0].start);
+      el.prefixCodeMeta.textContent = hasCode
+        ? "本节代码 " + step.codeRanges.map((r) => r.start + "–" + r.end).join(" · ") + " 行"
+        : "本节无代码";
     }
     renderPrefixViz();
     renderPrefixCounters();
@@ -500,14 +520,13 @@
       '<p class="hint">' + esc(step.hint) + "</p>" +
       '<div class="doc-body">' + step.bodyHTML + "</div>" +
       '<div class="doc-foot">讲解：' + docLink + " · 代码：" + codeLink + "</div>";
-    const right = document.getElementById("paged-right");
-    if (right) right.scrollTop = 0;
+    resetKvScroll(document.getElementById("paged-right"));
     if (pagedCode) {
-      pagedCode.highlight(step.codeRanges);
-      if (step.codeRanges.length) pagedCode.scrollToLine(step.codeRanges[0].start);
-      el.pagedCodeMeta.textContent = step.codeRanges.length
-        ? "高亮 " + step.codeRanges.map((r) => r.start + "–" + r.end).join(" · ") + " 行"
-        : "讲解步骤";
+      const hasCode = applyStepCode(pagedCode, el.pagedCode, step);
+      if (hasCode) pagedCode.scrollToLine(step.codeRanges[0].start);
+      el.pagedCodeMeta.textContent = hasCode
+        ? "本节代码 " + step.codeRanges.map((r) => r.start + "–" + r.end).join(" · ") + " 行"
+        : "本节无代码";
     }
     renderPagedViz();
     renderPagedCounters();
@@ -738,6 +757,8 @@
     const timeline = document.querySelector(".timeline");
     const docEl = ch === "kv" ? el.doc : ch === "prefix" ? el.prefixDoc : el.pagedDoc;
     const vizEl = ch === "kv" ? el.viz : ch === "prefix" ? el.prefixViz : el.pagedViz;
+    const kvMain = view.querySelector(".kv-main");
+    if (kvMain) kvMain.scrollTop = 0;
 
     if (stageOf(ch) === "explore") {
       if (timeline) timeline.style.display = "flex";
@@ -1276,6 +1297,64 @@
     });
   }
 
+  /* ------------------------------------------------------ auto advance */
+
+  function goNextChapter(ch) {
+    const i = LEARNING_ORDER.indexOf(ch);
+    if (i < 0) return;
+    const next = LEARNING_ORDER[i + 1];
+    if (!next) {
+      // 最后一章读完进入学习反馈，形成闭环。
+      setView("feedback");
+      updateHash();
+      return;
+    }
+    state.stages[next] = "think";
+    setChapterStep(next, 0);
+    setView(next);
+    updateHash();
+  }
+
+  function initKvAutoAdvance() {
+    const mains = document.querySelectorAll(
+      "#view-kv .kv-main, #view-prefix .kv-main, #view-paged .kv-main"
+    );
+    mains.forEach((main) => {
+      let locked = false;
+      main.addEventListener("scroll", () => {
+        if (locked) return;
+        const view = main.closest("section.view");
+        const ch = view && view.id.startsWith("view-") ? view.id.slice(5) : "";
+        if (!CHAPTERS.includes(ch) || state.view !== ch || stageOf(ch) !== "explore") return;
+        const gap = main.scrollHeight - main.scrollTop - main.clientHeight;
+        if (gap > 12) return;
+        const steps = ch === "kv" ? kv.steps : ch === "prefix" ? LK_DATA.prefix.steps : LK_DATA.paged.steps;
+        const index = ch === "kv" ? state.step : ch === "prefix" ? state.prefix.step : state.paged.step;
+        locked = true;
+        if (index >= steps.length - 1) goNextChapter(ch);
+        else navStep(1);
+        setTimeout(() => { locked = false; }, 600);
+      }, { passive: true });
+    });
+  }
+
+  function initDocAutoAdvance() {
+    document.querySelectorAll(".doc-main").forEach((main) => {
+      let locked = false;
+      main.addEventListener("scroll", () => {
+        if (locked) return;
+        const view = main.closest("section.view");
+        const ch = view && view.id.startsWith("view-") ? view.id.slice(5) : "";
+        if (!DOC_CHAPTERS.includes(ch) || state.view !== ch || stageOf(ch) !== "explore") return;
+        const gap = main.scrollHeight - main.scrollTop - main.clientHeight;
+        if (gap > 12) return;
+        locked = true;
+        goNextChapter(ch);
+        setTimeout(() => { locked = false; }, 600);
+      }, { passive: true });
+    });
+  }
+
   /* --------------------------------------------------------------- theme */
 
   function applyTheme(theme) {
@@ -1316,6 +1395,8 @@
   initStages();
   initNav();
   initCodeDrawers();
+  initKvAutoAdvance();
+  initDocAutoAdvance();
   buildDots();
   if (LK.sectionnav) {
     LK.sectionnav.mount($("#toc-calc"), el.calcBody);
