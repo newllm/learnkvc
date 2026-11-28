@@ -1,7 +1,7 @@
 {
   "kicker": "学习章节 · 推理网络",
   "title": "NCCL 深挖：一次 all-reduce 怎么搬数据",
-  "lead": "上一章回答「推理为什么需要网络」；这一章回答「NCCL 这个库到底怎么搬数据」。同样是 8 张卡、128 MiB：ring 用 14 步、每卡发 224 MiB，tree 只用 6 步却慢了 3.4 倍。算法、消息大小和拓扑一起决定延迟与带宽，这一章把它们算成一本账。",
+  "lead": "上一章回答「推理为什么需要网络」；这一章回答「NCCL 这个库到底怎么搬数据」。同样是 8 张卡、128 MiB：ring 用 14 步、每卡发 224 MiB，tree 只用 6 步却慢了 3.4 倍。算法、消息大小和拓扑一起决定延迟与带宽，这一章把它们算成一本账。 【本章重点】六个 collective 的字节/步数、ring/tree、α-β crossover、拓扑。",
   "why": {
     "title": "1 · 从推理网络总览到 NCCL：这一章补哪一块",
     "lead": "推理网络总览站在系统层讲「为什么需要网络、PD 怎么拆、RoCE 怎么配」；NCCL 章节下沉到库层讲「一个 all_reduce 调用背后，数据被切成什么、走几步、选哪条链路」。先建立两张地图的对应关系，后面每一节才能落到「为什么 / 怎么算 / 推理里对应什么」。",
@@ -173,12 +173,42 @@
       }
     ],
     "walkthrough": [
-      { "step": "1", "phase": "reduce", "level": "L1", "pairs": "1→0, 3→2, 5→4, 7→6" },
-      { "step": "2", "phase": "reduce", "level": "L2", "pairs": "2→0, 6→4" },
-      { "step": "3", "phase": "reduce", "level": "L3", "pairs": "4→0" },
-      { "step": "4", "phase": "broadcast", "level": "L1", "pairs": "0→4" },
-      { "step": "5", "phase": "broadcast", "level": "L2", "pairs": "0→2, 4→6" },
-      { "step": "6", "phase": "broadcast", "level": "L3", "pairs": "0→1, 2→3, 4→5, 6→7" }
+      {
+        "step": "1",
+        "phase": "reduce",
+        "level": "L1",
+        "pairs": "1→0, 3→2, 5→4, 7→6"
+      },
+      {
+        "step": "2",
+        "phase": "reduce",
+        "level": "L2",
+        "pairs": "2→0, 6→4"
+      },
+      {
+        "step": "3",
+        "phase": "reduce",
+        "level": "L3",
+        "pairs": "4→0"
+      },
+      {
+        "step": "4",
+        "phase": "broadcast",
+        "level": "L1",
+        "pairs": "0→4"
+      },
+      {
+        "step": "5",
+        "phase": "broadcast",
+        "level": "L2",
+        "pairs": "0→2, 4→6"
+      },
+      {
+        "step": "6",
+        "phase": "broadcast",
+        "level": "L3",
+        "pairs": "0→1, 2→3, 4→5, 6→7"
+      }
     ],
     "rules": [
       "N=8、S=128 MiB：6 步 × (2 µs + 128 MiB / 50 GB/s) = 16.118 ms，是 ring 4.726 ms 的 3.41 倍。",
@@ -233,16 +263,53 @@
       "why": "N=8、α=2 µs、BW=50 GB/s：64 KiB 时 tree 19.86 µs < ring 30.29 µs；1 MiB 时 ring 64.70 µs < tree 137.83 µs。"
     },
     "sweep": [
-      { "size": "1 KiB", "ring": "28.04 µs", "tree": "12.12 µs", "winner": "tree" },
-      { "size": "64 KiB", "ring": "30.29 µs", "tree": "19.86 µs", "winner": "tree" },
-      { "size": "1 MiB", "ring": "64.70 µs", "tree": "137.83 µs", "winner": "ring" },
-      { "size": "16 MiB", "ring": "615.20 µs", "tree": "2.025 ms", "winner": "ring" },
-      { "size": "1 GiB", "ring": "37.609 ms", "tree": "128.861 ms", "winner": "ring" }
+      {
+        "size": "1 KiB",
+        "ring": "28.04 µs",
+        "tree": "12.12 µs",
+        "winner": "tree"
+      },
+      {
+        "size": "64 KiB",
+        "ring": "30.29 µs",
+        "tree": "19.86 µs",
+        "winner": "tree"
+      },
+      {
+        "size": "1 MiB",
+        "ring": "64.70 µs",
+        "tree": "137.83 µs",
+        "winner": "ring"
+      },
+      {
+        "size": "16 MiB",
+        "ring": "615.20 µs",
+        "tree": "2.025 ms",
+        "winner": "ring"
+      },
+      {
+        "size": "1 GiB",
+        "ring": "37.609 ms",
+        "tree": "128.861 ms",
+        "winner": "ring"
+      }
     ],
     "protocols": [
-      { "name": "Simple", "when": "大消息、带宽敏感", "detail": "每步搬大块数据，带宽利用率高；decoder 的开销被摊薄。" },
-      { "name": "LL", "when": "小消息、延迟敏感", "detail": "低延迟协议，128 B 粒度、flag 少；CPU 参与更多，大消息反而慢。" },
-      { "name": "LL128", "when": "中等消息、想兼顾", "detail": "128 B 负载 + flag，延迟和带宽的折中；NCCL 常在中间档位选它。" }
+      {
+        "name": "Simple",
+        "when": "大消息、带宽敏感",
+        "detail": "每步搬大块数据，带宽利用率高；decoder 的开销被摊薄。"
+      },
+      {
+        "name": "LL",
+        "when": "小消息、延迟敏感",
+        "detail": "低延迟协议，128 B 粒度、flag 少；CPU 参与更多，大消息反而慢。"
+      },
+      {
+        "name": "LL128",
+        "when": "中等消息、想兼顾",
+        "detail": "128 B 负载 + flag，延迟和带宽的折中；NCCL 常在中间档位选它。"
+      }
     ],
     "extras": [
       "多 QP：把一个连接拆成多条队列对，提高单连接吞吐；但拥塞与 CPU 开销上升，不是越多越好。",
@@ -340,13 +407,41 @@
       "NCCL_P2P_DISABLE=1 all_reduce_perf ...                 # 确认问题是否出在 P2P"
     ],
     "envs": [
-      { "name": "NCCL_DEBUG", "value": "INFO", "why": "第一排查项：确认 transport 是 IB/RoCE 还是 Socket，以及选了什么算法/协议。" },
-      { "name": "NCCL_ALGO", "value": "Ring / Tree / NVLS", "why": "排障时固定算法对比；平时交给 NCCL 自动选。" },
-      { "name": "NCCL_PROTO", "value": "Simple / LL / LL128", "why": "小消息用 LL 降延迟，大消息用 Simple 拉带宽。" },
-      { "name": "NCCL_IB_HCA", "value": "mlx5_0,mlx5_1", "why": "指定参与 RDMA 的网卡，避免选到管理口。" },
-      { "name": "NCCL_IB_GID_INDEX", "value": "3", "why": "RoCEv2 常用 GID 索引；用 show_gids 确认，选错能连但掉速。" },
-      { "name": "NCCL_NET_GDR_LEVEL", "value": "2", "why": "允许 GPUDirect RDMA，避免 KV / 梯度经 host 拷贝。" },
-      { "name": "NCCL_P2P_DISABLE", "value": "1", "why": "排障用：关闭 P2P 看是否是 PCIe/P2P 问题；平时不要开。" }
+      {
+        "name": "NCCL_DEBUG",
+        "value": "INFO",
+        "why": "第一排查项：确认 transport 是 IB/RoCE 还是 Socket，以及选了什么算法/协议。"
+      },
+      {
+        "name": "NCCL_ALGO",
+        "value": "Ring / Tree / NVLS",
+        "why": "排障时固定算法对比；平时交给 NCCL 自动选。"
+      },
+      {
+        "name": "NCCL_PROTO",
+        "value": "Simple / LL / LL128",
+        "why": "小消息用 LL 降延迟，大消息用 Simple 拉带宽。"
+      },
+      {
+        "name": "NCCL_IB_HCA",
+        "value": "mlx5_0,mlx5_1",
+        "why": "指定参与 RDMA 的网卡，避免选到管理口。"
+      },
+      {
+        "name": "NCCL_IB_GID_INDEX",
+        "value": "3",
+        "why": "RoCEv2 常用 GID 索引；用 show_gids 确认，选错能连但掉速。"
+      },
+      {
+        "name": "NCCL_NET_GDR_LEVEL",
+        "value": "2",
+        "why": "允许 GPUDirect RDMA，避免 KV / 梯度经 host 拷贝。"
+      },
+      {
+        "name": "NCCL_P2P_DISABLE",
+        "value": "1",
+        "why": "排障用：关闭 P2P 看是否是 PCIe/P2P 问题；平时不要开。"
+      }
     ],
     "checklist": [
       "transport：NCCL_DEBUG=INFO 里必须是 NET/IB 或 NET/RoCE；出现 NET/Socket 直接判网络没走通。",

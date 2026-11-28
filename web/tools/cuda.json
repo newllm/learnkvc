@@ -1,10 +1,10 @@
 {
-  "kicker": "学习章节 · 推理网络 · CUDA 执行模型",
+  "kicker": "学习章节 · 认识 GPU · CUDA 执行模型",
   "title": "CUDA 执行模型：kernel 怎么跑，decode 为什么卡在带宽",
-  "lead": "推理不是「把 LLM 丢给 GPU」：每一步都是一串 kernel，block 被调度到 SM，warp 以 32 线程为单位执行，HBM 以 32 B sector 搬运。本章把单卡上的账算清楚：occupancy 受什么限制、coalescing 浪费多少字节、decode 为什么落在 roofline 的带宽斜线上，以及 CUDA Graph 到底省了什么。",
+  "lead": "推理不是「把 LLM 丢给 GPU」：每一步都是一串 kernel，block 被调度到 SM，warp 以 32 线程为单位执行，HBM 以 32 B sector 搬运。本章把单卡上的账算清楚：occupancy 受什么限制、coalescing 浪费多少字节、decode 为什么落在 roofline 的带宽斜线上，以及 CUDA Graph 到底省了什么。 【本章重点】warp/SM/occupancy、coalescing 的 32 B 账、roofline 与 CUDA Graph。",
   "why": {
     "title": "1 · 推理是一串 kernel，不是一次「GPU 计算」",
-    "lead": "先分清 prefill 与 decode 在 GPU 上的形状差异，再理解为什么「算力够」不等于「跑得快」；本章负责单卡执行，LLM 结构和推理网络分别负责结构与多卡。",
+    "lead": "先分清 prefill 与 decode 在 GPU 上的形状差异，再理解为什么「算力够」不等于「跑得快」；本章负责单卡执行，LLM 结构、推理网络和 NPU 章节分别负责结构、多卡与异构算力。",
     "items": [
       {
         "name": "一次 forward = 很多次 kernel launch",
@@ -77,12 +77,54 @@
         "block 数：每个 SM 最多 32 个 block；32 线程的 block 会先被 shared memory 或 block 上限卡住。"
       ],
       "table": [
-        { "block": 32, "warps": 1, "resident": 14, "activeWarps": 14, "occupancy": "21.9%", "binding": "shared（14 个 block 上限）" },
-        { "block": 64, "warps": 2, "resident": 14, "activeWarps": 28, "occupancy": "43.8%", "binding": "shared（14 个 block 上限）" },
-        { "block": 128, "warps": 4, "resident": 14, "activeWarps": 56, "occupancy": "87.5%", "binding": "shared（14 个 block 上限）" },
-        { "block": 256, "warps": 8, "resident": 8, "activeWarps": 64, "occupancy": "100%", "binding": "regs（8 个 block 上限）" },
-        { "block": 512, "warps": 16, "resident": 4, "activeWarps": 64, "occupancy": "100%", "binding": "regs（4 个 block 上限）" },
-        { "block": 1024, "warps": 32, "resident": 2, "activeWarps": 64, "occupancy": "100%", "binding": "regs / warp（2 个 block 上限）" }
+        {
+          "block": 32,
+          "warps": 1,
+          "resident": 14,
+          "activeWarps": 14,
+          "occupancy": "21.9%",
+          "binding": "shared（14 个 block 上限）"
+        },
+        {
+          "block": 64,
+          "warps": 2,
+          "resident": 14,
+          "activeWarps": 28,
+          "occupancy": "43.8%",
+          "binding": "shared（14 个 block 上限）"
+        },
+        {
+          "block": 128,
+          "warps": 4,
+          "resident": 14,
+          "activeWarps": 56,
+          "occupancy": "87.5%",
+          "binding": "shared（14 个 block 上限）"
+        },
+        {
+          "block": 256,
+          "warps": 8,
+          "resident": 8,
+          "activeWarps": 64,
+          "occupancy": "100%",
+          "binding": "regs（8 个 block 上限）"
+        },
+        {
+          "block": 512,
+          "warps": 16,
+          "resident": 4,
+          "activeWarps": 64,
+          "occupancy": "100%",
+          "binding": "regs（4 个 block 上限）"
+        },
+        {
+          "block": 1024,
+          "warps": 32,
+          "resident": 2,
+          "activeWarps": 64,
+          "occupancy": "100%",
+          "binding": "regs / warp（2 个 block 上限）"
+        }
       ],
       "note": "账本条件：regs/thread=32、shared/block=16 KiB、H100 级资源（32 blocks、64 warps、65536 regs、228 KiB shared 每 SM）。256/512/1024 线程都能到 100% occupancy，但大 block 的 wave 更粗、tail 更明显；小 block 更灵活，却可能被 shared 或 block 上限拖住。"
     },
@@ -135,11 +177,41 @@
     "title": "4 · Coalescing：一次 memory transaction 值多少字节",
     "lead": "GPU 的 HBM 事务粒度是 32 B sector。一个 warp 的 load 会被拆成若干 sector；线程地址连续时只搬有用的 128 B，stride 一大，搬运量成倍放大，有效带宽就掉下去。",
     "table": [
-      { "stride": 1, "sectors": 4, "moved": "128 B", "useful": "128 B", "util": "100%" },
-      { "stride": 2, "sectors": 8, "moved": "256 B", "useful": "128 B", "util": "50%" },
-      { "stride": 4, "sectors": 16, "moved": "512 B", "useful": "128 B", "util": "25%" },
-      { "stride": 8, "sectors": 32, "moved": "1024 B", "useful": "128 B", "util": "12.5%" },
-      { "stride": 32, "sectors": 32, "moved": "1024 B", "useful": "128 B", "util": "12.5%" }
+      {
+        "stride": 1,
+        "sectors": 4,
+        "moved": "128 B",
+        "useful": "128 B",
+        "util": "100%"
+      },
+      {
+        "stride": 2,
+        "sectors": 8,
+        "moved": "256 B",
+        "useful": "128 B",
+        "util": "50%"
+      },
+      {
+        "stride": 4,
+        "sectors": 16,
+        "moved": "512 B",
+        "useful": "128 B",
+        "util": "25%"
+      },
+      {
+        "stride": 8,
+        "sectors": 32,
+        "moved": "1024 B",
+        "useful": "128 B",
+        "util": "12.5%"
+      },
+      {
+        "stride": 32,
+        "sectors": 32,
+        "moved": "1024 B",
+        "useful": "128 B",
+        "util": "12.5%"
+      }
     ],
     "notes": [
       "理想情况：32 个线程各读 4 B、地址连续，正好覆盖 128 B = 4 个 32 B sector，一次 transaction，利用率 100%。",
@@ -155,8 +227,22 @@
     "lead": "Roofline 把 kernel 画在「arithmetic intensity（FLOP/byte）→ 可达到的算力」图上：拐点左侧是带宽斜线（memory-bound），右侧是算力平顶（compute-bound）。decode 和 prefill 分处两端。",
     "ridge": "拐点 = 990 TFLOPS / 3.35 TB/s = 295.5 FLOP/B",
     "table": [
-      { "workload": "decode（M=1）", "m": 1, "ai": "0.94", "bound": "memory", "tMem": "2.12 ms", "tCompute": "0.01 ms" },
-      { "workload": "prefill（M=4096）", "m": 4096, "ai": "3863.8", "bound": "compute", "tMem": "2.12 ms", "tCompute": "27.72 ms" }
+      {
+        "workload": "decode（M=1）",
+        "m": 1,
+        "ai": "0.94",
+        "bound": "memory",
+        "tMem": "2.12 ms",
+        "tCompute": "0.01 ms"
+      },
+      {
+        "workload": "prefill（M=4096）",
+        "m": 4096,
+        "ai": "3863.8",
+        "bound": "compute",
+        "tMem": "2.12 ms",
+        "tCompute": "27.72 ms"
+      }
     ],
     "points": [
       "decode：每 token 只有 2 × active params FLOPs（3.35B → 6.7 GFLOP），却要读 6.7 GB 权重加 KV；AI ≈ 0.94 FLOP/B，远低于拐点 295.5，落在带宽斜线。",
@@ -192,18 +278,58 @@
     "lead": "把前面所有概念收束成一个公式：decode 每步的 HBM 字节 ≈ 激活权重字节 + batch × seq × KV/token；TPOT ≈ 这个字节数 / HBM 带宽。谁能减少字节，谁就能加速 memory-bound 的 decode。",
     "formula": "bytes_per_step = active_params × 2 B（BF16 权重）+ batch × seq × kv_per_token；TPOT ≈ bytes_per_step / HBM_BW",
     "exampleRows": [
-      { "label": "batch 1, seq 4096, FP16 KV", "formula": "6.70 GB + 1 × 4096 × 96 KiB = 6.70 + 0.40", "result": "7.10 GB → 2.12 ms/step" },
-      { "label": "batch 32, seq 4096, FP16 KV", "formula": "6.70 GB + 32 × 4096 × 96 KiB = 6.70 + 12.88", "result": "19.58 GB → 5.85 ms/step（0.18 ms/token）" },
-      { "label": "batch 32, seq 4096, FP8 KV", "formula": "KV 减半：6.70 + 6.44", "result": "13.14 GB → 3.92 ms/step" }
+      {
+        "label": "batch 1, seq 4096, FP16 KV",
+        "formula": "6.70 GB + 1 × 4096 × 96 KiB = 6.70 + 0.40",
+        "result": "7.10 GB → 2.12 ms/step"
+      },
+      {
+        "label": "batch 32, seq 4096, FP16 KV",
+        "formula": "6.70 GB + 32 × 4096 × 96 KiB = 6.70 + 12.88",
+        "result": "19.58 GB → 5.85 ms/step（0.18 ms/token）"
+      },
+      {
+        "label": "batch 32, seq 4096, FP8 KV",
+        "formula": "KV 减半：6.70 + 6.44",
+        "result": "13.14 GB → 3.92 ms/step"
+      }
     ],
     "table": [
-      { "opt": "KV 量化 FP16 → FP8", "saves": "KV 字节减半（12.88 → 6.44 GB）", "owner": "引擎（量化 / 推理框架）" },
-      { "opt": "权重量化（INT4 / FP8）", "saves": "权重字节 6.70 GB → 约 1.7–3.4 GB", "owner": "LLM + 引擎" },
-      { "opt": "FlashAttention / 融合 kernel", "saves": "不落 n×n 分数矩阵，少中间读写，也少 launch", "owner": "GPU + 引擎" },
-      { "opt": "PagedAttention 块布局 / 预取", "saves": "减少 block_table gather 的 sector 放大（最坏 ~8×）", "owner": "引擎" },
-      { "opt": "CUDA Graph", "saves": "不减少字节，只减少 launch 与 CPU 空转", "owner": "引擎 / 运行时" },
-      { "opt": "更大 batch / 投机解码", "saves": "摊薄权重读取，提高 AI（但 KV 会随 batch 增加）", "owner": "引擎" },
-      { "opt": "更高 HBM 带宽 / 更多 SM", "saves": "抬高 roofline 的斜线与平顶", "owner": "GPU" }
+      {
+        "opt": "KV 量化 FP16 → FP8",
+        "saves": "KV 字节减半（12.88 → 6.44 GB）",
+        "owner": "引擎（量化 / 推理框架）"
+      },
+      {
+        "opt": "权重量化（INT4 / FP8）",
+        "saves": "权重字节 6.70 GB → 约 1.7–3.4 GB",
+        "owner": "LLM + 引擎"
+      },
+      {
+        "opt": "FlashAttention / 融合 kernel",
+        "saves": "不落 n×n 分数矩阵，少中间读写，也少 launch",
+        "owner": "GPU + 引擎"
+      },
+      {
+        "opt": "PagedAttention 块布局 / 预取",
+        "saves": "减少 block_table gather 的 sector 放大（最坏 ~8×）",
+        "owner": "引擎"
+      },
+      {
+        "opt": "CUDA Graph",
+        "saves": "不减少字节，只减少 launch 与 CPU 空转",
+        "owner": "引擎 / 运行时"
+      },
+      {
+        "opt": "更大 batch / 投机解码",
+        "saves": "摊薄权重读取，提高 AI（但 KV 会随 batch 增加）",
+        "owner": "引擎"
+      },
+      {
+        "opt": "更高 HBM 带宽 / 更多 SM",
+        "saves": "抬高 roofline 的斜线与平顶",
+        "owner": "GPU"
+      }
     ],
     "notes": [
       "长上下文 decode 变慢，本质是每步要读的 KV 字节变多；不是 LLM「突然变笨」，是 HBM 带宽被吃满。",

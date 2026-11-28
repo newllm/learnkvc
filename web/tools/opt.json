@@ -1,7 +1,7 @@
 {
   "kicker": "学习章节 · LLM 优化",
   "title": "LLM 优化：先找瓶颈，再选技术",
-  "lead": "LLM 优化不是把论文里的技巧全上一遍，而是先回答「现在卡在哪」：算力、HBM 带宽、显存容量、延迟、吞吐，还是通信？本章用一本可算的账把 FlashAttention、PagedAttention、LLM 量化、投机解码、调度与并行、LLM 结构串起来，最后给一张按 workload 选技术的决策图。",
+  "lead": "LLM 优化不是把论文里的技巧全上一遍，而是先回答「现在卡在哪」：算力、HBM 带宽、显存容量、延迟、吞吐，还是通信？本章用一本可算的账把 FlashAttention、PagedAttention、LLM 量化、投机解码、调度与并行、LLM 结构串起来，最后给一张按 workload 选技术的决策图。 【本章重点】先找瓶颈、FlashAttention/量化/投机解码的收益与边界、按 workload 选 2–3 个技术。",
   "why": {
     "title": "1 · 优化的第一原则：先找瓶颈",
     "lead": "同一个 LLM，prefill 和 decode 的瓶颈可能完全不同；同一个优化，在 7B 单卡和 30B 多卡上收益也不同。先定位约束，再选技术，最后用 A/B 验证。",
@@ -51,42 +51,71 @@
     "categories": [
       {
         "name": "算子 / kernel",
-        "items": ["FlashAttention", "fused MoE", "kernel fusion", "CUDA Graph"],
+        "items": [
+          "FlashAttention",
+          "fused MoE",
+          "kernel fusion",
+          "CUDA Graph"
+        ],
         "bottleneck": "HBM 流量 / launch 开销 / 算力利用率",
         "cost": "kernel 实现与硬件适配；融合可能限制通用性",
         "example": "prefill 长序列、decode 的几百个小 kernel"
       },
       {
         "name": "显存与缓存",
-        "items": ["PagedAttention", "prefix cache", "KV 量化", "GQA/MQA/sliding window"],
+        "items": [
+          "PagedAttention",
+          "prefix cache",
+          "KV 量化",
+          "GQA/MQA/sliding window"
+        ],
         "bottleneck": "显存容量 / KV 带宽 / 碎片",
         "cost": "块管理、精度损失、LLM 能力变化",
         "example": "长上下文、高并发、多请求共享前缀"
       },
       {
         "name": "数值精度",
-        "items": ["FP8 / INT8 / INT4", "GPTQ / AWQ / SmoothQuant", "KV cache 量化"],
+        "items": [
+          "FP8 / INT8 / INT4",
+          "GPTQ / AWQ / SmoothQuant",
+          "KV cache 量化"
+        ],
         "bottleneck": "权重/KV 字节与带宽",
         "cost": "精度损失、校准成本、kernel/硬件支持",
         "example": "decode memory-bound、显存不足"
       },
       {
         "name": "解码与调度",
-        "items": ["speculative decoding", "multi-token prediction", "continuous batching", "chunked prefill"],
+        "items": [
+          "speculative decoding",
+          "multi-token prediction",
+          "continuous batching",
+          "chunked prefill"
+        ],
         "bottleneck": "延迟 / 吞吐 / GPU 空转",
         "cost": "额外草稿计算、调度复杂度、实现复杂度",
         "example": "低并发长输出、混合长度请求"
       },
       {
         "name": "并行与通信",
-        "items": ["TP / PP / DP / EP", "overlap", "offload"],
+        "items": [
+          "TP / PP / DP / EP",
+          "overlap",
+          "offload"
+        ],
         "bottleneck": "算力扩展 / 显存 / 通信",
         "cost": "集合通信、流水线气泡、跨机带宽",
         "example": "单卡放不下、跨机扩展、MoE"
       },
       {
         "name": "LLM 结构",
-        "items": ["GQA/MQA", "MLA", "sliding window/attention sinks", "MoE", "linear/hybrid attention"],
+        "items": [
+          "GQA/MQA",
+          "MLA",
+          "sliding window/attention sinks",
+          "MoE",
+          "linear/hybrid attention"
+        ],
         "bottleneck": "KV 容量 / 计算量 / 长上下文",
         "cost": "能力/训练成本/工程与 kernel 支持",
         "example": "从头训练、换 LLM 或长上下文产品"
@@ -97,36 +126,75 @@
         "id": "memory",
         "name": "memory-bound（带宽）",
         "detail": "decode、attention IO、量化后仍慢：arithmetic intensity 低于 roofline 拐点。",
-        "recommend": ["KV/权重量化", "FlashAttention/融合 kernel", "PagedAttention 与更好的访存", "更大 batch 摊薄权重"],
-        "avoid": ["先加算力/换卡", "先上 TP（小消息通信可能更贵）"]
+        "recommend": [
+          "KV/权重量化",
+          "FlashAttention/融合 kernel",
+          "PagedAttention 与更好的访存",
+          "更大 batch 摊薄权重"
+        ],
+        "avoid": [
+          "先加算力/换卡",
+          "先上 TP（小消息通信可能更贵）"
+        ]
       },
       {
         "id": "compute",
         "name": "compute-bound（算力）",
         "detail": "prefill、大矩阵乘、训练 step：MFU 不高，算力是瓶颈。",
-        "recommend": ["FP8/Tensor Core 利用率", "kernel fusion/算子调优", "TP/并行切分", "prefill 批处理与 tile 调优"],
-        "avoid": ["先做 weight-only 量化（对 compute-bound 收益小）"]
+        "recommend": [
+          "FP8/Tensor Core 利用率",
+          "kernel fusion/算子调优",
+          "TP/并行切分",
+          "prefill 批处理与 tile 调优"
+        ],
+        "avoid": [
+          "先做 weight-only 量化（对 compute-bound 收益小）"
+        ]
       },
       {
         "id": "capacity",
         "name": "显存容量不足",
         "detail": "权重 + KV + 激活超过 VRAM，OOM 或 batch 上不去。",
-        "recommend": ["权重量化", "PagedAttention/KV 管理", "TP/PP/offload", "GQA/MQA/MLA"],
-        "avoid": ["只调 batch（可能更糟）", "忽略 KV 峰值"]
+        "recommend": [
+          "权重量化",
+          "PagedAttention/KV 管理",
+          "TP/PP/offload",
+          "GQA/MQA/MLA"
+        ],
+        "avoid": [
+          "只调 batch（可能更糟）",
+          "忽略 KV 峰值"
+        ]
       },
       {
         "id": "launch",
         "name": "launch / 调度开销",
         "detail": "decode 每步几百 kernel、小任务多，GPU 等 CPU。",
-        "recommend": ["CUDA Graph", "kernel fusion", "continuous batching", "chunked prefill"],
-        "avoid": ["只调网络/ECN", "忽视 Python/框架开销"]
+        "recommend": [
+          "CUDA Graph",
+          "kernel fusion",
+          "continuous batching",
+          "chunked prefill"
+        ],
+        "avoid": [
+          "只调网络/ECN",
+          "忽视 Python/框架开销"
+        ]
       },
       {
         "id": "comm",
         "name": "通信瓶颈",
         "detail": "TP/EP/PP/PD 的集合通信或 KV 迁移占时间，GPU 空等。",
-        "recommend": ["overlap 计算通信", "拓扑/rail-optimized", "NCCL 调优与无损网络", "减少并行度或换并行方式"],
-        "avoid": ["盲目加卡", "在慢网络上堆 TP"]
+        "recommend": [
+          "overlap 计算通信",
+          "拓扑/rail-optimized",
+          "NCCL 调优与无损网络",
+          "减少并行度或换并行方式"
+        ],
+        "avoid": [
+          "盲目加卡",
+          "在慢网络上堆 TP"
+        ]
       }
     ],
     "calcTitle": "2.1 互动：选瓶颈，看推荐方向",
@@ -147,10 +215,30 @@
       "elemBytes": 2,
       "note": "单层/单 head，BF16；naive 额外 4·N²·2 B（S/P 写读），tiled 只搬 Q/K/V/O。",
       "rows": [
-        { "n": 1024, "naive": "9.44 MB", "tiled": "1.05 MB", "ratio": "9.0×" },
-        { "n": 4096, "naive": "138.41 MB", "tiled": "4.19 MB", "ratio": "33.0×" },
-        { "n": 16384, "naive": "2.16 GB", "tiled": "16.78 MB", "ratio": "129.0×" },
-        { "n": 65536, "naive": "34.43 GB", "tiled": "67.11 MB", "ratio": "513.0×" }
+        {
+          "n": 1024,
+          "naive": "9.44 MB",
+          "tiled": "1.05 MB",
+          "ratio": "9.0×"
+        },
+        {
+          "n": 4096,
+          "naive": "138.41 MB",
+          "tiled": "4.19 MB",
+          "ratio": "33.0×"
+        },
+        {
+          "n": 16384,
+          "naive": "2.16 GB",
+          "tiled": "16.78 MB",
+          "ratio": "129.0×"
+        },
+        {
+          "n": 65536,
+          "naive": "34.43 GB",
+          "tiled": "67.11 MB",
+          "ratio": "513.0×"
+        }
       ]
     },
     "prefillDecode": [
@@ -159,11 +247,29 @@
       "decode 的并行度问题用 FlashDecoding/split-K：把 KV 维切成多块、多 SM 并行做 partial attention，再做 reduce。"
     ],
     "versions": [
-      { "v": "v1", "what": "IO-aware tiling + online softmax，HBM 省一个数量级。" },
-      { "v": "v2", "what": "更好的工作划分、减少非矩阵乘 FLOPs，长序列更快。" },
-      { "v": "v3", "what": "面向 Hopper 的异步/WGMMA/TMA 与 FP8，进一步压 IO 和调度。" }
+      {
+        "v": "v1",
+        "what": "IO-aware tiling + online softmax，HBM 省一个数量级。"
+      },
+      {
+        "v": "v2",
+        "what": "更好的工作划分、减少非矩阵乘 FLOPs，长序列更快。"
+      },
+      {
+        "v": "v3",
+        "what": "面向 Hopper 的异步/WGMMA/TMA 与 FP8，进一步压 IO 和调度。"
+      }
     ],
-    "sim": { "d": 128, "elemBytes": 2, "ns": [1024, 4096, 16384, 65536] },
+    "sim": {
+      "d": 128,
+      "elemBytes": 2,
+      "ns": [
+        1024,
+        4096,
+        16384,
+        65536
+      ]
+    },
     "calcTitle": "3.1 互动：N 变大，materialize 与 tiled 差多少",
     "calcNote": "单层/单 head、d=128、BF16；naive 额外 4·N²·2 B（S/P 写读），tiled 只搬 Q/K/V/O。量级 LLM。",
     "note": "FA 的收益看 HBM 流量占比；如果 kernel 已经 compute-bound，FA 只能减少 IO，不会减少 FLOPs。"
@@ -241,11 +347,34 @@
       "硬件/kernel：FP8 需要 Hopper+；INT4 需要 Marlin/GPTQ kernel；没有 kernel 的量化只省显存不加速。",
       "校准/工程：per-channel/per-block、异常值处理、kernel 选择决定实际收益。"
     ],
-    "sim": { "bwGbps": 3350, "seq": 4096, "batch": 1, "kv_per_token_fp16": 57344 },
+    "sim": {
+      "bwGbps": 3350,
+      "seq": 4096,
+      "batch": 1,
+      "kv_per_token_fp16": 57344
+    },
     "calcPresets": [
-      { "id": "qwen30b", "name": "Qwen3-Coder-30B-A3B", "params": 30.5e9, "active": 3.35e9, "kvPerToken": 98304 },
-      { "id": "qwen7b", "name": "Qwen2.5-Coder-7B", "params": 7.6e9, "active": 7.6e9, "kvPerToken": 57344 },
-      { "id": "qwen32b", "name": "Qwen2.5-Coder-32B", "params": 32.8e9, "active": 32.8e9, "kvPerToken": 262144 }
+      {
+        "id": "qwen30b",
+        "name": "Qwen3-Coder-30B-A3B",
+        "params": 30500000000.0,
+        "active": 3350000000.0,
+        "kvPerToken": 98304
+      },
+      {
+        "id": "qwen7b",
+        "name": "Qwen2.5-Coder-7B",
+        "params": 7600000000.0,
+        "active": 7600000000.0,
+        "kvPerToken": 57344
+      },
+      {
+        "id": "qwen32b",
+        "name": "Qwen2.5-Coder-32B",
+        "params": 32800000000.0,
+        "active": 32800000000.0,
+        "kvPerToken": 262144
+      }
     ],
     "calcTitle": "5.1 互动：权重/KV 精度 → 显存、decode 时间与加速比",
     "calcNote": "简化：decode batch=1、seq=4096、HBM 3350 GB/s，字节=权重+KV；未计 kernel/量化开销与精度损失。量级 LLM。",
@@ -261,13 +390,42 @@
       "收益下界：α 低或草稿太贵时加速比 <1，不如普通 decode。"
     ],
     "formula": "accepted = (1 − α^(γ+1)) / (1 − α)；time = 1 + c·γ；speedup = accepted / time。假设：各位置独立接受、忽略树验证与调度开销。",
-    "costs": [0.1, 0.2, 0.3],
-    "table": [
-      { "alpha": "0.50", "values": ["1.38", "1.08", "0.88"] },
-      { "alpha": "0.70", "values": ["1.98", "1.54", "1.26"] },
-      { "alpha": "0.90", "values": ["2.93", "2.28", "1.86"] }
+    "costs": [
+      0.1,
+      0.2,
+      0.3
     ],
-    "sim": { "gamma": 4, "defaultAlpha": 0.7, "defaultC": 0.1 },
+    "table": [
+      {
+        "alpha": "0.50",
+        "values": [
+          "1.38",
+          "1.08",
+          "0.88"
+        ]
+      },
+      {
+        "alpha": "0.70",
+        "values": [
+          "1.98",
+          "1.54",
+          "1.26"
+        ]
+      },
+      {
+        "alpha": "0.90",
+        "values": [
+          "2.93",
+          "2.28",
+          "1.86"
+        ]
+      }
+    ],
+    "sim": {
+      "gamma": 4,
+      "defaultAlpha": 0.7,
+      "defaultC": 0.1
+    },
     "tree": "树验证（tree attention）把多条草稿路径一次验证，提高接受率/覆盖率，但增加验证 FLOPs 与实现复杂度。",
     "mtp": "multi-token prediction（MTP）在训练时就加多 token 预测头，让 LLM 一次输出多个 token；和 draft+verify 的投机解码不是同一件事。",
     "calcTitle": "6.1 互动：接受率/草稿成本 → 加速比",
@@ -278,14 +436,54 @@
     "title": "7 · 调度与系统：让 GPU 不空转",
     "lead": "很多「优化」不是改 kernel，而是改调度：让 GPU 一直有活干、让 prefill 不阻塞 decode、让通信藏在计算后面。下表把调度/系统技术映射到它们攻击的瓶颈。",
     "rows": [
-      { "tech": "continuous batching", "attack": "吞吐 / GPU 空转", "how": "请求完成即换出、新请求插进 batch，按 token 迭代调度。", "cost": "调度复杂、公平性、prefill/decode 混跑。" },
-      { "tech": "chunked prefill", "attack": "延迟 / TPOT 抖动", "how": "prefill 切块与 decode 混合执行，避免长 prompt 阻塞 decode。", "cost": "实现复杂、块大小要调。" },
-      { "tech": "prefix cache", "attack": "TTFT / 成本", "how": "共享前缀 KV，省重复 prefill（见 Prefix 章）。", "cost": "缓存命中率、哈希/淘汰、安全性。" },
-      { "tech": "PD 分离", "attack": "延迟 / 隔离", "how": "prefill/decode 分池扩缩容（见推理网络章）。", "cost": "KV 迁移、两池比例、网络。" },
-      { "tech": "CUDA Graph", "attack": "launch 开销", "how": "decode 多 kernel 合并提交（见 CUDA 章）。", "cost": "固定 shape/bucket、allocator 约束。" },
-      { "tech": "kernel fusion", "attack": "launch / HBM 流量", "how": "把多个小算子融合，减少中间写回与 launch。", "cost": "实现复杂、通用性下降。" },
-      { "tech": "TP / PP / DP / EP", "attack": "算力 / 显存 / 通信", "how": "切矩阵/层/数据/专家（见 NCCL 章）。", "cost": "集合通信、气泡、跨机带宽。" },
-      { "tech": "overlap / offload", "attack": "通信 / 容量", "how": "计算通信重叠、把冷数据放 CPU/NVMe。", "cost": "PCIe 带宽、实现复杂。" }
+      {
+        "tech": "continuous batching",
+        "attack": "吞吐 / GPU 空转",
+        "how": "请求完成即换出、新请求插进 batch，按 token 迭代调度。",
+        "cost": "调度复杂、公平性、prefill/decode 混跑。"
+      },
+      {
+        "tech": "chunked prefill",
+        "attack": "延迟 / TPOT 抖动",
+        "how": "prefill 切块与 decode 混合执行，避免长 prompt 阻塞 decode。",
+        "cost": "实现复杂、块大小要调。"
+      },
+      {
+        "tech": "prefix cache",
+        "attack": "TTFT / 成本",
+        "how": "共享前缀 KV，省重复 prefill（见 Prefix 章）。",
+        "cost": "缓存命中率、哈希/淘汰、安全性。"
+      },
+      {
+        "tech": "PD 分离",
+        "attack": "延迟 / 隔离",
+        "how": "prefill/decode 分池扩缩容（见推理网络章）。",
+        "cost": "KV 迁移、两池比例、网络。"
+      },
+      {
+        "tech": "CUDA Graph",
+        "attack": "launch 开销",
+        "how": "decode 多 kernel 合并提交（见 CUDA 章）。",
+        "cost": "固定 shape/bucket、allocator 约束。"
+      },
+      {
+        "tech": "kernel fusion",
+        "attack": "launch / HBM 流量",
+        "how": "把多个小算子融合，减少中间写回与 launch。",
+        "cost": "实现复杂、通用性下降。"
+      },
+      {
+        "tech": "TP / PP / DP / EP",
+        "attack": "算力 / 显存 / 通信",
+        "how": "切矩阵/层/数据/专家（见 NCCL 章）。",
+        "cost": "集合通信、气泡、跨机带宽。"
+      },
+      {
+        "tech": "overlap / offload",
+        "attack": "通信 / 容量",
+        "how": "计算通信重叠、把冷数据放 CPU/NVMe。",
+        "cost": "PCIe 带宽、实现复杂。"
+      }
     ],
     "note": "调度优化的收益依赖 workload：低并发看延迟，高并发看吞吐；同一策略在两个场景可能相反。"
   },
@@ -293,11 +491,36 @@
     "title": "8 · LLM 结构：从源头减少 KV 和计算",
     "lead": "如果还能改 LLM 或换 LLM，结构优化往往比工程优化杠杆更大：GQA/MQA 直接减少 KV heads，MLA 用低秩压缩 KV，sliding window 把 KV 从 O(N) 压到 O(W)，MoE 把算力和参数解耦。",
     "rows": [
-      { "name": "GQA / MQA", "saves": "KV heads 从 H 降到 G/1，KV 字节和带宽按比例降。", "costs": "可能损失一点质量；训练时就要定。", "needs": "attention kernel 支持不同 head 数。" },
-      { "name": "MLA", "saves": "低秩压缩 KV（如 DeepSeek），显著降 KV 带宽/容量。", "costs": "实现复杂、训练成本高。", "needs": "专用 attention/kernel。" },
-      { "name": "sliding window / attention sinks", "saves": "只保留最近 W 个 token + sink，KV 从 O(N) 变 O(W)。", "costs": "长距离依赖可能丢失；需要窗口策略。", "needs": "mask/kernel/缓存管理。" },
-      { "name": "MoE", "saves": "每 token 只激活部分专家，算力/显存解耦。", "costs": "路由、负载不均、all-to-all 通信。", "needs": "EP/专家并行、fused MoE kernel。" },
-      { "name": "linear / hybrid attention", "saves": "线性/混合 attention 把 O(N²) 计算降到 O(N)。", "costs": "质量/长上下文能力需验证。", "needs": "新架构 kernel 与推理支持。" }
+      {
+        "name": "GQA / MQA",
+        "saves": "KV heads 从 H 降到 G/1，KV 字节和带宽按比例降。",
+        "costs": "可能损失一点质量；训练时就要定。",
+        "needs": "attention kernel 支持不同 head 数。"
+      },
+      {
+        "name": "MLA",
+        "saves": "低秩压缩 KV（如 DeepSeek），显著降 KV 带宽/容量。",
+        "costs": "实现复杂、训练成本高。",
+        "needs": "专用 attention/kernel。"
+      },
+      {
+        "name": "sliding window / attention sinks",
+        "saves": "只保留最近 W 个 token + sink，KV 从 O(N) 变 O(W)。",
+        "costs": "长距离依赖可能丢失；需要窗口策略。",
+        "needs": "mask/kernel/缓存管理。"
+      },
+      {
+        "name": "MoE",
+        "saves": "每 token 只激活部分专家，算力/显存解耦。",
+        "costs": "路由、负载不均、all-to-all 通信。",
+        "needs": "EP/专家并行、fused MoE kernel。"
+      },
+      {
+        "name": "linear / hybrid attention",
+        "saves": "线性/混合 attention 把 O(N²) 计算降到 O(N)。",
+        "costs": "质量/长上下文能力需验证。",
+        "needs": "新架构 kernel 与推理支持。"
+      }
     ],
     "note": "结构优化是「换 LLM/重训」级别的手段；工程优化的收益通常在 1.5–3×，结构优化可能到量级差，但成本也高。"
   },
@@ -308,26 +531,56 @@
       {
         "workload": "prefill-heavy（长 prompt、短输出）",
         "bottleneck": "compute / TTFT",
-        "first": ["FlashAttention + kernel fusion", "FP8/Tensor Core 利用率", "chunked prefill 控延迟"],
-        "avoid": ["过度 weight-only 量化（收益小）", "先上大量小优化"]
+        "first": [
+          "FlashAttention + kernel fusion",
+          "FP8/Tensor Core 利用率",
+          "chunked prefill 控延迟"
+        ],
+        "avoid": [
+          "过度 weight-only 量化（收益小）",
+          "先上大量小优化"
+        ]
       },
       {
         "workload": "decode-heavy（长输出、低并发）",
         "bottleneck": "memory BW / TPOT",
-        "first": ["权重量化 W4A16", "KV 量化", "CUDA Graph/融合", "投机解码（接受率高时）"],
-        "avoid": ["先加 TP（小消息通信更贵）", "只调 batch"]
+        "first": [
+          "权重量化 W4A16",
+          "KV 量化",
+          "CUDA Graph/融合",
+          "投机解码（接受率高时）"
+        ],
+        "avoid": [
+          "先加 TP（小消息通信更贵）",
+          "只调 batch"
+        ]
       },
       {
         "workload": "long-context",
         "bottleneck": "KV 容量 / 带宽",
-        "first": ["PagedAttention + prefix cache", "KV 量化", "GQA/MLA/sliding window"],
-        "avoid": ["只加显存不换结构", "忽略 gather 的访存放大"]
+        "first": [
+          "PagedAttention + prefix cache",
+          "KV 量化",
+          "GQA/MLA/sliding window"
+        ],
+        "avoid": [
+          "只加显存不换结构",
+          "忽略 gather 的访存放大"
+        ]
       },
       {
         "workload": "高并发 / 吞吐",
         "bottleneck": "调度 / 吞吐",
-        "first": ["continuous batching", "chunked prefill", "PagedAttention", "多副本/PD 分离"],
-        "avoid": ["单请求级微优化", "让长 prefill 阻塞 decode"]
+        "first": [
+          "continuous batching",
+          "chunked prefill",
+          "PagedAttention",
+          "多副本/PD 分离"
+        ],
+        "avoid": [
+          "单请求级微优化",
+          "让长 prefill 阻塞 decode"
+        ]
       }
     ],
     "principles": [

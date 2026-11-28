@@ -86,7 +86,6 @@
 
     el.innerHTML =
       head(preset) +
-      quiz(data.quiz) +
       composition(preset, c, m) +
       packageSection(data.files) +
       layersSection(preset, c, m) +
@@ -95,8 +94,8 @@
       kernelsTable(data.kernels) +
       gpuFunctionMap(data.gpuFunctions) +
       runtimeSection(data.runtime, preset, c, m) +
-      thinkBoxes(data.notes) +
-      '<div class="reuse-actions"><button class="btn primary" id="anatomy-reflect">把「LLM/GPU/引擎」写进我的总结 →</button></div>';
+      simSection(data) +
+      checkSection(data.notes);
 
     bind(el, data);
   };
@@ -567,11 +566,31 @@
     );
   }
 
-  /* ---------------------------------------------------------------- notes */
+  /* ---------------------------------------------------------------- sim + check */
 
-  function thinkBoxes(notes) {
+  function simSection(data) {
     return (
-      '<h2 class="sec-title">9 · 用自己的话回答</h2>' +
+      '<h2 class="sec-title">9 · 仿真代码：参数 / 层数 / KV 账本</h2>' +
+      '<p class="page-lead">把四个预设的参数量、激活参数、每 token KV 算成一张表：' +
+      "参数决定显存，激活参数决定每步读多少；KV 只随层数、KV 头数和精度线性增长。</p>" +
+      '<pre class="train-run"><code>python3 example/structure_sim.py</code></pre>' +
+      '<div class="train-code-head"><span>' + esc((data.simCode && data.simCode.file) || "example/structure_sim.py") +
+      '</span><span>纯 Python · 可运行</span></div>' +
+      '<div class="train-code" id="anatomy-sim-code"></div>' +
+      '<h3 class="sec-sub">示例输出</h3><pre class="train-run"><code>' + esc(data.simOutput || "") + "</code></pre>"
+    );
+  }
+
+  function checkSection(notes) {
+    return (
+      '<h2 class="sec-title">10 · 自查：把结构、参数和运行时说清楚</h2>' +
+      '<ul class="train-rules train-checklist">' +
+      '<li>能说出参数、结构超参、运行时状态三者的边界</li>' +
+      '<li>能解释层数增加时 hidden 不变，但参数量和 KV 线性增加</li>' +
+      '<li>能用 KV/token = 2 × layers × kv_heads × head_dim × 精度 复算 96 KiB</li>' +
+      '<li>能解释 MoE 的总参数与激活参数为什么不同</li>' +
+      '<li>能说清权重从磁盘到 GPU 显存经过哪些站</li>' +
+      '</ul>' +
       details("为什么层数增加，参数量和 KV 都线性增加，但 hidden 不变？", notes.layers + " " + notes.kv) +
       details("参数是什么？它和「知识」是什么关系？", notes.params) +
       details("LLM、GPU、引擎在这套流程里各做了什么？", notes.gpu)
@@ -590,13 +609,6 @@
         state.presetId = b.dataset.preset;
         state.layer = 0;
         state.overrides = {};
-        A.render(el, data);
-      })
-    );
-    el.querySelectorAll("[data-q]").forEach((b) =>
-      b.addEventListener("click", () => {
-        if (state.quiz[b.dataset.q] !== undefined) return;
-        state.quiz[b.dataset.q] = +b.dataset.i;
         A.render(el, data);
       })
     );
@@ -658,7 +670,7 @@
     );
     const rtCalc = el.querySelector("#runtime-calc");
     if (rtCalc) rtCalc.addEventListener("click", () => go("calc"));
-    const ref = el.querySelector("#anatomy-reflect");
-    if (ref) ref.addEventListener("click", () => go("kv", { stage: "summary" }));
+    const simCode = el.querySelector("#anatomy-sim-code");
+    if (simCode && LK.codeview && data.simCode) LK.codeview.mount(simCode, data.simCode.lines);
   }
 })();

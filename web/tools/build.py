@@ -289,18 +289,14 @@ def build_anatomy() -> dict:
     assert by_id["qwen30b"]["math"]["kv_bytes"] == 96 * 1024
     assert by_id["qwen7b"]["math"]["kv_bytes"] == 56 * 1024
     assert by_id["qwen32b"]["math"]["kv_bytes"] == 256 * 1024
-    return {
-        "quiz": spec["quiz"],
-        "presets": presets,
-        "timeline": spec["timeline"],
-        "gpuLoad": spec["gpuLoad"],
-        "kernels": spec["kernels"],
-        "notes": spec["notes"],
-        "context": spec["context"],
-        "files": spec["files"],
-        "runtime": spec["runtime"],
-        "gpuFunctions": spec["gpuFunctions"],
+    sim_path = ROOT / "example" / "structure_sim.py"
+    spec["simCode"] = {
+        "file": "example/structure_sim.py",
+        "lines": sim_path.read_text(encoding="utf-8").split("\n"),
     }
+    spec["simOutput"] = run_example(sim_path)
+    spec["presets"] = presets
+    return spec
 
 
 def run_example(path: Path) -> str:
@@ -492,7 +488,7 @@ def main() -> None:
         "transformer": build_transformer(),
         "opt": build_opt(),
     }
-    for ch in ("net", "train", "nccl", "cuda", "ecn", "gpu", "npu", "transformer", "opt"):
+    for ch in ("anatomy", "net", "train", "nccl", "cuda", "ecn", "gpu", "npu", "transformer", "opt"):
         data["lessons"][ch] = data[ch]["lesson"]
     (DATA / "data.js").write_text(
         "window.LK_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n", encoding="utf-8"
@@ -511,7 +507,7 @@ def main() -> None:
     print(f"traces.js : kv source={trace['source']} steps={len(trace['steps'])} · "
           f"prefix scenarios={len(prefix['scenarios'])}")
     doc = [f"{ch}:{len(build['lesson']['think'])} think / {len(build['simOutput'].splitlines())} out"
-           for ch, build in (("nccl", data["nccl"]), ("cuda", data["cuda"]),
+           for ch, build in (("anatomy", data["anatomy"]), ("nccl", data["nccl"]), ("cuda", data["cuda"]),
                              ("ecn", data["ecn"]), ("gpu", data["gpu"]),
                              ("npu", data["npu"]), ("transformer", data["transformer"]), ("opt", data["opt"]))]
     print("doc chapters:", " · ".join(doc))

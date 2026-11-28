@@ -1474,48 +1474,11 @@ html[data-theme="light"] .rt-chips span { background: #eef3f8; color: #516274; }
 .stepnav-item.active { background: rgba(76, 201, 240, .10); color: var(--fg); }
 .stepnav-item.active .no { color: var(--accent); }
 
-/* chapter switcher above the four stages */
-.stepnav-chapters {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px 6px 6px;
-  border-bottom: 1px solid var(--line);
-}
-.stepnav-chapter {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--dim);
-  text-align: left;
-  font: 12px/1.4 var(--sans);
-  cursor: pointer;
-}
-.stepnav-chapter .sc-no { flex: 0 0 18px; font: 11px var(--mono); color: var(--faint); }
-.stepnav-chapter .sc-tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stepnav-chapter .sc-tt-sm { display: none; }
-.stepnav-chapter .sc-done { font: 10px var(--mono); color: var(--green); }
-.stepnav-chapter:hover { background: #16202c; color: var(--fg); }
-.stepnav-chapter.on { background: rgba(76, 201, 240, .10); color: var(--fg); }
-.stepnav-chapter.on .sc-no { color: var(--accent); }
-
 .chapter.nav-collapsed { grid-template-columns: 36px minmax(360px, 46%) minmax(0, 1fr); }
 .chapter.nav-collapsed .stepnav-head { justify-content: center; padding: 8px 0; }
 .chapter.nav-collapsed .stepnav-head > span,
 .chapter.nav-collapsed .stepnav-head > b,
 .chapter.nav-collapsed .stepnav-list { display: none; }
-.chapter.nav-collapsed .stepnav-chapters { padding: 4px; }
-.chapter.nav-collapsed .stepnav-chapter { justify-content: center; padding: 5px 0; }
-.chapter.nav-collapsed .stepnav-chapter .sc-tt,
-.chapter.nav-collapsed .stepnav-chapter .sc-tt-sm,
-.chapter.nav-collapsed .stepnav-chapter .sc-done { display: none; }
-.chapter.nav-collapsed .stepnav-chapter .sc-no { flex: 0 0 auto; }
-
 /* step navigation moved to the left rail; footer keeps prev/next + counters */
 .timeline .dots { display: none; }
 .timeline .counters { margin-left: auto; }
@@ -1534,8 +1497,6 @@ body[data-view="paged"] .timeline { display: flex; }
 
 html[data-theme="light"] .stepnav-item:hover { background: #eef3f8; }
 html[data-theme="light"] .stepnav-item.active { background: #e2f0fb; }
-html[data-theme="light"] .stepnav-chapter:hover { background: #eef3f8; }
-html[data-theme="light"] .stepnav-chapter.on { background: #e2f0fb; }
 html[data-theme="light"] .stepnav-toggle:hover { border-color: #b9c8d8; }
 
 /* stage list inside the left chapter nav */
@@ -1582,31 +1543,12 @@ html[data-theme="light"] .stage-nav-item.on { background: #e2f0fb; }
 @media (max-width: 980px) {
   .stepnav { max-height: 220px; }
   .stepnav-section { display: none; }
-  .stepnav-chapters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; padding: 3px 6px 4px; }
-  .stepnav-chapter { padding: 5px 6px; font-size: 11.5px; }
-  .stepnav-chapter .sc-no { flex: 0 0 15px; font-size: 10px; }
-  .chapter.nav-collapsed .stepnav-chapters { display: none; }
   .stage-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
   .stage-nav-item { padding: 5px 5px; font-size: 11px; }
   .stage-nav-item .sid { display: none; }
   .stage-nav-item em { display: none; }
   .stage-nav-item.done .stt::after { content: " ✓"; color: var(--green); font-size: 10px; }
   .stepnav-list { min-height: 96px; }
-}
-
-/* very narrow: chapter numbers + short names */
-@media (max-width: 480px) {
-  .stepnav-chapter { gap: 4px; padding: 5px 4px; font-size: 11px; }
-  .stepnav-chapter .sc-no { flex: 0 0 12px; }
-  .stepnav-chapter .sc-tt { display: none; }
-  .stepnav-chapter .sc-tt-sm {
-    display: block;
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 }
 
 /* ===================== section rail on model-tool pages ===================== */
@@ -1742,3 +1684,67 @@ html[data-theme="light"] .train-code .ln .no { color: #94a6b8; }
 /* keep the simulation code + its output in one screen when possible */
 #net-sim-code,
 #train-sim-code { max-height: 360px; }
+
+/* ---------------------------------------------------------- home roadmap */
+.roadmap {
+  margin: 24px 0 30px;
+  padding: 20px 22px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+.roadmap-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.roadmap-head .kicker { margin: 0 0 4px; color: var(--accent-2); }
+.roadmap h2 { margin: 0; font-size: 20px; letter-spacing: -.01em; }
+.roadmap-meta { font: 10.5px var(--mono); color: var(--faint); }
+.roadmap-note { margin: 8px 0 0; color: var(--dim); font-size: 12px; line-height: 1.65; }
+.rm-route { position: relative; margin-top: 16px; }
+.rm-route::before {
+  content: ""; position: absolute; left: 15px; top: 14px; bottom: 14px; width: 2px;
+  border-radius: 2px; background: linear-gradient(var(--accent), var(--green)); opacity: .42;
+}
+.rm-endpoint, .rm-phase { position: relative; padding-left: 48px; }
+.rm-endpoint { display: block; margin: 0 0 10px; color: var(--fg); }
+.rm-endpoint:hover { text-decoration: none; }
+.rm-endpoint > span:last-child { display: flex; flex-direction: column; gap: 1px; padding-top: 2px; }
+.rm-endpoint b { font-size: 12.5px; }
+.rm-endpoint small { color: var(--faint); font-size: 10.5px; }
+.rm-dot, .rm-no {
+  position: absolute; left: 0; top: 0; z-index: 1;
+  display: grid; place-items: center; width: 30px; height: 30px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--bg); color: var(--accent-2); font: 10px var(--mono);
+}
+.rm-dot { border-radius: 50%; border-color: var(--accent); color: var(--accent); }
+.rm-finish .rm-dot { border-color: var(--green); color: var(--green); }
+.rm-phase { margin: 0 0 12px; }
+.rm-phase-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 2px; margin-bottom: 8px; }
+.rm-phase-head b { font-size: 13px; color: var(--fg); }
+.rm-progress { margin-left: auto; font: 10px var(--mono); color: var(--faint); }
+.rm-nodes { display: flex; flex-wrap: wrap; gap: 8px; }
+.rm-node {
+  display: flex; flex-direction: column; gap: 2px; min-width: 150px; max-width: 230px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel-2); color: var(--fg); text-decoration: none;
+}
+.rm-node:hover { text-decoration: none; border-color: var(--accent); background: var(--hl); }
+.rm-node-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rm-node b { font-size: 12px; font-weight: 600; }
+.rm-node small { color: var(--faint); font-size: 10.5px; }
+.rm-node.done { border-color: rgba(126, 231, 135, .38); }
+.rm-check { color: var(--green); font: 11px var(--mono); }
+.rm-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 7px; font-size: 10px; color: var(--faint); }
+.rm-tool { color: var(--dim); font: 10.5px var(--mono); border-bottom: 1px dashed var(--line); }
+.rm-tool:hover { color: var(--accent); text-decoration: none; border-color: var(--accent); }
+html[data-theme="light"] .rm-node:hover { background: #eef3f8; }
+@media (max-width: 980px) {
+  .roadmap { padding: 18px 16px 14px; }
+  .rm-node { flex: 1 1 170px; max-width: none; }
+}
+@media (max-width: 560px) {
+  .rm-endpoint, .rm-phase { padding-left: 42px; }
+  .rm-nodes { display: grid; grid-template-columns: 1fr; }
+  .rm-node { max-width: none; }
+  .rm-route::before { left: 13px; }
+  .rm-dot, .rm-no { width: 26px; height: 26px; font-size: 9px; }
+}

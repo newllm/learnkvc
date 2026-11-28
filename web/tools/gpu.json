@@ -1,10 +1,10 @@
 {
   "kicker": "学习章节 · 认识 GPU",
-  "title": "认识 GPU：CPU、GPU、NPU 到底怎么分工",
-  "lead": "GPU 不是「更强的 CPU」，而是另一个设计目标下的机器：CPU 优化单线程延迟和控制流，GPU 优化吞吐和带宽。本章先把 CPU / GPU / NPU 摆到一张图上，再回答四个问题——CPU 与 GPU 是什么关系、为什么 LLM 离不开 GPU、为什么 GPU 又取代不了 CPU、以及 GPU 显存到底有没有 L1/L2 cache。",
+  "title": "GPU：CPU 的加速器，LLM 的吞吐机器",
+  "lead": "GPU 不是「更强的 CPU」，而是另一个设计目标下的机器：CPU 优化单线程延迟和控制流，GPU 优化吞吐和带宽。本章回答四个问题——CPU 与 GPU 是什么关系、为什么 LLM 离不开 GPU、为什么 GPU 又取代不了 CPU、以及 GPU 显存到底有没有 L1/L2 cache；NPU 与国产算力的细节放到下一章。 【本章重点】CPU/GPU 分工、decode 为什么 memory-bound、HBM/L2/L1 的实际形态、GPU 为什么取代不了 CPU。",
   "why": {
     "title": "1 · 先把 CPU / GPU / NPU 摆到一张图",
-    "lead": "现代机器是异构系统：CPU 是 host，负责启动、调度、IO 和控制流；GPU / NPU / DCU 是 device，只在你把任务交给它时执行大规模并行计算。两者不是替代关系，而是分工关系。",
+    "lead": "现代机器是异构系统：CPU 是 host，负责启动、调度、IO 和控制流；GPU 是 device，只在你把任务交给它时执行大规模并行计算。NPU、DCU 等加速器共用「host + device」的分工，具体差异见下一章。",
     "roles": [
       {
         "name": "CPU（host）",

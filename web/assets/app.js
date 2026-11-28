@@ -54,6 +54,7 @@
       cuda: $("#stepnav-cuda"),
       ecn: $("#stepnav-ecn"),
       transformer: $("#stepnav-transformer"),
+      anatomy: $("#stepnav-anatomy"),
     gpu: $("#stepnav-gpu"),
       npu: $("#stepnav-npu"),
       opt: $("#stepnav-opt"),
@@ -65,7 +66,8 @@
     prev: $("#prev"),
     next: $("#next"),
     quiz: $("#quiz"),
-    anatomyBody: $("#anatomy"),
+    anatomyBody: $("#anatomy-body"),
+    anatomyMain: $("#anatomy-main"),
     calcBody: $("#calc"),
     trainBody: $("#train-body"),
     netBody: $("#net-body"),
@@ -107,10 +109,11 @@
   state.prefix = { step: 0, scenario: "shared", snap: 0, playing: false, timer: null };
   state.paged = { step: 0, snap: 0, sel: "seq-b", playing: false, timer: null };
   const CHAPTERS = ["kv", "prefix", "paged"];
-  const DOC_CHAPTERS = ["transformer", "net", "train", "nccl", "cuda", "ecn", "gpu", "npu", "opt"];
+  const DOC_CHAPTERS = ["transformer", "anatomy", "net", "train", "nccl", "cuda", "ecn", "gpu", "npu", "opt"];
   const ALL_CHAPTERS = CHAPTERS.concat(DOC_CHAPTERS);
   const DOC_SECTIONS = {
     transformer: ["why", "attn", "arch", "timeline", "scaling", "win", "limits", "codeSection", "check"],
+    anatomy: ["composition", "package", "layers", "pipeline", "gpuLoad", "kernels", "gpuFunctionMap", "runtime", "codeSection", "check"],
     net: ["why", "nccl", "sim", "roce", "pd", "codeSection", "check"],
     train: ["stepSection", "ledgerSection", "parallelSection", "scriptSection", "codeSection", "checkSection"],
     nccl: ["why", "collectives", "ring", "tree", "model", "topology", "measure", "codeSection", "check"],
@@ -120,15 +123,13 @@
     npu: ["why", "compare", "vendors", "stack", "llm", "select", "codeSection", "check"],
     opt: ["why", "map", "flash", "paged", "quant", "decode", "schedule", "model", "choose", "codeSection", "check"],
   };
-  const DOC_RENDERERS = { transformer: "transformer", net: "net", train: "train", nccl: "nccl", cuda: "cuda", ecn: "ecn", gpu: "gpu", npu: "npu", opt: "opt" };
-  const DOC_MODULES = { transformer: () => LK.transformer, net: () => LK.net, train: () => LK.train, nccl: () => LK.nccl, cuda: () => LK.cuda, ecn: () => LK.ecn, gpu: () => LK.gpu, npu: () => LK.npu, opt: () => LK.opt };
-  const CH_NUMS = ["①", "②", "③"];
-  const CH_SHORT = ["KV cache", "Prefix cache", "PagedAttention"];
+  const DOC_RENDERERS = { transformer: "transformer", anatomy: "anatomy", net: "net", train: "train", nccl: "nccl", cuda: "cuda", ecn: "ecn", gpu: "gpu", npu: "npu", opt: "opt" };
+  const DOC_MODULES = { transformer: () => LK.transformer, anatomy: () => LK.anatomy, net: () => LK.net, train: () => LK.train, nccl: () => LK.nccl, cuda: () => LK.cuda, ecn: () => LK.ecn, gpu: () => LK.gpu, npu: () => LK.npu, opt: () => LK.opt };
   const STAGE_NAMES = ["think", "explore", "reflect"];
   state.stages = {};
-  state.docStep = { transformer: 0, net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, npu: 0, opt: 0 };
-  state.docLock = { transformer: 0, net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, npu: 0, opt: 0 };
-  state.navCollapsed = { kv: false, prefix: false, paged: false, transformer: false, net: false, train: false, nccl: false, cuda: false, ecn: false, gpu: false, npu: false, opt: false };
+  state.docStep = { transformer: 0, anatomy: 0, net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, npu: 0, opt: 0 };
+  state.docLock = { transformer: 0, anatomy: 0, net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, npu: 0, opt: 0 };
+  state.navCollapsed = { kv: false, prefix: false, paged: false, transformer: false, anatomy: false, net: false, train: false, nccl: false, cuda: false, ecn: false, gpu: false, npu: false, opt: false };
   const world = { presets: D.anatomy.presets, gpus: D.anatomy.context.gpus };
 
   const esc = (s) =>
@@ -596,25 +597,9 @@
     const headCount = showSteps
       ? idx + 1 + " / " + steps.length
       : stageIdx + 1 + " / " + STAGE_NAMES.length;
-    const chaptersHTML = CHAPTERS.map((c, i) => {
-      const title = (D[c] && D[c].title) || c;
-      const done = LK.progress.lesson(c).summary;
-      return '<button class="stepnav-chapter' + (c === ch ? " on" : "") +
-        '" data-nav-ch="' + c + '" aria-current="' + (c === ch) + '" title="' +
-        CH_NUMS[i] + " " + esc(title) + (done ? "（已完成）" : "") + '">' +
-        '<span class="sc-no">' + CH_NUMS[i] + "</span>" +
-        '<span class="sc-tt">' + esc(title) + "</span>" +
-        '<span class="sc-tt-sm">' + esc(CH_SHORT[i]) + "</span>" +
-        '<span class="sc-done">' + (done ? "✓" : "") + "</span></button>";
-    }).join("");
-
     nav.innerHTML =
       '<div class="stepnav-head"><span>章节导航</span><b>' + headCount + "</b>" +
       '<button class="stepnav-toggle" type="button" aria-expanded="true" aria-label="收起章节导航">‹</button></div>' +
-      (isDoc
-        ? ""
-        : '<div class="stepnav-section">章节</div>' +
-          '<div class="stepnav-chapters">' + chaptersHTML + "</div>") +
       '<div class="stage-nav">' + stagesHTML + "</div>" +
       (showSteps
         ? '<div class="stepnav-section">探索步骤</div>' +
@@ -633,14 +618,6 @@
         : '<p class="stepnav-hint">切换到「探索阅读」查看 ' + steps.length + " 个步骤。</p>");
 
     nav.querySelector(".stepnav-toggle").addEventListener("click", () => toggleNav(ch));
-    nav.querySelectorAll("[data-nav-ch]").forEach((b) =>
-      b.addEventListener("click", () => {
-        const target = b.dataset.navCh;
-        if (!CHAPTERS.includes(target) || target === ch) return;
-        setView(target);
-        updateHash();
-      })
-    );
     nav.querySelectorAll("[data-nav-stage]").forEach((b) =>
       b.addEventListener("click", () => setStage(ch, b.dataset.navStage))
     );
@@ -667,7 +644,10 @@
 
   function docSectionSteps(ch) {
     const d = D[ch];
-    return DOC_SECTIONS[ch].map((key) => ({ title: (d[key] && d[key].title) || key }));
+    const meta = d.sections || {};
+    return DOC_SECTIONS[ch].map((key) => ({
+      title: (meta[key] && meta[key].title) || (d[key] && d[key].title) || key,
+    }));
   }
 
   function chapterSteps(ch) {
@@ -1049,8 +1029,6 @@
         context: D.anatomy.context,
         presets: D.anatomy.presets,
       });
-    } else if (view === "anatomy") {
-      LK.anatomy.render(el.anatomyBody, D.anatomy);
     } else if (view === "calc") {
       LK.calc.render(el.calcBody, {
         presets: D.anatomy.presets,
@@ -1309,7 +1287,6 @@
   initCodeDrawers();
   buildDots();
   if (LK.sectionnav) {
-    LK.sectionnav.mount($("#toc-anatomy"), el.anatomyBody);
     LK.sectionnav.mount($("#toc-calc"), el.calcBody);
   }
   codeView = LK.codeview.mount(el.code, kv.lines);

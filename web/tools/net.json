@@ -1,7 +1,7 @@
 {
   "kicker": "学习章节 · 推理网络",
   "title": "推理网络：NCCL / RoCE / PD 分离",
-  "lead": "推理不是「一张卡算完就结束」：TP 每层要 all-reduce，MoE 要 all-to-all，PD 分离要把 KV 从 prefill 池搬到 decode 池。网络不是一根大管子，而是很多次延迟敏感的小集合通信，加上每请求的 KV 迁移。",
+  "lead": "推理不是「一张卡算完就结束」：TP 每层要 all-reduce，MoE 要 all-to-all，PD 分离要把 KV 从 prefill 池搬到 decode 池。网络不是一根大管子，而是很多次延迟敏感的小集合通信，加上每请求的 KV 迁移。 【本章重点】TP/EP 的集合通信、ring/tree、RoCE 无损、PD 分离。",
   "why": {
     "title": "1 · 推理为什么需要网络",
     "lead": "先分清「每层都发生的集合通信」和「每请求一次的 KV 迁移」；前者看延迟，后者看带宽。",
@@ -140,16 +140,56 @@
       "Rail-optimized：每台机器的每张网卡接到不同的 spine/rail，避免 all-to-all 时单 rail 拥塞。"
     ],
     "env": [
-      { "name": "NCCL_DEBUG", "value": "INFO", "why": "确认选了 NET/IB 还是 NET/Socket；第一排查项。" },
-      { "name": "NCCL_IB_HCA", "value": "mlx5_0,mlx5_1", "why": "指定参与 RDMA 的网卡，避免选错管理口。" },
-      { "name": "NCCL_SOCKET_IFNAME", "value": "eth0", "why": "TCP bootstrap 用的网卡；和 IB_HCA 分开。" },
-      { "name": "NCCL_IB_GID_INDEX", "value": "3", "why": "RoCEv2 的 GID 索引；用 show_gids 确认。" },
-      { "name": "NCCL_IB_TC", "value": "106", "why": "流量 class / DSCP，要和交换机 PFC/ECN 配置对齐。" },
-      { "name": "NCCL_NET_GDR_LEVEL", "value": "2", "why": "允许 GPUDirect RDMA（GPU 显存直连网卡），避免 H2D 拷贝。" },
-      { "name": "NCCL_ALGO", "value": "Ring / Tree / NVLS", "why": "调算法；一般让 NCCL 自动选，排障时固定对比。" },
-      { "name": "NCCL_PROTO", "value": "Simple / LL / LL128", "why": "协议；小消息 LL 延迟低，大消息 Simple 带宽高。" },
-      { "name": "NCCL_IB_QPS_PER_CONNECTION", "value": "4", "why": "多 QP 提升单连接吞吐，但也会增加拥塞风险。" },
-      { "name": "NCCL_P2P_DISABLE", "value": "1", "why": "排障用：关闭 P2P 看是否 PCIe/P2P 问题；平时不要开。" }
+      {
+        "name": "NCCL_DEBUG",
+        "value": "INFO",
+        "why": "确认选了 NET/IB 还是 NET/Socket；第一排查项。"
+      },
+      {
+        "name": "NCCL_IB_HCA",
+        "value": "mlx5_0,mlx5_1",
+        "why": "指定参与 RDMA 的网卡，避免选错管理口。"
+      },
+      {
+        "name": "NCCL_SOCKET_IFNAME",
+        "value": "eth0",
+        "why": "TCP bootstrap 用的网卡；和 IB_HCA 分开。"
+      },
+      {
+        "name": "NCCL_IB_GID_INDEX",
+        "value": "3",
+        "why": "RoCEv2 的 GID 索引；用 show_gids 确认。"
+      },
+      {
+        "name": "NCCL_IB_TC",
+        "value": "106",
+        "why": "流量 class / DSCP，要和交换机 PFC/ECN 配置对齐。"
+      },
+      {
+        "name": "NCCL_NET_GDR_LEVEL",
+        "value": "2",
+        "why": "允许 GPUDirect RDMA（GPU 显存直连网卡），避免 H2D 拷贝。"
+      },
+      {
+        "name": "NCCL_ALGO",
+        "value": "Ring / Tree / NVLS",
+        "why": "调算法；一般让 NCCL 自动选，排障时固定对比。"
+      },
+      {
+        "name": "NCCL_PROTO",
+        "value": "Simple / LL / LL128",
+        "why": "协议；小消息 LL 延迟低，大消息 Simple 带宽高。"
+      },
+      {
+        "name": "NCCL_IB_QPS_PER_CONNECTION",
+        "value": "4",
+        "why": "多 QP 提升单连接吞吐，但也会增加拥塞风险。"
+      },
+      {
+        "name": "NCCL_P2P_DISABLE",
+        "value": "1",
+        "why": "排障用：关闭 P2P 看是否 PCIe/P2P 问题；平时不要开。"
+      }
     ],
     "commands": [
       "nvidia-smi topo -m  # 看 GPU 之间是 NVLink、PCIe 还是跨 NUMA",

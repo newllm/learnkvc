@@ -807,5 +807,134 @@
       "CUDA Graph 省的是 launch 开销，不减少 FLOPs；形状变化（变长 prefill）就抓不了图。",
       "NCCL 通信是否与 GEMM 重叠，决定 TP 的实际吞吐；通信库只负责搬字节，不负责算。"
     ]
+  },
+  "sections": {
+    "composition": {
+      "title": "LLM 由什么组成"
+    },
+    "package": {
+      "title": "LLM 包里除了权重还有什么"
+    },
+    "layers": {
+      "title": "为什么是多层？维度和层是什么关系"
+    },
+    "pipeline": {
+      "title": "参数如何参与一次 token 生成"
+    },
+    "gpuLoad": {
+      "title": "GPU 如何加载参数"
+    },
+    "kernels": {
+      "title": "Token 生成调用了哪些 GPU 计算函数"
+    },
+    "gpuFunctionMap": {
+      "title": "GPU 函数地图：CUDA / kernel / 矩阵计算"
+    },
+    "runtime": {
+      "title": "运行时状态：LLM 文件之外的那一半"
+    },
+    "codeSection": {
+      "title": "仿真代码：参数 / 层数 / KV 账本"
+    },
+    "check": {
+      "title": "自查：把结构、参数和运行时说清楚"
+    }
+  },
+  "lesson": {
+    "think": [
+      {
+        "q": "一个 48 层的 LLM，第 1 层和第 48 层的输出维度一样吗？",
+        "options": [
+          "不一样，逐层变小",
+          "一样，都是 hidden 维度",
+          "不知道，取决于层数"
+        ],
+        "answer": 1,
+        "why": "层数加深不改变残差流宽度：每层输入输出都是 [n, hidden]。变的是每层新增的参数和计算，不是维度。"
+      },
+      {
+        "q": "生成一个 token 时，LLM 的参数被完整读了几遍？",
+        "options": [
+          "一遍，全部参数",
+          "只读这一步用到的部分（MoE 只读 top-k expert）",
+          "只读 embedding"
+        ],
+        "answer": 1,
+        "why": "dense LLM 每步要把全部权重扫一遍；MoE 每步只读激活的 expert 和共享部分。参数量决定显存，激活参数量决定每步读多少。"
+      },
+      {
+        "q": "权重从磁盘到 GPU 显存，中间经过哪些站？",
+        "options": [
+          "磁盘 → GPU 显存，一步到位",
+          "磁盘 → CPU 内存 → H2D 拷贝 → GPU 显存",
+          "磁盘 → 显存 → 内存"
+        ],
+        "answer": 1,
+        "why": "先读进 host 内存（或 mmap），再由框架用 cudaMemcpyAsync 送到显存；量化格式还会在加载时反量化，或在 kernel 里边算边反量化。"
+      }
+    ],
+    "reflect": [
+      {
+        "id": "an-r1",
+        "q": "参数、结构（超参）、运行时状态三者的边界是什么？",
+        "ref": "参数是权重数字（决定知道什么）；结构是层数/hidden/头数/MoE 等超参（决定张量形状与计算图）；运行时是 KV cache、临时 buffer、CUDA Graph、batch/调度等请求期状态（决定并发与显存余量）。"
+      },
+      {
+        "id": "an-r2",
+        "q": "为什么层数增加时 hidden 不变，但参数量和 KV 都线性增加？",
+        "ref": "每层都是同宽的注意力 + FFN/MoE 加工，输入输出保持 [n, hidden]；新层带来一份新参数和一份新的 K/V，所以线性增长的是每层参数和 KV，而不是 hidden。"
+      },
+      {
+        "id": "an-r3",
+        "q": "MoE 的总参数和激活参数量为什么不同？",
+        "ref": "总参数包含所有 expert；每个 token 只被 router 选中 top-k 个 expert，实际参与计算的只有这部分加共享/attention，所以激活参数远小于总参数，但显存仍要放全部 expert 权重。"
+      }
+    ],
+    "attribution": [
+      {
+        "id": "an-a1",
+        "label": "层数 / hidden / KV 头数决定参数与 KV 体积",
+        "bucket": "model",
+        "why": "这是 LLM 结构本身的超参：层数决定重复次数，hidden 决定宽度，KV 头数决定每 token 的 K/V 字节。"
+      },
+      {
+        "id": "an-a2",
+        "label": "权重和 KV 的字节数决定 decode 带宽时间",
+        "bucket": "gpu",
+        "why": "decode 每步要搬权重与历史 KV；字节数 / HBM 带宽给出下限，属于 GPU 硬件与 roofline 约束。"
+      },
+      {
+        "id": "an-a3",
+        "label": "加载、KV 管理、batching 与 CUDA Graph 决定实际吞吐",
+        "bucket": "engine",
+        "why": "同样的结构，推理引擎决定权重怎么加载、KV 怎么分页、请求怎么批处理；属于引擎/运行时。"
+      }
+    ],
+    "summary": {
+      "brief": "LLM 结构 = 参数（权重）+ 超参（层数/hidden/头数/MoE）+ 运行时状态（KV/临时 buffer）；参数决定显存，激活参数决定每步读多少。",
+      "detail": "参数是训练出来的数字，结构超参决定张量形状和计算图：embedding → N 层 DecoderLayer（attention + FFN/MoE）→ norm → lm_head。层数加深不改变 hidden，但每层新增参数和 KV；KV/token = 2 × layers × kv_heads × head_dim × 精度，所以 GQA/MQA 能显著省 KV。MoE 的总参数包含全部 expert，但每个 token 只激活 top-k，因此总参数决定显存、激活参数决定每步读多少。GPU 侧要把权重从磁盘/CPU 搬到 HBM，再按 kernel 执行；引擎侧管理 KV cache、batching、CUDA Graph 与调度。结构账本与硬件账本要分开算，再合起来看能否放下。"
+    },
+    "quiz": [
+      {
+        "q": "一个 48 层的 LLM，第 1 层和第 48 层的输出维度一样吗？",
+        "options": [
+          "不一样，逐层变小",
+          "一样，都是 hidden 维度",
+          "不知道，取决于层数"
+        ],
+        "answer": 1,
+        "why": "层数加深不改变残差流宽度：每层输入输出都是 [n, hidden]。"
+      },
+      {
+        "q": "MoE 的「总参数」和「激活参数」为什么不同？",
+        "options": [
+          "所有 expert 都参与每个 token",
+          "每个 token 只激活 top-k expert，但显存要放全部 expert",
+          "总参数只算 attention"
+        ],
+        "answer": 1,
+        "why": "router 每个 token 只选 top-k expert；总参数决定显存，激活参数决定每步读多少。"
+      }
+    ]
   }
 }

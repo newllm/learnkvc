@@ -5,14 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>learnkvc · 启发式阅读器</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="assets/style.css?v=2026-11-28-15">
-<link rel="stylesheet" href="assets/nccl.css?v=2026-11-28-15">
-<link rel="stylesheet" href="assets/cuda.css?v=2026-11-28-15">
-<link rel="stylesheet" href="assets/gpu.css?v=2026-11-28-15">
-<link rel="stylesheet" href="assets/npu.css?v=2026-11-28-15">
-<link rel="stylesheet" href="assets/transformer.css?v=2026-11-28-15">
-<link rel="stylesheet" href="assets/ecn.css?v=2026-11-28-15">
-<link rel="stylesheet" href="assets/opt.css?v=2026-11-28-15">
+<link rel="stylesheet" href="assets/style.css?v=2026-11-28-23">
+<link rel="stylesheet" href="assets/nccl.css?v=2026-11-28-23">
+<link rel="stylesheet" href="assets/cuda.css?v=2026-11-28-23">
+<link rel="stylesheet" href="assets/gpu.css?v=2026-11-28-23">
+<link rel="stylesheet" href="assets/npu.css?v=2026-11-28-23">
+<link rel="stylesheet" href="assets/transformer.css?v=2026-11-28-23">
+<link rel="stylesheet" href="assets/ecn.css?v=2026-11-28-23">
+<link rel="stylesheet" href="assets/opt.css?v=2026-11-28-23">
 </head>
 <body data-view="think">
 <a class="skip" href="#main">跳到正文</a>
@@ -54,15 +54,11 @@
         </button>
         <button type="button" role="menuitem" data-view="anatomy" data-short="LLM 结构" aria-current="false">
           <span class="nav-item-title">LLM 结构</span>
-          <span class="nav-item-sub">参数 / 结构 / LLM 包 / 运行时</span>
+          <span class="nav-item-sub">参数 / 层数 / 维度 / 运行时 / 结构仿真</span>
         </button>
         <button type="button" role="menuitem" data-view="train" data-short="LLM 训练" aria-current="false">
           <span class="nav-item-title">LLM 训练</span>
           <span class="nav-item-sub">显存账本 / 并行 / 最小训练脚本</span>
-        </button>
-        <button type="button" role="menuitem" data-view="calc" data-short="显存计算器" aria-current="false">
-          <span class="nav-item-title">显存计算器</span>
-          <span class="nav-item-sub">权重 + KV + 运行时能放下吗</span>
         </button>
       </div>
     </div>
@@ -127,6 +123,7 @@
         </button>
       </div>
     </div>
+    <button data-view="calc">显存计算器</button>
     <button data-view="feedback">学习反馈</button>
   </nav>
   <button class="theme-btn" id="theme-toggle" aria-pressed="false" title="切换亮/暗主题">☀ 亮色</button>
@@ -221,11 +218,11 @@
     </div>
   </section>
 
-  <!-- 4. LLM 结构 -->
-  <section class="view scrollable" id="view-anatomy">
-    <div class="tool-layout">
-      <aside class="tool-toc" id="toc-anatomy" aria-label="LLM 结构小节导航"></aside>
-      <div class="tool-main"><div class="workshop" id="anatomy"></div></div>
+  <!-- 4. LLM 结构（三段式章节） -->
+  <section class="view" id="view-anatomy">
+    <div class="chapter doc-chapter">
+      <aside class="stepnav" id="stepnav-anatomy"></aside>
+      <div class="doc-main" id="anatomy-main"><div class="workshop" id="anatomy-body"></div></div>
     </div>
   </section>
 
@@ -322,25 +319,25 @@
 </noscript>
 
 <!-- bump ?v= below whenever web/assets or web/data change (GitHub Pages caches assets) -->
-<script src="data/data.js?v=2026-11-28-15"></script>
-<script src="data/traces.js?v=2026-11-28-15"></script>
-<script src="assets/codeview.js?v=2026-11-28-15"></script>
-<script src="assets/viz/kv.js?v=2026-11-28-15"></script>
-<script src="assets/viz/prefix.js?v=2026-11-28-15"></script>
-<script src="assets/viz/paged.js?v=2026-11-28-15"></script>
-<script src="assets/workshop.js?v=2026-11-28-15"></script>
-<script src="assets/anatomy.js?v=2026-11-28-15"></script>
-<script src="assets/calc.js?v=2026-11-28-15"></script>
-<script src="assets/transformer.js?v=2026-11-28-15"></script>
-<script src="assets/train.js?v=2026-11-28-15"></script>
-<script src="assets/net.js?v=2026-11-28-15"></script>
-<script src="assets/nccl.js?v=2026-11-28-15"></script>
-<script src="assets/cuda.js?v=2026-11-28-15"></script>
-<script src="assets/gpu.js?v=2026-11-28-15"></script>
-<script src="assets/npu.js?v=2026-11-28-15"></script>
-<script src="assets/opt.js?v=2026-11-28-15"></script>
-<script src="assets/ecn.js?v=2026-11-28-15"></script>
-<script src="assets/sectionnav.js?v=2026-11-28-15"></script>
-<script src="assets/app.js?v=2026-11-28-15"></script>
+<script src="data/data.js?v=2026-11-28-23"></script>
+<script src="data/traces.js?v=2026-11-28-23"></script>
+<script src="assets/codeview.js?v=2026-11-28-23"></script>
+<script src="assets/viz/kv.js?v=2026-11-28-23"></script>
+<script src="assets/viz/prefix.js?v=2026-11-28-23"></script>
+<script src="assets/viz/paged.js?v=2026-11-28-23"></script>
+<script src="assets/workshop.js?v=2026-11-28-23"></script>
+<script src="assets/anatomy.js?v=2026-11-28-23"></script>
+<script src="assets/calc.js?v=2026-11-28-23"></script>
+<script src="assets/transformer.js?v=2026-11-28-23"></script>
+<script src="assets/train.js?v=2026-11-28-23"></script>
+<script src="assets/net.js?v=2026-11-28-23"></script>
+<script src="assets/nccl.js?v=2026-11-28-23"></script>
+<script src="assets/cuda.js?v=2026-11-28-23"></script>
+<script src="assets/gpu.js?v=2026-11-28-23"></script>
+<script src="assets/npu.js?v=2026-11-28-23"></script>
+<script src="assets/opt.js?v=2026-11-28-23"></script>
+<script src="assets/ecn.js?v=2026-11-28-23"></script>
+<script src="assets/sectionnav.js?v=2026-11-28-23"></script>
+<script src="assets/app.js?v=2026-11-28-23"></script>
 </body>
 </html>

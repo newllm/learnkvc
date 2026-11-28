@@ -221,6 +221,72 @@
 
   /* ------------------------------------------------------- pre-test view */
 
+  const ROADMAP = [
+    { no: "01", title: "认识 GPU", chapters: [
+      { view: "gpu", label: "GPU", note: "CPU/GPU 分工" },
+      { view: "npu", label: "NPU 与国产算力", note: "异构地图" },
+      { view: "cuda", label: "CUDA 执行模型", note: "kernel / roofline" }
+    ] },
+    { no: "02", title: "认识 LLM", chapters: [
+      { view: "transformer", label: "Transformer 与 LLM", note: "为什么胜出" },
+      { view: "anatomy", label: "LLM 结构", note: "参数 / 层 / 运行时" },
+      { view: "train", label: "LLM 训练", note: "四笔显存账" }
+    ], tools: [
+      { view: "calc", label: "显存计算器", note: "工具" }
+    ] },
+    { no: "03", title: "认识 KVCache", chapters: [
+      { view: "kv", label: "单请求 KV cache", note: "重算 vs 缓存" },
+      { view: "prefix", label: "Prefix cache", note: "跨请求共享" },
+      { view: "paged", label: "PagedAttention", note: "逻辑 → 物理块" }
+    ] },
+    { no: "04", title: "推理网络", chapters: [
+      { view: "net", label: "网络总览", note: "TP / PD 分离" },
+      { view: "nccl", label: "NCCL 深挖", note: "ring / tree / α-β" },
+      { view: "ecn", label: "ECN + DCQCN", note: "RoCE 无损" }
+    ] },
+    { no: "05", title: "LLM 优化", chapters: [
+      { view: "opt", label: "优化总览", note: "先找瓶颈再选技术" }
+    ] }
+  ];
+
+  function roadmapHTML() {
+    const done = (view) => {
+      try { return !!(LK.progress.lesson(view) && LK.progress.lesson(view).summary); }
+      catch (e) { return false; }
+    };
+    const chapterLink = (c) => {
+      const ok = done(c.view);
+      return '<a class="rm-node' + (ok ? " done" : "") + '" href="#' + esc(c.view) +
+        '/think" aria-label="' + esc(c.label) + (ok ? "（已完成）" : "") + '">' +
+        '<span class="rm-node-top"><b>' + esc(c.label) + "</b>" +
+        (ok ? '<span class="rm-check" aria-hidden="true">✓</span>' : "") + "</span>" +
+        '<small>' + esc(c.note) + "</small></a>";
+    };
+    const phases = ROADMAP.map((p) => {
+      const total = p.chapters.length;
+      const ok = p.chapters.filter((c) => done(c.view)).length;
+      return '<div class="rm-phase">' +
+        '<div class="rm-phase-head"><span class="rm-no">' + p.no + "</span><b>" + esc(p.title) +
+        '</b><span class="rm-progress">' + ok + " / " + total + "</span></div>" +
+        '<div class="rm-nodes">' + p.chapters.map(chapterLink).join("") + "</div>" +
+        (p.tools ? '<div class="rm-tools"><span>工具</span>' + p.tools.map((t) =>
+          '<a class="rm-tool" href="#' + esc(t.view) + '">' + esc(t.label) + "</a>"
+        ).join("") + "</div>" : "") +
+        "</div>";
+    }).join("");
+
+    return '<section class="roadmap" aria-labelledby="roadmap-title">' +
+      '<div class="roadmap-head"><div><p class="kicker">学习路线图</p>' +
+      '<h2 id="roadmap-title">从 GPU 到 LLM 优化：点一下就开始</h2></div>' +
+      '<span class="roadmap-meta">5 个阶段 · 13 章 · 1 个工具</span></div>' +
+      '<p class="roadmap-note">按推荐顺序推进；也可以直接点任意章节跳转。带 ✓ 的是已完成章节。</p>' +
+      '<div class="rm-route">' +
+      '<a class="rm-endpoint rm-start" href="#think"><span class="rm-dot">00</span><span><b>请回答 · 前测</b><small>先猜，再学</small></span></a>' +
+      phases +
+      '<a class="rm-endpoint rm-finish" href="#feedback"><span class="rm-dot">06</span><span><b>学习反馈</b><small>后测 / 对照</small></span></a>' +
+      "</div></section>";
+  }
+
   W.renderThink = function (el, data) {
     const p = loadProgress();
     // 题目数量变化（例如 6 → 10）时，旧基线不再可比：作废旧分数。
@@ -249,6 +315,7 @@
 
     el.innerHTML =
       contextCard(data.context, data.presets, p) +
+      roadmapHTML() +
       '<div class="qprogress"><span>前测 · 凭直觉选，不查资料</span>' + status + "</div>" +
       '<div class="quiz">' + testCards(data.quiz, answers, submitted) + "</div>" +
       scoreBox + actions;
@@ -803,8 +870,8 @@
 
   /* =================================================== lesson stages */
 
-  const CHAPTER_LABELS = { transformer: "Transformer 与 LLM", kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention", net: "推理网络", train: "LLM 训练", nccl: "NCCL 学习章节", cuda: "CUDA 执行模型", ecn: "ECN + DCQCN", gpu: "认识 GPU", npu: "NPU 与国产算力", opt: "LLM 优化" };
-  const ALL_CHAPTERS = ["transformer", "gpu", "npu", "cuda", "kv", "prefix", "paged", "net", "nccl", "ecn", "train", "opt"];
+  const CHAPTER_LABELS = { transformer: "Transformer 与 LLM", anatomy: "LLM 结构", kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention", net: "推理网络", train: "LLM 训练", nccl: "NCCL 学习章节", cuda: "CUDA 执行模型", ecn: "ECN + DCQCN", gpu: "认识 GPU", npu: "NPU 与国产算力", opt: "LLM 优化" };
+  const ALL_CHAPTERS = ["transformer", "anatomy", "gpu", "npu", "cuda", "kv", "prefix", "paged", "net", "nccl", "ecn", "train", "opt"];
 
   function lessonOf(chapter) {
     const p = loadProgress();
