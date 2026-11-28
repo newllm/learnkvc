@@ -1,0 +1,342 @@
+{
+  "kicker": "学习章节 · 推理网络 · CUDA 执行模型",
+  "title": "CUDA 执行模型：kernel 怎么跑，decode 为什么卡在带宽",
+  "lead": "推理不是「把模型丢给 GPU」：每一步都是一串 kernel，block 被调度到 SM，warp 以 32 线程为单位执行，HBM 以 32 B sector 搬运。本章把单卡上的账算清楚：occupancy 受什么限制、coalescing 浪费多少字节、decode 为什么落在 roofline 的带宽斜线上，以及 CUDA Graph 到底省了什么。",
+  "why": {
+    "title": "1 · 推理是一串 kernel，不是一次「GPU 计算」",
+    "lead": "先分清 prefill 与 decode 在 GPU 上的形状差异，再理解为什么「算力够」不等于「跑得快」；本章负责单卡执行，模型解剖和推理网络分别负责结构与多卡。",
+    "items": [
+      {
+        "name": "一次 forward = 很多次 kernel launch",
+        "data": "attention、MLP、norm、残差、采样都被拆成 kernel；decode 每一步都要把同一串 kernel 再启动一遍。",
+        "when": "单步 kernel 数 ≈ 层数 × 每层 kernel 数；48 层 × 8 = 384 次 launch，launch 开销会直接进入 TPOT。"
+      },
+      {
+        "name": "prefill vs decode",
+        "data": "prefill 一次处理几百到几万 token，矩阵乘的 M 很大，Tensor Core 打满；decode 一次只处理 batch 个 token，M 很小，时间主要花在读权重和 KV。",
+        "when": "同一个 roofline 图上两个完全不同的点：prefill 在平顶，decode 在斜线。"
+      },
+      {
+        "name": "「算力够」≠「跑得快」",
+        "data": "H100 级 BF16 峰值 990 TFLOPS，但 decode 的 arithmetic intensity 只有约 0.94 FLOP/B，远低于 295.5 FLOP/B 的拐点，大部分时间在等 HBM。",
+        "when": "先判断 bound 是带宽还是算力，再决定优化方向；否则会对着算力做无用功。"
+      },
+      {
+        "name": "与模型解剖的分工",
+        "data": "模型解剖回答「有多少参数、多少层、KV/token 多大」；本章回答「这些字节在 GPU 上按什么节奏流动」。",
+        "when": "参数、层数、KV/token 是输入；occupancy、coalescing、roofline 才是执行侧的账。"
+      },
+      {
+        "name": "与推理网络的分工",
+        "data": "推理网络章讲 TP/EP 的集合通信、PD 的 KV 跨机迁移；本章只看单卡内部，一次 kernel 怎么被调度、内存怎么被读。",
+        "when": "单卡都跑不快时，多卡讨论没有意义；两章拼起来才是完整的推理系统。"
+      }
+    ]
+  },
+  "exec": {
+    "title": "2 · 执行模型：grid / block / warp / SM",
+    "lead": "CUDA 用软件层级描述并行：thread → warp → block → grid；硬件用 SM、寄存器、shared memory 和 warp slot 决定实际能同时跑多少。occupancy 就是这两边的比值。",
+    "rows": [
+      {
+        "term": "thread",
+        "what": "最小执行单元，有自己的寄存器和程序计数器。",
+        "why": "通常一条线程算一个输出元素；寄存器用量按线程计，直接参与 occupancy 计算。"
+      },
+      {
+        "term": "warp",
+        "what": "32 个连续的 thread 编成一组，SIMT 下共享同一条指令。",
+        "why": "分支发散时，warp 内两条路径只能串行执行；warp 是调度和寄存器分配的最小单位。"
+      },
+      {
+        "term": "block",
+        "what": "一组 warp（最多 1024 线程），共享 shared memory，可用 __syncthreads 同步。",
+        "why": "一个 block 只能被调度到一个 SM，不能跨 SM；所以 shared memory 只在 block 内共享。"
+      },
+      {
+        "term": "grid",
+        "what": "一次 kernel launch 声明的所有 block。",
+        "why": "block 被分到各个 SM 执行，block 之间不能假设执行顺序，也不能直接通信。"
+      },
+      {
+        "term": "SM",
+        "what": "GPU 的调度单位（H100 有 132 个），每个 SM 有 64 个 warp slot、65536 个寄存器、228 KiB shared memory。",
+        "why": "SM 的资源上限决定一个 SM 同时驻留多少 block/warp，也就是 occupancy。"
+      },
+      {
+        "term": "launch / wave",
+        "what": "grid/block 是软件声明的形状，resident 是硬件实际同时放下的数量。",
+        "why": "grid 很大时分批（wave）执行；最后一批填不满会造成 tail effect。"
+      }
+    ],
+    "occupancy": {
+      "definition": "occupancy = 每个 SM 的 active warps / 最大 warps（H100 为 64）。它衡量「有没有足够的 warp 去掩盖访存延迟」，不是越高越好。",
+      "limits": [
+        "寄存器：按 warp 以 256 个寄存器为单位分配；regs/thread 越高，能放下的 warp 越少。",
+        "shared memory：每个 block 声明多少，就从 228 KiB 里扣多少；大 tile 会用 occupancy 换复用。",
+        "线程/block：每 block 最多 1024 线程（32 warps），所以 1024 线程的 block 最多 2 个/SM。",
+        "block 数：每个 SM 最多 32 个 block；32 线程的 block 会先被 shared memory 或 block 上限卡住。"
+      ],
+      "table": [
+        { "block": 32, "warps": 1, "resident": 14, "activeWarps": 14, "occupancy": "21.9%", "binding": "shared（14 个 block 上限）" },
+        { "block": 64, "warps": 2, "resident": 14, "activeWarps": 28, "occupancy": "43.8%", "binding": "shared（14 个 block 上限）" },
+        { "block": 128, "warps": 4, "resident": 14, "activeWarps": 56, "occupancy": "87.5%", "binding": "shared（14 个 block 上限）" },
+        { "block": 256, "warps": 8, "resident": 8, "activeWarps": 64, "occupancy": "100%", "binding": "regs（8 个 block 上限）" },
+        { "block": 512, "warps": 16, "resident": 4, "activeWarps": 64, "occupancy": "100%", "binding": "regs（4 个 block 上限）" },
+        { "block": 1024, "warps": 32, "resident": 2, "activeWarps": 64, "occupancy": "100%", "binding": "regs / warp（2 个 block 上限）" }
+      ],
+      "note": "账本条件：regs/thread=32、shared/block=16 KiB、H100 级资源（32 blocks、64 warps、65536 regs、228 KiB shared 每 SM）。256/512/1024 线程都能到 100% occupancy，但大 block 的 wave 更粗、tail 更明显；小 block 更灵活，却可能被 shared 或 block 上限拖住。"
+    },
+    "calcTitle": "2.1 交互计算器：block 大小 / 寄存器 / shared 怎么卡住 occupancy",
+    "calcNote": "只算 SM 资源上限（block、warp、寄存器、shared），不含 L1/texture 预留和架构差异；同一份代码换架构，这几个数都要重新算。"
+  },
+  "memory": {
+    "title": "3 · 内存层级：从寄存器到 HBM 的阶梯",
+    "lead": "越靠近 SM 的存储越快、越小、越贵。GPU kernel 的性能，很大程度上是把数据尽量往上搬、并在上面多复用几次。下面都是数量级，不是基准测试。",
+    "levels": [
+      {
+        "level": "register",
+        "capacity": "256 KiB / SM",
+        "latency": "~1 cycle",
+        "bandwidth": "per-SM private",
+        "why": "最快，但每个线程只有几十到几百个寄存器；用多了会压 occupancy。"
+      },
+      {
+        "level": "shared memory",
+        "capacity": "228 KiB / SM",
+        "latency": "~20–30 cycles",
+        "bandwidth": "~33 TiB/s aggregate",
+        "why": "block 内可编程复用：tile 先搬进来，后续访问不再走 HBM；代价是占用 shared、限制 occupancy。"
+      },
+      {
+        "level": "L2",
+        "capacity": "50 MiB",
+        "latency": "~200–300 cycles",
+        "bandwidth": "~10 TiB/s",
+        "why": "全 GPU 共享；跨 SM 复用权重/激活、合并访问都靠它，但容量装不下整个模型。"
+      },
+      {
+        "level": "HBM3",
+        "capacity": "80 GiB",
+        "latency": "~500–800 cycles",
+        "bandwidth": "3.35 TiB/s（3350 GB/s）",
+        "why": "容量大、离得远；decode 每步读权重和 KV，主要卡在这个带宽上。"
+      }
+    ],
+    "rules": [
+      "tiling：把 K/V 或权重 tile 先搬进 shared memory，HBM 往返从「每个线程各读一次」降到「每个 tile 读一次」，复用次数就是省下的字节。",
+      "bank conflict：shared memory 被切成 32 个 bank；同一 warp 访问同一 bank 的不同地址会串行。填充 padding、换布局、按 32 对齐可以减少冲突。",
+      "shared 为什么能省 HBM 往返：同一块数据被 block 内多个线程反复使用；不搬上去，每次都要走 L1/L2 甚至 HBM，延迟高、带宽也先被自己耗尽。",
+      "L2 是第二道复用：权重被所有 SM 共享，L2 命中能让一份 HBM 读取服务多个 block；但长上下文的 KV 太大，L2 装不下。",
+      "数量级提醒：不同架构差 1.5–2 倍；换卡要重算 SM 数、shared 容量、HBM 带宽和峰值算力。"
+    ],
+    "note": "本章的 H100 级参数：132 SM、64 warps/SM、65536 regs/SM、228 KiB shared/SM、50 MiB L2、80 GiB HBM3、3.35 TB/s、990 TFLOPS BF16 峰值。"
+  },
+  "coalesce": {
+    "title": "4 · Coalescing：一次 memory transaction 值多少字节",
+    "lead": "GPU 的 HBM 事务粒度是 32 B sector。一个 warp 的 load 会被拆成若干 sector；线程地址连续时只搬有用的 128 B，stride 一大，搬运量成倍放大，有效带宽就掉下去。",
+    "table": [
+      { "stride": 1, "sectors": 4, "moved": "128 B", "useful": "128 B", "util": "100%" },
+      { "stride": 2, "sectors": 8, "moved": "256 B", "useful": "128 B", "util": "50%" },
+      { "stride": 4, "sectors": 16, "moved": "512 B", "useful": "128 B", "util": "25%" },
+      { "stride": 8, "sectors": 32, "moved": "1024 B", "useful": "128 B", "util": "12.5%" },
+      { "stride": 32, "sectors": 32, "moved": "1024 B", "useful": "128 B", "util": "12.5%" }
+    ],
+    "notes": [
+      "理想情况：32 个线程各读 4 B、地址连续，正好覆盖 128 B = 4 个 32 B sector，一次 transaction，利用率 100%。",
+      "stride=2：线程之间隔 8 B，覆盖 256 B = 8 个 sector；只用到其中 128 B，一半带宽浪费。",
+      "stride 继续翻倍，sector 数翻倍，直到每个线程独占一个 sector：最多 32 个 sector，搬 1024 B 用 128 B，有效带宽只剩 12.5%。",
+      "paged attention 的 block_table gather：逻辑上连续的 token，物理 K/V 块不连续，一个 warp 会落到多个块，sector 放大到约 8 倍；这是引擎的块布局问题，不是模型参数问题。"
+    ],
+    "calcTitle": "4.1 交互：选 stride，看 32 个线程的 sector 与有效带宽",
+    "calcNote": "固定 32 线程 × 4 B、sector=32 B、地址从 0 开始；只算一个 warp 的一次 load，未考虑 L1 命中、合并多个 warp 请求和 DRAM burst。"
+  },
+  "roofline": {
+    "title": "5 · Roofline：decode 为什么卡在带宽斜线上",
+    "lead": "Roofline 把 kernel 画在「arithmetic intensity（FLOP/byte）→ 可达到的算力」图上：拐点左侧是带宽斜线（memory-bound），右侧是算力平顶（compute-bound）。decode 和 prefill 分处两端。",
+    "ridge": "拐点 = 990 TFLOPS / 3.35 TB/s = 295.5 FLOP/B",
+    "table": [
+      { "workload": "decode（M=1）", "m": 1, "ai": "0.94", "bound": "memory", "tMem": "2.12 ms", "tCompute": "0.01 ms" },
+      { "workload": "prefill（M=4096）", "m": 4096, "ai": "3863.8", "bound": "compute", "tMem": "2.12 ms", "tCompute": "27.72 ms" }
+    ],
+    "points": [
+      "decode：每 token 只有 2 × active params FLOPs（3.35B → 6.7 GFLOP），却要读 6.7 GB 权重加 KV；AI ≈ 0.94 FLOP/B，远低于拐点 295.5，落在带宽斜线。",
+      "batch 放大能摊薄权重，但每请求 KV 随 batch 线性增长：AI = 2Nb / (2N + b·seq·KV/token)，会饱和在 2N/(seq·KV/token) ≈ 16.6（seq=4096），仍离拐点两个数量级。",
+      "prefill：M=4096 时同一份权重做 4096 倍的 FLOPs，AI ≈ 3863.8 FLOP/B，越过拐点，进入 compute-bound；时间由 27.72 ms 的计算决定。",
+      "所以 prefill 看 Tensor Core 利用率和 MFU，decode 看 HBM 字节数；优化方向不同，不能拿一个指标套两个阶段。"
+    ],
+    "note": "简化账本：只算权重矩阵乘（2 FLOP/参数/token），忽略 attention 的 O(M²) 项；H100 级 990 TFLOPS BF16 dense、3.35 TB/s HBM 是量级值。",
+    "calcTitle": "5.1 交互：拉 batch，看 decode 的点在 roofline 上怎么移动",
+    "calcNote": "固定 seq=4096、KV=96 KiB/token、权重 6.70 GB；batch 只共享权重读取（KV 随 batch 线性增加），曲线在 16.6 FLOP/B 附近饱和。"
+  },
+  "graph": {
+    "title": "6 · CUDA Graph：把 launch 开销藏起来",
+    "lead": "decode 每步要启动几百个很小的 kernel。每次 launch 都有 CPU 侧固定成本；当 kernel 只有几微秒时，CPU 追不上 GPU，GPU 就在空转。CUDA Graph 把整串 kernel 录成一张图，之后只提交一次。",
+    "facts": [
+      "launch 成本：每次 kernel launch 约 3–8 µs（驱动、参数打包、命令队列）；decode 48 层 × 8 个 kernel = 384 次 launch。",
+      "eager 模式：384 × 4 µs = 1536 µs 的 CPU 开销，而 GPU 实际只忙 384 × 3 µs = 1152 µs——CPU 成为瓶颈，GPU 空等。",
+      "capture / replay：第一次 capture 把 kernel 序列记成 graph，之后用一次 cudaGraphLaunch 提交整张图，CPU 侧约 6 µs。",
+      "收益：CPU 开销从 1536 µs 降到 6 µs（省 99.6%），step 从 1536 µs 降到 1158 µs（快 1.33 倍），瓶颈从 CPU 移回 GPU。",
+      "约束：capture 期不能做同步、动态分配或改变 shape；实际引擎按 bucket 固定 batch/序列档位，配合固定 allocator 和地址，才能复用 graph。",
+      "边界：graph 只省 launch 和 CPU 空转，不省 HBM 字节、不改变 kernel 计算；memory-bound 的 decode 仍然受 3.35 TB/s 限制。"
+    ],
+    "notes": [
+      "decode 的 kernel 越小（单 token、小 batch），launch 开销占比越高，graph 的收益越明显。",
+      "prefill 的 kernel 通常足够大，launch 不是主要矛盾；graph 对 prefill 的收益远小于 decode。",
+      "图里的 1536/1152/6/99.6%/1.33x 都来自 example/cuda_sim.py，可直接运行核对。"
+    ],
+    "calcTitle": "6.1 交互：层数与每层 kernel 数 → eager vs graph",
+    "calcNote": "每个 kernel 固定 4 µs launch + 3 µs GPU 计算，graph replay 固定 6 µs CPU；真实数值随驱动、kernel 融合、CPU 主频变化，看量级即可。"
+  },
+  "kv": {
+    "title": "7 · 回到推理：decode 的字节账与 KV",
+    "lead": "把前面所有概念收束成一个公式：decode 每步的 HBM 字节 ≈ 激活权重字节 + batch × seq × KV/token；TPOT ≈ 这个字节数 / HBM 带宽。谁能减少字节，谁就能加速 memory-bound 的 decode。",
+    "formula": "bytes_per_step = active_params × 2 B（BF16 权重）+ batch × seq × kv_per_token；TPOT ≈ bytes_per_step / HBM_BW",
+    "exampleRows": [
+      { "label": "batch 1, seq 4096, FP16 KV", "formula": "6.70 GB + 1 × 4096 × 96 KiB = 6.70 + 0.40", "result": "7.10 GB → 2.12 ms/step" },
+      { "label": "batch 32, seq 4096, FP16 KV", "formula": "6.70 GB + 32 × 4096 × 96 KiB = 6.70 + 12.88", "result": "19.58 GB → 5.85 ms/step（0.18 ms/token）" },
+      { "label": "batch 32, seq 4096, FP8 KV", "formula": "KV 减半：6.70 + 6.44", "result": "13.14 GB → 3.92 ms/step" }
+    ],
+    "table": [
+      { "opt": "KV 量化 FP16 → FP8", "saves": "KV 字节减半（12.88 → 6.44 GB）", "owner": "引擎（量化 / 推理框架）" },
+      { "opt": "权重量化（INT4 / FP8）", "saves": "权重字节 6.70 GB → 约 1.7–3.4 GB", "owner": "模型 + 引擎" },
+      { "opt": "FlashAttention / 融合 kernel", "saves": "不落 n×n 分数矩阵，少中间读写，也少 launch", "owner": "GPU + 引擎" },
+      { "opt": "PagedAttention 块布局 / 预取", "saves": "减少 block_table gather 的 sector 放大（最坏 ~8×）", "owner": "引擎" },
+      { "opt": "CUDA Graph", "saves": "不减少字节，只减少 launch 与 CPU 空转", "owner": "引擎 / 运行时" },
+      { "opt": "更大 batch / 投机解码", "saves": "摊薄权重读取，提高 AI（但 KV 会随 batch 增加）", "owner": "引擎" },
+      { "opt": "更高 HBM 带宽 / 更多 SM", "saves": "抬高 roofline 的斜线与平顶", "owner": "GPU" }
+    ],
+    "notes": [
+      "长上下文 decode 变慢，本质是每步要读的 KV 字节变多；不是模型「突然变笨」，是 HBM 带宽被吃满。",
+      "paged gather 的 transaction 放大是引擎侧问题：块布局、块大小、预取策略都会影响 sector 利用率。",
+      "memory-bound 时量化收益最大；compute-bound 时量化可能只省容量、不省时间。"
+    ]
+  },
+  "codeSection": {
+    "title": "8 · 仿真代码：把 GPU 执行账本跑一遍",
+    "lead": "这段纯 Python 把 occupancy 扫描、coalescing、roofline、CUDA Graph 和 decode 字节账都算了一遍，并断言结果自洽。代码在 example/cuda_sim.py，可直接运行；网页里的示例输出就是它的 stdout。",
+    "file": "example/cuda_sim.py",
+    "run": "python3 example/cuda_sim.py",
+    "notes": [
+      "occupancy 扫描用 regs/thread=32、shared/block=16 KiB，展示 shared 与寄存器两种瓶颈怎么切换。",
+      "coalescing 用「不同 32 B sector 的个数」模拟 warp 请求，断言 stride=1/2/32 分别命中 4/8/32 个 sector。",
+      "roofline 只算权重矩阵乘：decode AI≈0.94（memory）、prefill M=4096 AI≈3863.8（compute），断言两者分居拐点两侧。",
+      "CUDA Graph 账本用 48 层 × 8 kernel = 384 次 launch，断言 graph 省下超过 90% 的 CPU launch 开销。"
+    ]
+  },
+  "check": {
+    "title": "9 · 自查清单与自问",
+    "lead": "能独立回答下面这些问题，并且把每个数字落回一个公式或一段代码，才算真的理解了 GPU 执行模型。",
+    "checklist": [
+      "能说清 grid / block / warp / thread 各是什么，以及为什么一个 block 只能落在一个 SM 上。",
+      "给定 block size、regs/thread、shared/block，能估算每 SM 常驻 block 数、active warps 和 occupancy，并指出谁先卡住。",
+      "能画出 32 线程在 stride=1/2/4/8/32 下触及的 sector 数，解释 128 B 怎么被放大成 1024 B。",
+      "能算 arithmetic intensity，并用 295.5 FLOP/B 的拐点判断 decode / prefill 各在 roofline 的哪一侧。",
+      "能解释 CUDA Graph 省的是 CPU launch 开销，不是 GPU 计算或 HBM 字节。",
+      "能把「decode 慢」翻译成「权重 + KV 的字节数 / HBM 带宽」，并给出降低字节的手段。",
+      "能把优化手段归到模型 / GPU / 引擎：量化、融合 kernel、paged gather、CUDA Graph 分别归谁。",
+      "知道这些数字是 H100 量级；换卡要重算 SM 数、shared 容量、HBM 带宽和峰值算力。"
+    ],
+    "questions": [
+      {
+        "q": "occupancy 越高越好吗？",
+        "a": "不一定。occupancy 只是「有足够多的 warp 去掩盖访存延迟」的必要条件，不是性能本身。有些 kernel 用更多寄存器换指令级并行和复用，occupancy 低反而更快；另外 32 线程的 block 在 16 KiB shared 下只能到 21.9%，但小 block 调度更灵活。"
+      },
+      {
+        "q": "stride=32 时每个线程隔 128 B，为什么 sectors 是 32 而不是 128？",
+        "a": "每个线程只读 4 B，落在自己那个 32 B sector 里，一个 warp 最多 32 个线程，所以最多触及 32 个 sector。放大倍数按「搬了 1024 B、只用了 128 B」算，是 8 倍；不是按地址跨度 4096 B 算。"
+      },
+      {
+        "q": "decode 的 AI 只有 0.94 FLOP/B，把 batch 加到 64 能到拐点吗？",
+        "a": "不能。忽略 KV 时 AI 约等于 batch，但每请求 KV 随 batch 线性增长，AI 会饱和在 2N/(seq·KV/token) ≈ 16.6（seq=4096），离 295.5 还有两个数量级。所以 decode 始终是 memory-bound，优化要找「少读字节」，不是「堆 batch 冲拐点」。"
+      },
+      {
+        "q": "CUDA Graph 能提升 GPU 计算速度吗？",
+        "a": "不能。它把几百次 launch 合成一次提交，省的是 CPU 侧开销和 GPU 空转：step 从 1536 µs 降到 1158 µs，是因为 GPU 不再等 CPU；kernel 本身、HBM 字节和 FLOPs 都没变。瓶颈移到 GPU 后，graph 的收益就到顶了。"
+      },
+      {
+        "q": "paged attention 的 block_table gather 为什么可能比连续 KV 慢？",
+        "a": "block_table 指向的物理块不连续，一个 warp 逻辑上连续的 token 会落到多个块，触及的 sector 数放大到最多 8 倍，有效带宽降到 12.5%。这是引擎的块布局和预取问题；更大的物理块、按块对齐的读取、预取都能缓解。"
+      },
+      {
+        "q": "shared memory 为什么能提速？代价是什么？",
+        "a": "同一个 block 的线程要反复用同一块数据（tile、权重片段），先搬进 shared，后续访问走约 20–30 cycle 的片上存储，不再每次走几百 cycle 的 HBM，也省下 HBM 带宽。代价是占用 shared 会限制 occupancy，且要避免 bank conflict。"
+      }
+    ]
+  },
+  "lesson": {
+    "think": [
+      {
+        "q": "一个 block 最多能被调度到几个 SM 上？",
+        "options": [
+          "1 个",
+          "和 block 数一样多",
+          "32 个（每个 warp 一个）"
+        ],
+        "answer": 0,
+        "why": "block 是调度单位，整个 block 只能落在一个 SM 上；所以它内部的 shared memory 和 __syncthreads 才能工作。"
+      },
+      {
+        "q": "32 个线程各读 4 B、地址连续，会触及几个 32 B sector？",
+        "options": [
+          "4 个",
+          "8 个",
+          "32 个"
+        ],
+        "answer": 0,
+        "why": "32 × 4 B = 128 B 连续地址，正好是 4 个 32 B sector；这是 coalesced 访问的理想情况，有效带宽 100%。"
+      },
+      {
+        "q": "H100 级 decode 的 arithmetic intensity 约 0.94 FLOP/B，说明什么？",
+        "options": [
+          "落在带宽斜线，是 memory-bound",
+          "算力已经打满，应该继续堆 FLOPS",
+          "KV 可以不用读"
+        ],
+        "answer": 0,
+        "why": "拐点是 295.5 FLOP/B，0.94 远在左侧，说明每搬 1 B 只做不到 1 次浮点运算，时间由 HBM 带宽决定，而不是 Tensor Core 算力。"
+      }
+    ],
+    "reflect": [
+      {
+        "q": "1024 线程的 block 只能常驻 2 个，256 线程的能常驻 8 个，两者 occupancy 都是 100%，区别在哪？",
+        "ref": "区别在 block 粒度：1024 线程 = 32 warps，被 warp slot 和寄存器压到 2 个 block；256 线程 = 8 warps，8 个 block 刚好填满 64 warps。occupancy 相同，但大 block 的 wave 更粗、tail effect 更明显，小 block 调度更灵活，却更容易被 32 blocks/SM 和 shared 上限拖住。"
+      },
+      {
+        "q": "stride 从 1 到 32，sectors 从 4 涨到 32，但有效字节一直是 128 B。这个 8× 放大在真实 kernel 里怎么体现？",
+        "ref": "同样的逻辑读取要搬 8 倍 sector，HBM 有效带宽降到 12.5%，kernel 时间变长；paged attention 的 block_table gather、转置、未对齐访问都会触发。修法是连续布局、按块对齐读取、向量化 128-bit 访问和预取。"
+      },
+      {
+        "q": "为什么 prefill 是 compute-bound、decode 是 memory-bound？这个判断怎么指导优化？",
+        "ref": "看 AI 与拐点 295.5 的关系：prefill M 大，同一份权重做更多 FLOPs，AI 高，优化 Tensor Core 利用率和 MFU；decode M=1，FLOPs 少而字节不变，AI 只有 0.94，优化字节数（KV/权重量化、融合 kernel、CUDA Graph、更大 batch 摊薄权重）。"
+      },
+      {
+        "q": "CUDA Graph 省了 99.6% 的 CPU launch 开销，为什么 step 只快 1.33 倍？",
+        "ref": "因为瓶颈随后移到 GPU：GPU 忙 1152 µs 是 step 的下界，graph 只消掉 CPU 侧的 1536 − 1152 = 384 µs 空转，1536/1158 ≈ 1.33。这是 Amdahl 定律：优化一个占比有限的部件，整体收益受剩余瓶颈限制。"
+      }
+    ],
+    "summary": {
+      "brief": "GPU 执行 = block 落到 SM、warp 以 32 线程执行；occupancy 受寄存器/shared/block 上限约束；coalescing 决定 32 B sector 放大；decode 的 AI≈0.94 FLOP/B 落在带宽斜线，CUDA Graph 只省 launch、不省字节。",
+      "detail": "软件层级是 thread → warp(32) → block → grid，硬件资源是 SM（H100 132 个、64 warps/SM、65536 regs、228 KiB shared、32 blocks/SM）。occupancy = active warps/64，由寄存器、shared、block/warp 上限共同决定；block=256 时可到 100%，32 线程 block 在 16 KiB shared 下只有 21.9%。HBM 事务粒度 32 B：32 线程连续读 128 B 只需 4 个 sector（100%），stride=2 变 8 个（50%），stride≥8 变 32 个（12.5%，8× 放大）。roofline 拐点 990 TFLOPS/3.35 TB/s=295.5 FLOP/B：decode batch=1 的 AI≈0.94（6.7 GFLOP / 7.10 GB，2.12 ms），prefill M=4096 的 AI≈3863.8（27.72 ms 计算），一个在斜线一个在平顶。decode 每步 48×8=384 次 launch，eager 1536 µs CPU/1152 µs GPU，graph replay 6 µs，step 1158 µs，省 99.6%、快 1.33×。字节账：权重 6.70 GB + batch×seq×96 KiB KV；batch 32 时 19.58 GB→5.85 ms/step，FP8 KV 减半到 13.14 GB。"
+    },
+    "attribution": [
+      {
+        "id": "cuda-m1",
+        "label": "层数、参数与 KV/token 决定的 kernel 数与字节公式",
+        "bucket": "model",
+        "why": "48 层、3.35B 激活参数、96 KiB KV/token 来自模型结构；它们决定单步 kernel 数、权重大小和 KV 字节，是整本账的输入。"
+      },
+      {
+        "id": "cuda-g1",
+        "label": "SM 资源上限、occupancy 与 HBM sector 粒度",
+        "bucket": "gpu",
+        "why": "SM 数、warp slot、寄存器文件、shared 容量和 32 B sector 是 GPU 的物理属性；occupancy 上限和 coalescing 放大都由它们决定。"
+      },
+      {
+        "id": "cuda-e1",
+        "label": "CUDA Graph、paged gather 与 KV 量化策略",
+        "bucket": "engine",
+        "why": "capture/replay、batch bucket、块布局与预取、KV 量化都是推理引擎/运行时的决策；它们减少 launch 或字节，但不改变模型结构。"
+      }
+    ]
+  }
+}

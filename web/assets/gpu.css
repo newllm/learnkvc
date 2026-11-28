@@ -1,0 +1,417 @@
+/* "What is a GPU" chapter — chapter-local styles only.
+ * Every selector targets a .gpu-* hook and every colour comes from a theme
+ * variable, so light mode adapts without a hard-coded palette.
+ * Shared chrome (page-title / page-lead / sec-title / sec-sub / table-wrap /
+ * tagtable / net-cards / net-card / sim-field / compare / stat / note /
+ * thinkbox / train-run / train-code) is reused from style.css. */
+
+/* --------------------------------------------------------------- headings */
+
+.gpu-role-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent);
+  font: 10px var(--mono);
+  vertical-align: 1px;
+}
+.gpu-questions {
+  margin: 12px 0;
+  padding-left: 22px;
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.85;
+}
+.gpu-questions li { margin: 2px 0; }
+
+.gpu-goals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+.gpu-goal {
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.gpu-goal b { display: block; font-size: 13px; color: var(--accent); }
+.gpu-goal p { margin: 5px 0 0; color: var(--dim); font-size: 12px; line-height: 1.65; }
+
+.gpu-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.gpu-panel {
+  padding: 4px 14px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.gpu-panel .sec-sub { margin-top: 12px; }
+
+.gpu-list {
+  margin: 10px 0;
+  padding-left: 20px;
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+.gpu-list li { margin: 2px 0; }
+.gpu-facts li { color: var(--fg); }
+
+/* ---------------------------------------------------------------- formula */
+
+.gpu-formula {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.gpu-formula b { font-size: 12px; color: var(--accent); }
+.gpu-formula p {
+  margin: 4px 0 0;
+  color: var(--dim);
+  font: 11.5px/1.7 var(--mono);
+}
+.gpu-callout {
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+}
+.gpu-callout b { font-size: 12px; color: var(--accent); }
+.gpu-callout p {
+  margin: 5px 0 0;
+  color: var(--fg);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+/* --------------------------------------------------------- compare module */
+
+.gpu-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 520px;
+  margin: 10px 0 4px;
+}
+.gpu-compare { margin: 8px 0 2px; }
+
+.gpu-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.gpu-bar-row {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr) 118px;
+  align-items: center;
+  gap: 8px;
+}
+.gpu-bar-row > span {
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.gpu-bar-row > b {
+  text-align: right;
+  color: var(--fg);
+  font: 11.5px var(--mono);
+}
+.gpu-bar-track {
+  height: 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.gpu-bar-track i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  transition: width .18s ease;
+}
+.gpu-bar-track i.cpu { background: var(--accent-2); }
+.gpu-bar-track i.gpu { background: var(--accent); }
+
+/* ------------------------------------------------------- hierarchy ladder */
+
+.gpu-hierarchy-host { margin: 8px 0 2px; }
+.gpu-hier {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.gpu-hier-col {
+  padding: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.gpu-hier-head {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font: 11px var(--mono);
+  letter-spacing: .04em;
+}
+.gpu-hier-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.gpu-layer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+.gpu-layer b { font-size: 12px; }
+.gpu-layer em {
+  color: var(--dim);
+  font: 10.5px var(--mono);
+  font-style: normal;
+  white-space: nowrap;
+}
+.gpu-layer:hover { border-color: var(--faint); }
+.gpu-layer.on {
+  border-color: var(--accent);
+  background: var(--hl);
+}
+.gpu-layer.hl {
+  border-color: var(--accent-2);
+  box-shadow: inset 0 0 0 1px var(--accent-2);
+}
+.gpu-hier-actions { margin: 10px 0 4px; }
+.gpu-hit {
+  padding: 6px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+.gpu-hit:hover { border-color: var(--accent); }
+.gpu-hit[aria-pressed="true"] {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+.gpu-detail {
+  margin: 10px 0;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.gpu-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.gpu-detail-head b { font-size: 13.5px; }
+.gpu-detail-head em {
+  margin-left: auto;
+  color: var(--dim);
+  font: 10.5px var(--mono);
+  font-style: normal;
+}
+.gpu-side {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent);
+  font: 10px var(--mono);
+}
+.gpu-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.gpu-detail-item {
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.gpu-detail-item span { display: block; color: var(--dim); font-size: 10.5px; }
+.gpu-detail-item b {
+  display: block;
+  margin-top: 3px;
+  color: var(--fg);
+  font: 11.5px/1.6 var(--mono);
+}
+
+/* ------------------------------------------------------ scenario selector */
+
+.gpu-scenario-host { margin: 8px 0 2px; }
+.gpu-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.gpu-scenario {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+.gpu-scenario b { font-size: 12px; font-weight: 500; }
+.gpu-scenario:hover { border-color: var(--faint); }
+.gpu-scenario.on { border-color: var(--accent); background: var(--hl); }
+.gpu-owner {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font: 9.5px var(--mono);
+  border: 1px solid var(--line);
+}
+.gpu-owner.cpu { color: var(--accent-2); border-color: var(--accent-2); }
+.gpu-owner.gpu { color: var(--accent); border-color: var(--accent); }
+.gpu-scen-result {
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.gpu-scen-result p {
+  margin: 8px 0 0;
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+/* ----------------------------------------------------- cache path / grid */
+
+.gpu-path-host { margin: 8px 0 2px; }
+.gpu-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.gpu-toggle button {
+  padding: 6px 11px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.gpu-toggle button.on {
+  border-color: var(--accent);
+  background: var(--hl);
+  color: var(--fg);
+}
+.gpu-sector-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+  margin: 10px 0 12px;
+}
+.gpu-sector {
+  padding: 5px 3px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--faint);
+  border-radius: 6px;
+  text-align: center;
+}
+.gpu-sector b { display: block; font: 10px var(--mono); color: var(--fg); }
+.gpu-sector em {
+  display: block;
+  margin-top: 1px;
+  font: 9px var(--mono);
+  font-style: normal;
+  color: var(--dim);
+}
+.gpu-sector.gpu-sec-0 { border-top-color: var(--accent); }
+.gpu-sector.gpu-sec-1 { border-top-color: var(--accent-2); }
+.gpu-sector.gpu-sec-2 { border-top-color: var(--green); }
+.gpu-sector.gpu-sec-3 { border-top-color: var(--purple); }
+.gpu-sector.gpu-sec-4 { border-top-color: var(--red); }
+.gpu-sector.gpu-sec-5 { border-top-color: var(--dim); }
+
+.gpu-util { margin: 12px 0 6px; }
+.gpu-util-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+  font: 11px var(--mono);
+  color: var(--dim);
+}
+.gpu-util-bar {
+  height: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.gpu-util-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width .18s ease;
+}
+.gpu-util-bar i.ok { background: var(--green); }
+.gpu-util-bar i.warn { background: var(--accent-2); }
+.gpu-util-bar i.bad { background: var(--red); }
+
+.gpu-eco-table td { vertical-align: top; }
+.gpu-eco-table td:first-child { white-space: nowrap; }
+
+/* --------------------------------------------------------- light + motion */
+
+html[data-theme="light"] .gpu-sector { background: var(--panel-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .gpu-bar-track i,
+  .gpu-util-bar i { transition: none; }
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 980px) {
+  .gpu-goals,
+  .gpu-two-col,
+  .gpu-hier { grid-template-columns: minmax(0, 1fr); }
+  .gpu-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: none; }
+  .gpu-bar-row { grid-template-columns: 120px minmax(0, 1fr) 100px; }
+  .gpu-detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .gpu-sector-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 480px) {
+  .gpu-controls { grid-template-columns: minmax(0, 1fr); }
+  .gpu-bar-row { grid-template-columns: 88px minmax(0, 1fr) 88px; }
+  .gpu-bar-row > b { font-size: 10.5px; }
+  .gpu-sector-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

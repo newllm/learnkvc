@@ -89,6 +89,66 @@
       "why": "模型定义 K/V 怎么算，GPU 提供算力和显存，引擎负责块分配、共享、淘汰与调度。",
       "summary": "考什么：缓存策略归引擎",
       "detail": "这里问的是「谁决定缓存策略」：哈希、ref_count、free list、淘汰时机都是引擎的缓存管理；模型和 GPU 不决定这些。"
+    },
+    {
+      "id": "q7",
+      "tag": "GPU 与 CPU",
+      "q": "batch=1 的 decode 每生成一个 token，主要受什么限制？",
+      "options": [
+        "HBM 显存带宽（要读权重 + 全部历史 KV）",
+        "GPU 的 FP16 算力",
+        "PCIe 带宽",
+        "CPU 主频"
+      ],
+      "answer": 0,
+      "why": "decode 每步只算很少的 FLOP，却要把权重和历史 KV 从 HBM 读一遍；算术强度低，瓶颈在带宽而不是算力。",
+      "summary": "考什么：decode 是 memory-bound",
+      "detail": "用 roofline 看：每步 FLOP ≈ 2×激活参数，但字节 = 权重 + KV；decode 的算术强度远低于拐点，时间约等于字节 / 带宽。"
+    },
+    {
+      "id": "q8",
+      "tag": "集合通信",
+      "q": "8 卡做 ring all-reduce 一个 1 GiB 的消息，每张卡大约发送/接收多少字节？",
+      "options": [
+        "1 GiB（一份完整消息）",
+        "约 1.75 GiB（2(n−1)/n × S）",
+        "8 GiB（每卡一份完整消息）",
+        "64 MiB（S/n）"
+      ],
+      "answer": 1,
+      "why": "ring all-reduce 分 reduce-scatter 与 all-gather 两阶段，每阶段每卡搬 (n−1)/n × S，合计 2(n−1)/n × S；n=8 时约 1.75S。",
+      "summary": "考什么：ring 的通信量不是「传一圈一份数据」",
+      "detail": "每个 rank 在环上只把 chunk 传给右邻居；reduce-scatter 和 all-gather 各 n−1 步、每步 S/n，总字节 = 2(n−1)/n × S，n 很大时趋近 2S。"
+    },
+    {
+      "id": "q9",
+      "tag": "无损网络",
+      "q": "RoCE 无损网络里，PFC 与 ECN/DCQCN 的关系更接近哪一种？",
+      "options": [
+        "PFC 兜底防丢包，ECN/DCQCN 提前细粒度降速",
+        "ECN 兜底防丢包，PFC 负责降速",
+        "PFC 与 ECN 二选一，不能同时用",
+        "只有 TCP 才需要 ECN"
+      ],
+      "answer": 0,
+      "why": "PFC 在队列将满时暂停发送端，是最后一道防丢包闸门；ECN 在队列更早的阶段标记拥塞，让 DCQCN 先降速，避免频繁 pause。",
+      "summary": "考什么：PFC 与 ECN/DCQCN 是分层配合，不是二选一",
+      "detail": "ECN min/max 应低于 PFC XOFF；交换机只对 lossless 队列开 ECN/PFC；CNP 需要高优先级不被丢，才能把拥塞信号带回发送端。"
+    },
+    {
+      "id": "q10",
+      "tag": "优化技术",
+      "q": "模型量化为什么对 decode 特别有效？",
+      "options": [
+        "decode 是 memory-bound，权重/KV 字节降下来时间直接下降",
+        "量化让 GPU 的 FP16 算力翻倍",
+        "量化会减少模型层数",
+        "量化能自动增加上下文长度"
+      ],
+      "answer": 0,
+      "why": "decode 每步主要成本是把权重和 KV 从 HBM 读出来；权重/ KV 量化直接减少字节，memory-bound 的时间近似按字节比例下降。",
+      "summary": "考什么：量化省的是字节，不是 FLOPs",
+      "detail": "W4A16 把权重从 16 bit 压到 4 bit；KV cache 量化把每 token KV 从 FP16 压到 FP8/INT8。decode 收益大，prefill 是否受益还取决于 Tensor Core 对低精度的支持。"
     }
   ],
   "stepThink": {
@@ -290,15 +350,15 @@
         ]
       }
     ],
-    "takeaway": "KV cache 把「算过的 K/V」从计算问题变成存储与复用问题：谁算（模型）、谁执行（GPU）、谁决定留不留/给谁用（引擎）。",
+    "takeaway": "KV cache 把「算过的 K/V」从计算问题变成存储与复用问题；GPU 决定同样的字节能跑多快，网络决定多卡协作的上限，优化技术（FlashAttention / 量化 / 投机解码）决定同样的硬件还能快多少。",
     "feedbackSummary": {
-      "brief": "模型 = 参数 + 结构 + 模型包（tokenizer/模板/config）+ 运行时状态（KV/激活/workspace）；KV cache 把算过的 K/V 变成存储与复用，模型定义、GPU 执行、引擎管理。",
-      "detail": "参数决定「知道什么」；结构决定参数形状与计算图；tokenizer/chat template/generation_config 决定输入和采样；运行时状态决定这次请求算到哪、占多少显存。一次提问：decode 只投影新 token，省重复计算，KV 随上下文占显存。多次提问：多轮省 prefill 不省显存；多请求共享前缀计算和显存都省。运行时三笔账：参数固定，KV 随上下文×并发，prefill 激活随 chunk，workspace/CUDA Graph 近固定。三层分工：模型定义规则，GPU 执行，引擎管理缓存与调度。"
+      "brief": "模型 = 参数 + 结构 + 模型包 + 运行时状态；KV cache 把算过的 K/V 变成存储与复用（模型定义、GPU 执行、引擎管理）。decode 是 memory-bound；TP 用 all-reduce、无损网络靠 PFC+ECN/DCQCN；优化技术从 IO（FlashAttention）、字节（量化）和调度（投机解码）三个方向提速。",
+      "detail": "参数决定「知道什么」；结构决定参数形状与计算图；tokenizer/chat template/generation_config 决定输入和采样；运行时状态决定这次请求算到哪、占多少显存。一次提问：decode 只投影新 token，省重复计算，KV 随上下文占显存。多次提问：多轮省 prefill 不省显存；多请求共享前缀计算和显存都省。GPU 侧：decode 算术强度低、受 HBM 带宽限制；coalescing/occupancy/kernel 融合决定有效带宽；CUDA Graph 省 launch 开销。多卡侧：TP 每层 all-reduce（decode 小消息延迟敏感），PFC 兜底 + ECN/DCQCN 细粒度降速实现无损；NVLink/PCIe/IB 拓扑决定上限。优化侧：先找瓶颈（算力/带宽/容量/延迟/通信），再用 FlashAttention（省 HBM 流量）、量化（省字节）、投机解码（省串行步数）、continuous batching/chunked prefill/PD 分离（省调度空转），最后 A/B 度量。三层分工：模型定义规则，GPU 执行，引擎管理缓存、并行策略与调度。"
     }
   },
   "postTest": {
     "title": "后测 · 学完再答一遍",
-    "note": "同样 6 个概念，换问法，覆盖 KV 三章 + 模型解剖（参数/结构/模型包/运行时）；推理网络/模型训练在章节内完成四段式，不进入这套后测。提交后和前面的前测对照，看看哪里真的学会了。",
+    "note": "同样 10 个概念，换问法，覆盖认识 GPU、KV 三章、推理网络、认识模型与 LLM 优化。提交后和前面的前测对照，看看哪里真的学会了。",
     "questions": [
       {
         "id": "b1",
@@ -410,6 +470,82 @@
         "suggest": {
           "view": "kv",
           "stage": "summary"
+        }
+      },
+      {
+        "id": "b7",
+        "tag": "GPU 与 CPU",
+        "q": "同一模型上，decode 比 prefill 更容易受带宽限制，主要原因是？",
+        "options": [
+          "decode 每步只算 1 个 token，但要读全量权重 + 全部历史 KV",
+          "decode 的 FLOPs 比 prefill 大",
+          "prefill 不需要读权重",
+          "decode 不需要 KV cache"
+        ],
+        "answer": 0,
+        "why": "decode 的算术强度极低：FLOP 很少，却要读完整权重与随上下文增长的 KV；prefill 一次算很多 token，算术强度高得多。",
+        "summary": "考什么：prefill 与 decode 的 roofline 位置不同",
+        "detail": "prefill 每个权重被很多 token 复用，容易 compute-bound；decode batch=1 时权重每个 token 只复用一次，时间 ≈ (权重 + KV) / 带宽。",
+        "suggest": {
+          "view": "gpu",
+          "step": 3
+        }
+      },
+      {
+        "id": "b8",
+        "tag": "集合通信",
+        "q": "TP 的 all-reduce 在 decode 时为什么比 prefill 更「贵」？",
+        "options": [
+          "消息很小但每层都要做，固定延迟占比高",
+          "decode 的计算量更大",
+          "decode 不需要 TP",
+          "prefill 完全不需要通信"
+        ],
+        "answer": 0,
+        "why": "decode 每步只处理 1 个 token，all-reduce 消息很小但每层都要同步；计算时间短，固定延迟和 launch 开销占比高，所以小消息更看延迟。",
+        "summary": "考什么：decode 的 TP 通信是延迟敏感型",
+        "detail": "prefill 消息大、带宽主导；decode 消息小、每层都发，延迟和同步次数主导。选 tree/LL/NVLS 或同机 NVLink 都是为了压小消息延迟。",
+        "suggest": {
+          "view": "nccl",
+          "step": 5
+        }
+      },
+      {
+        "id": "b9",
+        "tag": "无损网络",
+        "q": "ECN 的 min/max 阈值相对 PFC 的 XOFF，应该怎么设？",
+        "options": [
+          "ECN 阈值更低，先于 PFC 触发降速",
+          "ECN 阈值更高，让 PFC 先兜底",
+          "两者必须相等",
+          "无损网络不需要 ECN"
+        ],
+        "answer": 0,
+        "why": "ECN 要在队列还早的时候就标记 CE、让 DCQCN 降速；如果 ECN max 高于 PFC XOFF，PFC 会先触发，ECN 就失效了。",
+        "summary": "考什么：ECN 必须早于 PFC 生效",
+        "detail": "典型关系是 ECN min < ECN max < PFC XOFF；只对 lossless 队列开 ECN，并保证 CNP 高优先级不被丢。阈值过高/过低都会让吞吐或 pause 变差。",
+        "suggest": {
+          "view": "ecn",
+          "step": 7
+        }
+      },
+      {
+        "id": "b10",
+        "tag": "优化技术",
+        "q": "FlashAttention 主要省的是什么？",
+        "options": [
+          "HBM 读写（避免 N×N 分数矩阵物化）",
+          "FLOPs（把 O(N²) 计算降到 O(N)）",
+          "模型参数量",
+          "显存容量（把 KV 直接删掉）"
+        ],
+        "answer": 0,
+        "why": "FlashAttention 用 tiling + online softmax 把 N×N 中间矩阵留在片上，HBM 流量从 O(N²) 降到 O(N)；FLOPs 仍是 O(N²)。",
+        "summary": "考什么：FlashAttention 是 IO 优化，不是算力优化",
+        "detail": "prefill 序列越长收益越大；decode q=1 时没有 N×N 可省，收益主要来自减少 KV 重读和 split-K/FlashDecoding 的并行度。",
+        "suggest": {
+          "view": "opt",
+          "step": 3
         }
       }
     ]
@@ -633,118 +769,6 @@
           "bucket": "engine",
           "why": "分配/释放/映射由引擎的 block manager 维护。"
         }
-      ]
-    }
-  },
-  "homework": {
-    "intro": "三章都完成后，把 KV cache 的「缓存—共享—分页—淘汰」迁移到其他领域，并把「模型解剖」里的参数/结构/模型包/运行时状态写成自己的账本。作业不计分，但要求写下来，写完再对照参考答案。",
-    "matrix": {
-      "columns": [
-        "章节",
-        "复用单位",
-        "共享方式",
-        "淘汰/失效",
-        "物理映射",
-        "主要责任层"
-      ],
-      "rows": [
-        [
-          "单请求 KV cache",
-          "每个请求的 K/V 张量",
-          "请求内复用（历史）",
-          "无（随请求结束释放）",
-          "连续张量",
-          "模型 + GPU + 引擎"
-        ],
-        [
-          "Prefix cache",
-          "固定 token 块（4）",
-          "块哈希 + 引用计数共享",
-          "LRU，只淘汰空闲叶子",
-          "块池（逻辑连续）",
-          "引擎（哈希/引用/淘汰）"
-        ],
-        [
-          "PagedAttention",
-          "固定 token 块",
-          "块可被不同序列引用",
-          "free 回空闲池",
-          "block_table 逻辑→物理",
-          "引擎 + GPU kernel"
-        ]
-      ]
-    },
-    "tasks": [
-      {
-        "id": "h1",
-        "title": "1 · 迁移：选一个你熟悉的系统",
-        "prompt": "从 CPU cache、数据库 buffer pool、CDN/HTTP 缓存、Git packfile、浏览器缓存里选一个，回答四问：缓存单位是什么？哪些可以共享？淘汰/失效策略是什么？谁负责管理？",
-        "ref": "例如数据库 buffer pool：单位是页，页可被多个查询共享，LRU/clock 淘汰，引擎负责；K/V 类比页，block table 类比页表，prefix cache 类比共享页。言之成理即可。"
-      },
-      {
-        "id": "h2",
-        "title": "2 · 算一算：KV 显存",
-        "prompt": "Qwen3-Coder-30B-A3B 的 KV 是 96 KiB/token。128K 上下文、4 个并发请求（不共享前缀），KV 一共多少 GiB？写出计算式。",
-        "ref": "128K × 96 KiB = 12 GiB / 请求；4 并发 = 48 GiB。若共享前缀，共享部分只存一份。"
-      },
-      {
-        "id": "h3",
-        "title": "3 · 设计：给 prefix cache 加 TTL",
-        "prompt": "如果要给 prefix cache 加「块级 TTL」，应该放在模型、GPU 还是引擎？说明理由，并说出一个副作用。",
-        "ref": "放引擎：块的生命周期、引用计数、淘汰都是引擎的缓存管理；模型只定义 K/V 数学，GPU 只执行。副作用：过期后命中率下降、需要额外的过期扫描/时钟。"
-      },
-      {
-        "id": "h4",
-        "title": "4 · 自由探索：写一段类比",
-        "prompt": "用 150–300 字，把你选的系统类比成 KV cache：谁是 K/V、谁是 block table、什么时候淘汰、哪个环节最像 prefix cache。",
-        "ref": "没有标准答案，要求出现「缓存单位、共享、淘汰、索引」四个要素，并指出一个真实系统做不到的地方。"
-      },
-      {
-        "id": "h5",
-        "title": "5 · 模型包体检",
-        "prompt": "给一个模型目录：config.json、*.safetensors、tokenizer.json、chat_template.jinja、generation_config.json。哪些是参数？哪些决定输入格式？如果只换 chat template、不换权重，输出会变吗？",
-        "ref": "只有 safetensors 是参数。config 决定结构；tokenizer 决定文本→token；chat_template 决定 system/user/assistant 怎么拼、BOS/EOS 放哪；generation_config 决定采样。换模板会改变输入序列，输出通常不同。"
-      },
-      {
-        "id": "h6",
-        "title": "6 · 运行时账本",
-        "prompt": "Qwen3-Coder-30B-A3B：32K 上下文、8 并发，KV 一共多少 GiB？decode 一步 batch 要读多少 KV？再分别写：权重、prefill 激活、workspace/CUDA Graph 是固定还是随请求变化，各由谁管理。",
-        "ref": "KV = 96 KiB × 32768 × 8 = 24 GiB；decode 一步 batch 需读约 24 GiB KV（外加权重）。权重固定（Q4 约 18.5 GiB）；prefill 激活随 chunk token 数；workspace/CUDA Graph 近固定，由引擎/框架管理；KV 块由引擎分配/共享/淘汰。"
-      }
-    ],
-    "closing": "完成作业后，回到「归因与总结」写三句话：这个领域里谁定义规则（模型）、谁执行（GPU）、谁决定缓存策略（引擎）。",
-    "anatomyMatrix": {
-      "columns": [
-        "层",
-        "例子",
-        "决定什么",
-        "推理时占显存？"
-      ],
-      "rows": [
-        [
-          "参数",
-          "embedding / attention / MoE / norm / lm_head",
-          "「知道什么」",
-          "占（权重，固定）"
-        ],
-        [
-          "结构",
-          "config：层数 / hidden / 头数 / 专家 / 词表",
-          "参数形状与计算图",
-          "不直接占"
-        ],
-        [
-          "模型包",
-          "tokenizer / chat template / generation_config",
-          "文本→token、拼接、采样",
-          "不占（CPU 侧）"
-        ],
-        [
-          "运行时状态",
-          "KV cache / 激活 / workspace / block table",
-          "这次请求算到哪了",
-          "占（随上下文/并发）"
-        ]
       ]
     }
   }

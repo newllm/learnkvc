@@ -346,6 +346,40 @@ def build_train() -> dict:
     return spec
 
 
+def build_doc_sim(name: str) -> dict:
+    """Doc chapter backed by one pure-stdlib simulation script (nccl / cuda)."""
+    here = Path(__file__).resolve().parent
+    spec = json.loads((here / f"{name}.json").read_text(encoding="utf-8"))
+    sim_rel = f"example/{name}_sim.py"
+    sim_path = ROOT / sim_rel
+    spec["simCode"] = {
+        "file": sim_rel,
+        "lines": sim_path.read_text(encoding="utf-8").split("\n"),
+    }
+    spec["simOutput"] = run_example(sim_path)
+    return spec
+
+
+def build_nccl() -> dict:
+    return build_doc_sim("nccl")
+
+
+def build_cuda() -> dict:
+    return build_doc_sim("cuda")
+
+
+def build_gpu() -> dict:
+    return build_doc_sim("gpu")
+
+
+def build_ecn() -> dict:
+    return build_doc_sim("ecn")
+
+
+def build_opt() -> dict:
+    return build_doc_sim("opt")
+
+
 # --------------------------------------------------------------------------- #
 # Build
 # --------------------------------------------------------------------------- #
@@ -412,9 +446,15 @@ def build_overview() -> dict:
     why = next((s for s in sections if s["title"] == "为什么需要 KV Cache"), None)
     if why is None:
         raise KeyError("README.md: section '为什么需要 KV Cache' not found")
+    lead_lines = []
+    for ln in intro:
+        if ln.strip().startswith("- **开始学习**"):
+            break
+        if ln.strip():
+            lead_lines.append(ln)
     return {
         "title": "learnkvc",
-        "lead": render_md([ln for ln in intro if ln.strip()][:3]),
+        "lead": render_md(lead_lines[:3]),
         "whyTitle": why["title"],
         "whyHTML": render_md(why["body"]),
     }
@@ -433,13 +473,17 @@ def main() -> None:
         "attribution": pedagogy["attribution"],
         "reflect": pedagogy["reflect"],
         "lessons": pedagogy["lessons"],
-        "homework": pedagogy["homework"],
         "anatomy": build_anatomy(),
         "train": build_train(),
         "net": build_net(),
+        "nccl": build_nccl(),
+        "cuda": build_cuda(),
+        "ecn": build_ecn(),
+        "gpu": build_gpu(),
+        "opt": build_opt(),
     }
-    data["lessons"]["net"] = data["net"]["lesson"]
-    data["lessons"]["train"] = data["train"]["lesson"]
+    for ch in ("net", "train", "nccl", "cuda", "ecn", "gpu", "opt"):
+        data["lessons"][ch] = data[ch]["lesson"]
     (DATA / "data.js").write_text(
         "window.LK_DATA = " + json.dumps(data, ensure_ascii=False) + ";\n", encoding="utf-8"
     )
@@ -456,6 +500,10 @@ def main() -> None:
     print(f"data.js   : {len(kv['lines'])} lines, {len(kv['steps'])} steps")
     print(f"traces.js : kv source={trace['source']} steps={len(trace['steps'])} · "
           f"prefix scenarios={len(prefix['scenarios'])}")
+    doc = [f"{ch}:{len(build['lesson']['think'])} think / {len(build['simOutput'].splitlines())} out"
+           for ch, build in (("nccl", data["nccl"]), ("cuda", data["cuda"]),
+                             ("ecn", data["ecn"]), ("gpu", data["gpu"]), ("opt", data["opt"]))]
+    print("doc chapters:", " · ".join(doc))
     print("built:", ", ".join(s["id"] for s in kv["steps"]))
 
 

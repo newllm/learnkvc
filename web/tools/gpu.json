@@ -1,0 +1,555 @@
+{
+  "kicker": "学习章节 · 认识 GPU",
+  "title": "认识 GPU：CPU、GPU、NPU 到底怎么分工",
+  "lead": "GPU 不是「更强的 CPU」，而是另一个设计目标下的机器：CPU 优化单线程延迟和控制流，GPU 优化吞吐和带宽。本章先把 CPU / GPU / NPU 摆到一张图上，再回答四个问题——CPU 与 GPU 是什么关系、为什么 LLM 离不开 GPU、为什么 GPU 又取代不了 CPU、以及 GPU 显存到底有没有 L1/L2 cache。",
+  "why": {
+    "title": "1 · 先把 CPU / GPU / NPU 摆到一张图",
+    "lead": "现代机器是异构系统：CPU 是 host，负责启动、调度、IO 和控制流；GPU / NPU / DCU 是 device，只在你把任务交给它时执行大规模并行计算。两者不是替代关系，而是分工关系。",
+    "roles": [
+      {
+        "name": "CPU（host）",
+        "tag": "控制面",
+        "does": "跑操作系统、驱动、调度器、Python 解释器；准备数据、发起 kernel、处理网络和磁盘、做分支密集的串行逻辑。",
+        "why": "少量大核 + 乱序执行 + 分支预测，目标是把单线程延迟压到最低；它控制整台机器，GPU 不能取代它。"
+      },
+      {
+        "name": "GPU（device）",
+        "tag": "数据面",
+        "does": "接收 CPU 下发的 kernel，用上万条线程同时算矩阵乘、attention、norm；结果写回 HBM，再由 CPU 取走或继续下发。",
+        "why": "海量小核 + SIMT + 多级缓存 + 高带宽 HBM，目标是把吞吐和字节吞吐拉满；它不能自主启动，也不能跑 OS。"
+      },
+      {
+        "name": "NPU / DCU（device）",
+        "tag": "同类加速器",
+        "does": "昇腾（Ascend）的 AI Core、海光 DCU 的计算单元，同样由 host 下发任务、在 device 上执行。",
+        "why": "设计目标与 GPU 类似（矩阵/向量吞吐），但指令集、片上缓存命名和软件栈不同；对推理框架来说它们是另一类 backend。"
+      }
+    ],
+    "questions": [
+      "① CPU 与 GPU 是什么关系？——不是「谁更强」，而是 host 与 device 的异构分工。",
+      "② 为什么 CPU 在 LLM 领域无法比拟 GPU？——算力、SIMD 宽度、内存带宽、功耗和扩展性全面落后。",
+      "③ 为什么 GPU 无法取代 CPU？——OS、中断、IO、控制流、单线程延迟和小任务都只能 CPU 做。",
+      "④ GPU 的显存访问是否和 CPU 一样有 L1/L2 cache？——有 L1/L2，但形态不同：L1 与 shared 统一、L2 芯片级共享、没有 CPU 式 LLC/目录一致性。"
+    ],
+    "note": "后面 2–8 节按「设计目标 → LLM 场景 → 不能取代 → 显存层级 → cache → 访存 → 生态」展开，9–10 节是代码和自查。所有数字都是量级，不是基准测试。"
+  },
+  "compare": {
+    "title": "2 · CPU vs GPU：延迟优化与吞吐优化",
+    "lead": "CPU 把晶体管花在让「一条线程尽快做完」上：乱序、分支预测、大 LLC、少量强核。GPU 把晶体管花在让「一万条线程同时做完」上：SIMT、海量 lane、高带宽 HBM。两者是两种机器，不是一个机器的快慢版本。",
+    "goals": [
+      {
+        "name": "CPU = latency machine",
+        "detail": "32 核 × 16 FP32 lane（AVX-512）、3.5 GHz、乱序执行、分支预测、128 MiB LLC；目标是让单线程和复杂控制流尽快完成。"
+      },
+      {
+        "name": "GPU = throughput machine",
+        "detail": "132 SM × 128 lane = 16896 lane、~1.8 GHz、SIMT、per-SM L1/shared + 50 MiB L2、3.35 TB/s HBM3；目标是让海量独立工作同时完成。"
+      }
+    ],
+    "rows": [
+      {
+        "item": "设计目标",
+        "cpu": "降低单线程延迟，跑复杂控制流",
+        "gpu": "提高整体吞吐，跑规则并行",
+        "why": "CPU 的乱序/预测对规则大矩阵没有收益；GPU 的 SIMT 对分支密集代码会退化。"
+      },
+      {
+        "item": "核心",
+        "cpu": "32 个大核，宽发射、乱序",
+        "gpu": "132 SM，每 SM 128 个 lane，SIMT",
+        "why": "CPU 核少而强，GPU lane 多而简单：16896 vs 512 个 FP32 lane。"
+      },
+      {
+        "item": "时钟",
+        "cpu": "3.5 GHz",
+        "gpu": "~1.8 GHz",
+        "why": "GPU 用更多 lane 和更高带宽换低时钟；单看频率会误判算力。"
+      },
+      {
+        "item": "控制流",
+        "cpu": "分支预测 + 投机执行",
+        "gpu": "warp 锁步，分支发散时两条路径串行",
+        "why": "这就是 GPU 不能取代 CPU 的核心原因之一。"
+      },
+      {
+        "item": "缓存",
+        "cpu": "L1/L2/L3 + 128 MiB LLC，追求命中率",
+        "gpu": "per-SM L1/shared（carveout）+ 50 MiB 芯片级 L2，追求带宽",
+        "why": "CPU 缓存大而深；GPU 缓存小，但线程多、HBM 带宽高，用并发掩盖延迟。"
+      },
+      {
+        "item": "带宽",
+        "cpu": "~80 GB/s（DDR5 双通道）",
+        "gpu": "3350 GB/s（HBM3）",
+        "why": "差约 42 倍；memory-bound 的 decode 直接吃这个差距。"
+      },
+      {
+        "item": "算力",
+        "cpu": "~4 TFLOPS FP32、~8 TFLOPS BF16 峰值",
+        "gpu": "~67 TFLOPS FP32、~990 TFLOPS BF16（dense）",
+        "why": "Tensor Core + 更多 lane，让 prefill 这类 compute-bound 任务的差距到两个数量级。"
+      },
+      {
+        "item": "功耗 / 封装",
+        "cpu": "150–300 W（socket）",
+        "gpu": "~700 W（module）",
+        "why": "GPU 把功耗预算换成吞吐；能效比要看任务类型，不是无条件更高。"
+      }
+    ],
+    "note": "量级，非基准。CPU 用 32 核服务器、GPU 用 H100 SXM 级别做对照；换具体型号数字会变，但设计目标不变。",
+    "calcTitle": "2.1 交互：切换指标与 GPU 档位，看差距",
+    "calcNote": "CPU 取 32 核服务器量级；GPU 为 dense、无稀疏的厂商量级值，SKU 不同会变。"
+  },
+  "llm": {
+    "title": "3 · LLM 为什么是 GPU 的主场，CPU 为什么跟不上",
+    "lead": "LLM 的绝大部分计算是矩阵乘和 attention：同一份权重被很多 token 复用，天然适合「海量线程 + 高带宽」。CPU 不是不能算，而是算力和搬数据的效率都低一到两个数量级。",
+    "whyGpu": [
+      "可并行性：一个矩阵乘的每个输出元素互不依赖，能让上万条线程同时算；attention 的每个 head、每个 query 也能拆开并行。",
+      "数据复用：权重和 K/V tile 被大量 token 共享，搬进 shared/L1 后重复使用，算术强度（FLOP/byte）被 batch 和 seq 抬高。",
+      "吞吐优先：GPU 的 16896 个 lane 和 Tensor Core 就是为这种规则密集计算准备的；prefill 的 M 越大，越接近算力平顶。",
+      "高带宽：decode 每步要读全部激活权重和 KV，HBM 3.35 TB/s 比 DDR5 的 ~80 GB/s 快约 42 倍，直接决定 TPOT。",
+      "批处理：把多个请求拼成一个 batch，权重只读一次就服务更多 token，这是 GPU 摊薄字节成本的核心手段。"
+    ],
+    "whyCpu": [
+      "核心数与 lane 少：512 个 FP32 lane 对 16896 个，SIMT 宽度和线程总数都不在同一量级。",
+      "SIMD 宽度有限：AVX-512 一条指令 16 个 FP32，而 GPU 一个 warp 指令覆盖 32 个 lane，SM 里还有多组调度器。",
+      "DDR 带宽低：~80 GB/s 对 3.35 TB/s；decode 是 memory-bound，CPU 的 TPOT 会被带宽直接乘上 42 倍。",
+      "算力/功耗比低：~4 TFLOPS（持续）对 ~990 TFLOPS，prefill 的 compute-bound 部分差距约两个数量级。",
+      "扩展性差：CPU socket 之间靠 UPI/PCIe，跨机更难；GPU 有 NVLink/NVSwitch 和成熟的多卡集合通信。"
+    ],
+    "roofline": {
+      "assumption": "7B dense BF16、32 层、56 KiB KV/token；CPU 按 4 TFLOPS 持续算力 + 80 GB/s，GPU 按 990 TFLOPS peak × 40% MFU + 3.35 TB/s；只算权重矩阵乘和 attention 的 QK^T/AV 项。",
+      "ridge": "CPU 拐点 50.0 FLOP/B；GPU 拐点 295.5 FLOP/B",
+      "rows": [
+        {
+          "workload": "decode（batch=1）",
+          "flops": "14.0 GFLOP",
+          "bytes": "13.3 GiB",
+          "cpu": "177.9 ms",
+          "gpu": "4.2 ms",
+          "ratio": "42×",
+          "bound": "memory-bound（AI≈0.98）"
+        },
+        {
+          "workload": "prefill（M=2048）",
+          "flops": "28672 GFLOP",
+          "bytes": "13.1 GiB",
+          "cpu": "7.17 s",
+          "gpu": "72.4 ms",
+          "ratio": "99×",
+          "bound": "compute-bound（AI≈2031）"
+        },
+        {
+          "workload": "attention（S=4096）",
+          "flops": "8796 GFLOP",
+          "bytes": "64 MiB",
+          "cpu": "2.20 s",
+          "gpu": "22.2 ms",
+          "ratio": "99×",
+          "bound": "compute-bound（40% MFU）"
+        }
+      ]
+    },
+    "note": "同一个 7B 模型：decode 时 CPU 只是「带宽慢 42 倍」，prefill 时是「算力慢约 100 倍」。这解释了为什么推理系统把 prefill 和 decode 分开设计，也解释了为什么 CPU 只能做小模型/低并发兜底。"
+  },
+  "replace": {
+    "title": "4 · 为什么 GPU 取代不了 CPU",
+    "lead": "GPU 算力再高，也得由 CPU 启动：它不能跑操作系统、不能处理中断、不能自主发起下一次 kernel。GPU 擅长的是「被下发的大块规则计算」，其余的事仍然只能 CPU 做。",
+    "rows": [
+      {
+        "item": "控制流 / 分支",
+        "cpu": "分支预测 + 投机执行，复杂 if/else、递归、状态机都高效",
+        "gpu": "warp 内 SIMT 锁步，分支发散时两条路径串行执行"
+      },
+      {
+        "item": "单线程延迟",
+        "cpu": "~1 ns/op 级别，缓存层级深、乱序掩盖延迟",
+        "gpu": "单线程不快，靠大量 warp 并发把延迟藏起来"
+      },
+      {
+        "item": "小任务",
+        "cpu": "函数调用约 0.2 µs，直接执行",
+        "gpu": "kernel launch 3–8 µs（加同步），小任务反而慢约 20 倍"
+      },
+      {
+        "item": "OS / 中断",
+        "cpu": "唯一能启动系统、响应中断、处理缺页和信号",
+        "gpu": "不能 boot，不能处理中断；device 端异常要靠 host 驱动"
+      },
+      {
+        "item": "IO / DMA",
+        "cpu": "发起磁盘/网络/PCIe 传输，配置 DMA",
+        "gpu": "只能做 device 侧拷贝，传输仍由 host 发起和完成"
+      },
+      {
+        "item": "驱动 / 调度",
+        "cpu": "驱动、运行时、CUDA context、stream 调度",
+        "gpu": "被动接收 command buffer，不能自己决定下一个任务"
+      },
+      {
+        "item": "数据搬运",
+        "cpu": "决定 H2D/D2H、什么时候搬、搬哪块",
+        "gpu": "算得再快也要等 host 把数据送到 HBM"
+      }
+    ],
+    "amdahl": {
+      "example": "一步推理里 CPU 串行调度 40 ms，GPU 并行计算 100 ms；GPU 再快 10 倍，整步也只是 40 + 10 = 50 ms，加速 2.8×，不是 10×。",
+      "lesson": "串行部分（调度、IO、控制、launch）决定上限：CPU 越慢，GPU 越容易被喂不饱。GPU 越快，越需要 CPU 高效地下发任务。"
+    },
+    "conclusion": "结论：CPU 是 host，GPU 是加速器。GPU 取代 CPU 就像「发动机取代方向盘」——动力更强，但没人开车不行。异构系统的关键是让 CPU 少做慢活、让 GPU 一直有活干。",
+    "note": "launch 开销（3–8 µs）来自驱动提交 command buffer 和同步；CUDA Graph、批量下发、多 stream 都是在减少 CPU 侧的这份固定成本。",
+    "scenarioTitle": "4.1 交互：这个任务该由谁主导？",
+    "scenarioNote": "判断标准不是「谁算力高」，而是「任务能不能拆成大量独立、规则、可合并的并行工作」；不能拆的、控制流复杂的、IO/OS 相关的，留在 CPU。",
+    "scenarios": [
+      {
+        "name": "小任务（< 几十 µs）",
+        "owner": "CPU",
+        "why": "GPU kernel launch 本身要 3–8 µs，加上同步可能比任务还慢（CPU 约 0.2 µs）；小任务交给 GPU 反而亏。"
+      },
+      {
+        "name": "分支密集 / 状态机",
+        "owner": "CPU",
+        "why": "CPU 有分支预测和投机执行；GPU 的 SIMT 在 warp 内遇到发散会把两条路径串行，控制流越复杂越浪费。"
+      },
+      {
+        "name": "大矩阵乘 / prefill",
+        "owner": "GPU",
+        "why": "输出元素互相独立、可拆成上万线程，Tensor Core 打满；这是 compute-bound 的甜点区，GPU 比 CPU 快约 100×。"
+      },
+      {
+        "name": "attention（长 seq / 大 batch）",
+        "owner": "GPU",
+        "why": "每个 head/query 可并行，数据复用高；配合 FlashAttention 融合，GPU 的算力和带宽都能吃满。"
+      },
+      {
+        "name": "串行逻辑 / 递归 / 事务",
+        "owner": "CPU",
+        "why": "依赖链长、并行度低，GPU 的线程会互相等待；这类逻辑 CPU 用乱序和缓存更快。"
+      },
+      {
+        "name": "IO 调度 / 网络 / 磁盘 / 中断",
+        "owner": "CPU",
+        "why": "只有 CPU 能响应中断、发起 DMA、处理缺页和驱动；GPU 不能自主启动，也不能接管 OS。"
+      }
+    ]
+  },
+  "memory": {
+    "title": "5 · GPU 的显存层级：HBM / L2 / L1+shared / 寄存器",
+    "lead": "GPU 的存储层级和 CPU 一样是「越近越快越小」，但每一层的职责不同：寄存器按线程、shared 按 block、L1 与 shared 共享同一块片上 SRAM、L2 全芯片共享、HBM 是显存。",
+    "gpuLevels": [
+      {
+        "level": "寄存器",
+        "cap": "256 KiB / SM",
+        "lat": "~1 cycle",
+        "bw": "per-SM private",
+        "cache": "register file",
+        "role": "每个线程的私有数据；用多了会压低 occupancy"
+      },
+      {
+        "level": "shared",
+        "cap": "228 KiB / SM",
+        "lat": "~20–30 cycles",
+        "bw": "~33 TiB/s aggregate",
+        "cache": "software-managed",
+        "role": "block 内共享的 tile/缓存；和 L1 共用 256 KiB 片上 SRAM（carveout 可配）"
+      },
+      {
+        "level": "L1",
+        "cap": "128–256 KiB / SM",
+        "lat": "~30–40 cycles",
+        "bw": "~10–20 TiB/s",
+        "cache": "yes",
+        "role": "按 128 B line 缓存全局/局部访问；与 shared 抢同一块 SRAM"
+      },
+      {
+        "level": "L2",
+        "cap": "H100 50 MiB / A100 40 / 4090 72",
+        "lat": "~200–300 cycles",
+        "bw": "~10 TiB/s",
+        "cache": "yes，芯片级",
+        "role": "全 GPU 共享；合并多个 SM 的访问、服务跨 SM 复用，但没有 CPU 式 LLC/目录一致性"
+      },
+      {
+        "level": "HBM",
+        "cap": "H100 80 GiB",
+        "lat": "~500–800 cycles",
+        "bw": "3.35 TiB/s",
+        "cache": "no，显存",
+        "role": "权重、KV、激活的最终存放处；memory-bound kernel 直接卡在这里"
+      }
+    ],
+    "cpuLevels": [
+      {
+        "level": "CPU L1",
+        "cap": "48 KiB / core",
+        "lat": "~4–5 cycles",
+        "bw": "~100 GB/s / core",
+        "cache": "yes",
+        "role": "指令 + 数据缓存，per-core 私有"
+      },
+      {
+        "level": "CPU L2",
+        "cap": "1.25 MiB / core",
+        "lat": "~10–15 cycles",
+        "bw": "~50–100 GB/s",
+        "cache": "yes",
+        "role": "per-core 私有，L1 的下一层"
+      },
+      {
+        "level": "CPU L3",
+        "cap": "128 MiB",
+        "lat": "~30–50 cycles",
+        "bw": "~300 GB/s",
+        "cache": "yes（LLC）",
+        "role": "socket 内所有核共享，CPU 的「大缓存」优势"
+      },
+      {
+        "level": "DDR5",
+        "cap": "512 GiB",
+        "lat": "~80–120 ns",
+        "bw": "~80 GB/s",
+        "cache": "no，内存",
+        "role": "系统内存；容量大但带宽低，是 CPU 跑 LLM 的硬瓶颈"
+      }
+    ],
+    "note": "GPU 的一次访问路径：线程 → L1（miss）→ L2（miss）→ HBM；L1/L2 都是 cache，但容量小、由访问模式决定命中率。cache line 固定 128 B，但 HBM 事务按 32 B sector 计，coalescing 决定一个 L1 line 被用满还是浪费。",
+    "calcTitle": "5.1 交互：统一存储层级阶梯（点一层看明细）",
+    "calcNote": "容量/延迟/带宽均为量级；GPU 的 L1 与 shared 共享同一块 SRAM，carveout 可配。"
+  },
+  "cache": {
+    "title": "6 · GPU 到底有没有 L1 / L2 cache？",
+    "lead": "直接回答：有，而且 L1/L2 都在。但它和 CPU 的 L1/L2/L3 不是同一种形态：GPU 的 L1 与 shared 统一、L2 全芯片共享、没有 CPU 那种大 LLC 和多核目录一致性，所以讨论 GPU 时更常提 HBM 带宽。",
+    "answer": "GPU 有 L1 和 L2 cache：L1 是 per-SM 的统一缓存（与 shared memory 共用同一块 256 KiB 片上 SRAM，carveout 可配），L2 是芯片级共享缓存（H100 ~50 MiB、A100 ~40 MiB、RTX 4090 ~72 MiB）。没有的是 CPU 式的 per-core 大 L3/LLC 和跨 socket 目录一致性。",
+    "facts": [
+      "L1 + shared 统一：每个 SM 的 256 KiB SRAM 可以在「shared memory」和「L1 cache」之间配置 carveout；例如 H100 最多 228 KiB 给 shared，剩下的给 L1。",
+      "L2 芯片级：所有 SM 共享一个 L2（H100 50 MiB、A100 40 MiB、4090 72 MiB），负责合并访问、跨 SM 复用；它不是 CPU 的 LLC，也没有多核目录协议。",
+      "cache line 128 B：CPU 和 GPU 都是 128 B line，但 GPU 的 HBM 事务按 32 B sector 计；一个 warp 读 128 B 连续地址 = 4 个 sector 一次搬完，跨步访问会浪费 line 里的字节。",
+      "写策略与一致性：GPU 默认 write-back，显存写入要显式同步/stream 顺序；跨 CPU/GPU 没有硬件缓存一致性（UVM 靠页迁移）。CPU 则有 MESI/目录一致性维护多核缓存。",
+      "为什么常提 HBM 带宽：L1/L2 容量太小，装不下 14 GB 权重和长上下文 KV；memory-bound kernel 的命中率不可控，最终仍由 HBM 3.35 TB/s 决定时间。",
+      "coalescing 决定命中：连续访问能让一个 128 B line 服务 32 个线程；跨步访问让每个线程各占一个 sector，L1 里缓存了 line 却只用 4 B。"
+    ],
+    "path": [
+      {
+        "case": "连续读 128 B（stride=1）",
+        "steps": "32 线程各读 4 B → 地址连续 128 B → 命中 4 个 32 B sector / 1 条 128 B line → L1 一次事务，HBM 只搬 128 B",
+        "verdict": "coalesced：L1/L2 命中率高，有效带宽 100%"
+      },
+      {
+        "case": "跨步读（stride=8）",
+        "steps": "32 线程各读 4 B，间隔 32 B → 32 个不同 sector，分布在 8 条 128 B line → L1 需要多次事务，HBM 搬 1024 B",
+        "verdict": "uncoalesced：只用 128 B，8× 放大，有效带宽 12.5%"
+      }
+    ],
+    "note": "所以「GPU 有没有 cache」和「cache 有没有用」是两个问题：硬件有 L1/L2，但推理里更常见的是 coalescing 与 HBM 带宽决定性能；这和 CUDA 执行模型章的 32 B sector/coalescing 账本是同一件事。",
+    "pathTitle": "6.1 交互：同一份数据，连续 vs 跨步访问",
+    "pathNote": "固定 32 线程 × 4 B、L1/L2 cache line = 128 B、HBM sector = 32 B；只算一次 warp load 的理想账。"
+  },
+  "access": {
+    "title": "7 · 访存模式：coalescing 与 latency hiding",
+    "lead": "GPU 用两种手段对抗内存延迟：空间上用 coalescing 把相邻线程的访问合并成少量 transaction，时间上用大量 resident warp 把延迟藏起来。CPU 也有空间局部性，但靠的是大缓存、预取和乱序执行。",
+    "rules": [
+      "coalescing：让同一 warp 的 32 个线程访问连续地址，一次搬 128 B（4 sector），有效带宽 100%；跨步/随机访问会把 sector 放大到 8 倍。",
+      "向量化：每个线程读 128-bit（16 B）而不是 4 B，一个 warp 覆盖 512 B，用更少的指令和 transaction 搬更多数据。",
+      "shared tiling：把会被重复使用的 tile 先搬进 shared memory，后续 block 内访问不再走 L1/L2/HBM；代价是 shared 占用会限制 occupancy。",
+      "latency hiding：用足够多的 resident warp 掩盖 HBM 的 500–800 cycle 延迟；occupancy 太低时，SM 会空等内存。",
+      "L2 局部性：让多个 SM 复用同一批权重/激活，尽量在 50 MiB L2 里命中，减少 HBM 往返。",
+      "paged gather 的代价：block table 让逻辑连续的 token 落到不连续的物理块，warp 会触及更多 sector；这是推理引擎要优化的访存形状。"
+    ],
+    "compareCpu": [
+      "CPU 靠「大 LLC + 硬件预取 + 乱序」把延迟藏起来，适合依赖链长、分支多的代码。",
+      "GPU 靠「海量 warp 并发 + 高带宽」把吞吐做上去，适合规则、独立、可合并的内存访问。",
+      "两者都利用空间/时间局部性，但 CPU 的优化单位是 cache line 和单线程窗口，GPU 的优化单位是 warp 的一次 memory transaction。",
+      "同样的 KV cache 数据：CPU 上要尽量放进 LLC 并减少拷贝；GPU 上要保证 paged gather 的块布局和 coalescing。"
+    ],
+    "note": "和 CUDA 执行模型章的联系：那边的 occupancy/coalescing/roofline 是单卡执行细节；本章回答「为什么需要 GPU」以及「GPU 和 CPU 的缓存/带宽哲学差在哪」。和 KV cache 章的联系：KV 的字节数和访问形状，直接决定 decode 是带宽受限还是命中率受限。"
+  },
+  "eco": {
+    "title": "8 · 生态：CUDA / ROCm / CANN / HCU / Triton",
+    "lead": "CUDA 不是芯片，是 NVIDIA 的软件栈；GPU 是硬件，CUDA 是让程序在 GPU 上跑的工具链和运行时。其他厂商提供等价但不同的栈，推理框架通过 backend 适配层对接。",
+    "rows": [
+      {
+        "stack": "CUDA",
+        "vendor": "NVIDIA",
+        "kind": "软件栈 + 工具链（不是芯片）",
+        "chips": "H100 / A100 / RTX 4090",
+        "frameworks": "vLLM/SGLang 默认 backend，cuBLAS/cuDNN/FlashAttention 生态最全",
+        "migrate": "生态事实标准；迁移成本最低"
+      },
+      {
+        "stack": "ROCm + HIP",
+        "vendor": "AMD",
+        "kind": "开源软件栈，HIP 接近 CUDA 源码",
+        "chips": "MI300 / MI250",
+        "frameworks": "vLLM/SGLang 有 ROCm backend，HIP 化后多数 kernel 可复用",
+        "migrate": "中低，需重新编译与调优"
+      },
+      {
+        "stack": "CANN + AscendCL",
+        "vendor": "Huawei",
+        "kind": "NPU 软件栈（AI Core 指令）",
+        "chips": "昇腾 910B / 910C",
+        "frameworks": "vLLM-Ascend、MindIE 等；算子需适配 CANN",
+        "migrate": "中高，算子与图引擎差异大"
+      },
+      {
+        "stack": "HCU = DTK + HIP",
+        "vendor": "Hygon（海光）",
+        "kind": "DCU 软件栈；HAMi 里设备名 HCU",
+        "chips": "海光 DCU（深算系列）",
+        "frameworks": "DTK/HIP 路线，容器平台（如 HAMi）按 HCU 调度",
+        "migrate": "中，HIP 同源但工具链/算子覆盖需验证"
+      },
+      {
+        "stack": "OpenCL / oneAPI",
+        "vendor": "Khronos / Intel",
+        "kind": "跨厂商计算 API / Intel 工具链",
+        "chips": "Intel Arc / PVC 等",
+        "frameworks": "oneAPI backend、部分推理运行时支持",
+        "migrate": "较高，生态和 kernel 库较弱"
+      },
+      {
+        "stack": "Triton",
+        "vendor": "OpenAI（开源）",
+        "kind": "Python kernel DSL → PTX/LLVM",
+        "chips": "主要面向 NVIDIA，也有其他后端",
+        "frameworks": "vLLM/SGLang 用它写 fused/custom kernel",
+        "migrate": "作为「写 kernel 的语言」，不是完整计算栈"
+      }
+    ],
+    "notes": [
+      "CUDA 是软件栈不是芯片：说「这台机器有几张 CUDA」不准确，应该说「几张 NVIDIA GPU，装了 CUDA 运行时」。",
+      "昇腾是华为 NPU 的官方中文名，用户口中的「升腾」就是昇腾（Ascend）；HAMi 里海光 DCU 的设备名是 HCU。",
+      "推理框架（vLLM/SGLang）通过 attention backend + custom ops 适配各栈：同一套调度逻辑，底下换 kernel 实现。",
+      "迁移成本主要在算子覆盖、精度对齐、集合通信和性能调优，不只是「换个编译开关」。"
+    ],
+    "note": "量级对照：H100 990 TFLOPS / 3.35 TB/s / 80 GiB / 50 MiB L2；A100 312 / 2039 GB/s / 80 GiB / 40 MiB；RTX 4090 165 / 1008 GB/s / 24 GiB / 72 MiB；昇腾 910B ~376 / ~1.6 TB/s / 64 GiB；HCU（海光 DCU）~200 TFLOPS / ~1 TB/s / ~32 GiB 量级。dense、无稀疏，SKU 不同会变。"
+  },
+  "codeSection": {
+    "title": "9 · 仿真代码：把 CPU vs GPU 账本跑一遍",
+    "lead": "这段纯 Python 把本章的数字算了一遍：CPU/GPU 设计点、显存层级、LLM roofline、launch 与 Amdahl、以及各厂商软件栈；末尾断言保证账本自洽。代码在 example/gpu_sim.py，可直接运行；网页里的示例输出就是它的 stdout。",
+    "file": "example/gpu_sim.py",
+    "run": "python3 example/gpu_sim.py",
+    "notes": [
+      "设计点表：32 核 × 16 lane 对 132 SM × 128 lane，DDR5 ~80 GB/s 对 HBM3 3350 GB/s，FP16 ~8 对 ~990 TFLOPS。",
+      "存储层级表同时列出 CPU L1/L2/L3/DDR 与 GPU 寄存器/shared/L1/L2/HBM，并标注是否 cache、容量、延迟、带宽。",
+      "LLM 部分用 roofline 算 7B 模型的 decode/prefill/attention：decode AI≈0.98（memory-bound），prefill AI≈2031（compute-bound）。",
+      "最后算 launch 开销（CPU 0.2 µs vs GPU 4 µs）和 Amdahl（串行 40 ms + 并行 100 ms，GPU 10× → 整步 2.8×），说明 CPU 为什么不可替代。"
+    ]
+  },
+  "check": {
+    "title": "10 · 自查清单与自问",
+    "lead": "能不看资料回答下面几条，并给出数字或公式，就说明你真正理解了 CPU / GPU 的分工、缓存形态和 LLM 的瓶颈。",
+    "checklist": [
+      "能用一句话说清 host / device 分工：CPU 启动、调度、IO 和控制流，GPU 执行被下发的大规模并行计算。",
+      "能解释 CPU 是延迟优化、GPU 是吞吐优化，并各举两个设计证据（乱序/分支预测 vs SIMT/海量 lane）。",
+      "能算出 CPU 与 GPU 的 FP16 算力比、带宽比，并用它解释 decode 的 42× 与 prefill 的 ~100×。",
+      "能说清 decode 是 memory-bound、prefill 是 compute-bound，以及对应的 AI 与拐点（GPU 295.5 FLOP/B）。",
+      "能列出至少 4 件 GPU 做不了、只能 CPU 做的事：OS/中断、IO/DMA、控制流、小任务 launch、驱动调度。",
+      "能回答 GPU 有没有 L1/L2：有，L1 与 shared 统一、L2 芯片级共享，但没有 CPU 式 LLC/目录一致性。",
+      "能解释 cache line 128 B 与 32 B sector 的关系，以及 coalescing 如何决定有效带宽。",
+      "能说出 CUDA 是软件栈、昇腾是 NPU、HCU 是海光 DCU 的设备名，以及 vLLM/SGLang 如何按 backend 对接。"
+    ],
+    "questions": [
+      {
+        "q": "GPU 有 L1/L2 cache 吗？和 CPU 的一样吗？",
+        "a": "有 L1 和 L2，但形态不同：GPU 的 L1 是 per-SM 且与 shared memory 共用同一块 SRAM（carveout 可配），L2 是全芯片共享（H100 50 MiB、A100 40 MiB、4090 72 MiB），没有 CPU 式的大 LLC 和多核目录一致性。cache line 同为 128 B，但 GPU 事务按 32 B sector 计，命中率由 coalescing 决定。"
+      },
+      {
+        "q": "既然 GPU 算力高两个数量级，为什么还需要 CPU？",
+        "a": "因为 GPU 不能自主运行：它不能 boot、不能响应中断、不能做缺页/IO/DMA 配置，也不会处理复杂分支和小任务。kernel launch 还要 3–8 µs，CPU 的调度和串行部分（Amdahl）决定整步上限。CPU 是 host，GPU 只是加速器。"
+      },
+      {
+        "q": "为什么 CPU 跑 LLM 慢，慢在哪里？",
+        "a": "三个硬约束：① FP16 算力约 4–8 TFLOPS（持续），比 GPU 的 990 低两个数量级；② SIMD 只有 16 个 FP32 lane，GPU 有 16896 个；③ DDR5 带宽约 80 GB/s，HBM3 是 3350 GB/s。decode 被带宽卡 42×，prefill 被算力卡约 100×。"
+      },
+      {
+        "q": "既然 GPU 有 cache，为什么大家总说「GPU 是带宽受限」？",
+        "a": "因为 L1/L2 太小：H100 L2 只有 50 MiB，装不下 14 GB 权重和长上下文 KV；memory-bound kernel 最终仍要读 HBM。cache 只能减少重复访问的 transaction，不能改变「每步必须搬多少字节」的账。coalescing 差时连 line 都用不满。"
+      },
+      {
+        "q": "CPU 的 cache 优化和 GPU 的访存优化有什么不同？",
+        "a": "CPU 优化单线程视角：提高 LLC 命中、利用硬件预取、减少依赖链，靠乱序和大缓存藏延迟。GPU 优化 warp 视角：让 32 个线程地址连续（coalescing）、向量化、用 shared tiling 复用、用足够 occupancy 藏延迟，最终把 HBM 字节数降下来。"
+      },
+      {
+        "q": "CUDA 和 GPU、昇腾、HCU 是什么关系？",
+        "a": "GPU/NPU/DCU 是硬件；CUDA 是 NVIDIA 的软件栈（编译器 + 运行时 + 库），不是芯片。昇腾（Ascend）是华为 NPU，用 CANN + AscendCL；HCU 是海光 DCU 在 HAMi 里的设备名，走 DTK/HIP 栈；AMD 用 ROCm + HIP。推理框架通过 attention backend 和 custom ops 分别对接。"
+      }
+    ]
+  },
+  "lesson": {
+    "think": [
+      {
+        "q": "GPU 有 L1 / L2 cache 吗？",
+        "options": [
+          "有：L1 与 shared 统一，L2 全芯片共享，但没有 CPU 式 LLC",
+          "没有，GPU 只靠 HBM",
+          "只有 L2，没有 L1"
+        ],
+        "answer": 0,
+        "why": "GPU 每个 SM 有统一的 L1/shared SRAM（carveout 可配），芯片级还有 L2（H100 ~50 MiB）。只是它没有 CPU 那种大 LLC 和多核目录一致性，所以讨论时常直接说 HBM 带宽。"
+      },
+      {
+        "q": "GPU 算力高这么多，会取代 CPU 吗？",
+        "options": [
+          "不会：OS、中断、IO、控制流和小任务只能 CPU 做",
+          "会：算力高就够",
+          "会：GPU 已经能跑操作系统"
+        ],
+        "answer": 0,
+        "why": "GPU 不能启动系统、响应中断、做 IO/DMA 配置，也不擅长分支和小任务（launch 3–8 µs）。CPU 是 host，GPU 是被下发的加速器；Amdahl 还说明串行部分决定上限。"
+      },
+      {
+        "q": "LLM 为什么适合 GPU？",
+        "options": [
+          "矩阵乘/attention 可并行、数据复用高、能靠 batch 摊薄权重读取",
+          "因为 GPU 主频比 CPU 高",
+          "因为 GPU 的 DDR 带宽更大"
+        ],
+        "answer": 0,
+        "why": "LLM 的主体是规则的大矩阵乘和 attention，天然可拆成上万独立线程；权重/KV 被大量 token 复用，GPU 的海量 lane、Tensor Core 和 HBM 带宽正好匹配。GPU 主频其实比 CPU 低。"
+      }
+    ],
+    "reflect": [
+      {
+        "q": "CPU 是延迟优化、GPU 是吞吐优化，这个区别如何解释「CPU 单线程快、GPU 吞吐高」？",
+        "ref": "CPU 把晶体管用在乱序、分支预测、大 LLC 上，目标是让一条线程尽快完成；GPU 把晶体管用在更多 lane、SIMT、高带宽 HBM 上，目标是让一万条线程同时完成。单线程看 CPU 快；规则大并行看 GPU 吞吐高。两者不是同一维度的快慢。"
+      },
+      {
+        "q": "为什么 decode 是 memory-bound、prefill 是 compute-bound？CPU 在这两种情况下分别输在哪？",
+        "ref": "decode 每 token 只做 2×参数 FLOPs 却要读全部权重和 KV，AI≈0.98 远低于拐点 295.5，所以卡带宽：CPU 的 ~80 GB/s 对 GPU 的 3.35 TB/s，差 42×。prefill 同一份权重做 M 倍 FLOPs，AI≈2031 越过拐点，卡算力：CPU 的 4–8 TFLOPS 对 990 TFLOPS，差约 100×。"
+      },
+      {
+        "q": "GPU 有 L1/L2，为什么很多 kernel 还是直接卡在 HBM 带宽上？",
+        "ref": "因为容量太小：L2 只有 50 MiB 级，装不下 14 GB 权重和长上下文 KV；memory-bound kernel 的每步字节数由模型和 KV 决定，cache 只能减少重复事务，不能减少必须搬的字节。coalescing 差时还会把 128 B line 浪费成 8× 搬运。"
+      },
+      {
+        "q": "如果你来设计一个异构推理系统，CPU 和 GPU 各负责什么？launch 开销会怎样影响设计？",
+        "ref": "CPU 负责请求调度、批处理、KV 管理、网络/磁盘 IO、启动 kernel 和处理控制流；GPU 负责矩阵乘/attention 等大并行计算。launch 3–8 µs 意味着 decode 的几百个 kernel 要用 CUDA Graph、多 stream、批处理来摊薄；小任务、分支密集和串行逻辑留在 CPU，避免 GPU 空转。"
+      }
+    ],
+    "summary": {
+      "brief": "CPU 是 host（延迟优化：少量大核、乱序、大 LLC），GPU 是 device（吞吐优化：海量 SIMT lane、Tensor Core、HBM 3.35 TB/s）；LLM 的矩阵乘/attention 适合 GPU，但 decode 卡带宽（42×）、prefill 卡算力（~100×）；GPU 有 L1/L2 但与 CPU 形态不同，且取代不了 CPU 的 OS/IO/控制流职责。",
+      "detail": "CPU：32 核 × 16 FP32 lane=512 lane、3.5 GHz、~4 TFLOPS FP32 / ~8 TFLOPS BF16、DDR5 ~80 GB/s、L1 48 KiB+L2 1.25 MiB+L3 128 MiB。GPU（H100）：132 SM × 128 lane=16896 lane、~1.8 GHz、67 TFLOPS FP32 / 990 TFLOPS BF16、HBM3 3.35 TB/s、per-SM 256 KiB L1+shared（shared 最多 228 KiB，carveout 可配）、50 MiB 芯片级 L2、80 GiB HBM。7B BF16：decode 14 GFLOP/13.3 GiB → CPU 177.9 ms vs GPU 4.2 ms（42×，memory-bound，AI≈0.98）；prefill 28672 GFLOP/13.1 GiB → 7.17 s vs 72.4 ms（99×，compute-bound，AI≈2031）；GPU roofline 拐点 295.5 FLOP/B，CPU 50.0。GPU 不能取代 CPU：不能 boot/中断/IO/DMA，分支发散串行、单线程慢、小任务 launch 3–8 µs（比 CPU 0.2 µs 慢约 20×）；Amdahl：串行 40 ms+并行 100 ms，GPU 10× 后整步只 2.8×。cache：GPU 有 L1/L2，cache line 128 B、HBM sector 32 B、coalescing 决定有效带宽；L2 芯片级共享但没有 CPU 式 LLC/目录一致性。生态：CUDA 是软件栈（非芯片）、ROCm+HIP、CANN+AscendCL（昇腾，非「升腾」）、HCU=海光 DCU 的 HAMi 设备名（DTK/HIP）、OpenCL/oneAPI、Triton；vLLM/SGLang 通过 attention backend + custom ops 对接各栈。"
+    },
+    "attribution": [
+      {
+        "id": "gpu-m1",
+        "label": "LLM 算子的可并行性与算术强度",
+        "bucket": "model",
+        "why": "矩阵乘/attention 的并行度和 FLOP/byte 由模型结构、层数、hidden、seq、batch 决定；它决定了任务天然更适合 CPU 还是 GPU。"
+      },
+      {
+        "id": "gpu-g1",
+        "label": "SIMT lane 数、Tensor Core、HBM/L1/L2 缓存",
+        "bucket": "gpu",
+        "why": "16896 个 lane、990 TFLOPS、3.35 TB/s、L1/L2 容量与 128 B line 是 GPU 的物理属性；它们决定吞吐上限、cache 形态和 coalescing 的代价。"
+      },
+      {
+        "id": "gpu-e1",
+        "label": "推理框架的 backend、数据搬运与 launch 合并",
+        "bucket": "engine",
+        "why": "选 CUDA/ROCm/CANN/HCU 哪条栈、怎么批处理、怎么用 CUDA Graph/多 stream 减少 launch、怎么安排 H2D/D2H 和 KV 布局，都由推理引擎决定。"
+      }
+    ]
+  }
+}

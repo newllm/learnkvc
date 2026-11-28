@@ -1,0 +1,581 @@
+{
+  "kicker": "学习章节 · 推理网络 · 无损网络",
+  "title": "ECN + DCQCN：把 RoCEv2 配成无损网络",
+  "lead": "RoCEv2 跑在以太网上，丢一个包就可能触发一串重传，把 decode 的 TPOT 抖成锯齿。无损不是「带宽够大」，而是「不丢包 + 低延迟 + 高吞吐」：PFC 兜底防丢，ECN/DCQCN 提前细粒度降速，交换机和服务器两侧的 DSCP/TC/PFC/ECN 必须对齐。本章从一帧 ECN 标记的旅程讲到交换机、网卡和 NCCL 的实际配置。",
+  "why": {
+    "title": "1 · RoCEv2 为什么怕丢包：无损网络的三个目标",
+    "lead": "RoCEv2 把 RDMA 语义放进 UDP（端口 4791），默认假设网络不丢包：一旦丢包，发送端要回退重传，延迟和带宽一起恶化。无损网络要同时做到不丢包、低延迟、高吞吐，这需要 PFC 和 ECN/DCQCN 两种机制配合。",
+    "points": [
+      {
+        "name": "丢包的代价是「重传放大」",
+        "detail": "RoCEv2 的可靠传输靠回退重传（Go-Back-N 类行为）：丢一个包，后面的包可能全部重发。跨机 TP all-reduce 和 PD 的 KV 迁移都是大流量，重传会把一次微秒级同步拖成毫秒级抖动。"
+      },
+      {
+        "name": "无损 = 不丢包 + 低延迟 + 高吞吐",
+        "detail": "只追求不丢包可以把 PFC 开满，但频繁暂停会让链路空转、延迟抖动；只追求吞吐不管丢包，则会触发重传。无损网络的三个目标必须一起满足。"
+      },
+      {
+        "name": "PFC 解决「已经要丢包」",
+        "detail": "交换机队列超过 XOFF，就给上游发 802.1Qbb pause 帧，让上游暂停发送；队列降到 XON 以下再恢复。它是兜底，粒度粗、会连锁暂停。"
+      },
+      {
+        "name": "ECN/DCQCN 解决「还没丢包」",
+        "detail": "交换机在队列还早的时候就给包打 CE（Congestion Experienced）标记，接收端回 CNP，发送端 DCQCN 降低速率。ECN 提前细粒度降速，PFC 只在 ECN 没来得及的时候兜底。"
+      },
+      {
+        "name": "先配优先级，再谈阈值",
+        "detail": "DSCP → TC → PFC priority / ECN 队列的映射必须端到端一致；映射错位时，PFC 保护的不是 RDMA 流量，或者 ECN 标在了 best-effort 队列上。"
+      }
+    ],
+    "note": "本章里的吞吐/队列/标记率来自 example/ecn_sim.py 的简化账本，单位是归一化 MB/tick（量级，非基准）；真实网络要按端口速率、RTT、buffer 换算。"
+  },
+  "layers": {
+    "title": "2 · 一条 ECN 标记的旅程：从交换机到 DCQCN",
+    "lead": "ECN 不是「交换机单独的功能」，而是一条跨设备的反馈环：主机打 ECT、交换机按队列标记 CE、接收端生成 CNP、发送端更新 α 和速率，同时 PFC 在更晚的时刻兜底。",
+    "steps": [
+      {
+        "step": "① 发送端标记 ECT",
+        "where": "主机 / 网卡",
+        "what": "IP ToS 的 ECN 字段有 2 bit：Not-ECT（不参与）、ECT(0)、ECT(1)（可标记）、CE（已拥塞）。RoCEv2 业务把报文标成 ECT，告诉交换机「拥塞时可以给我打 CE」。"
+      },
+      {
+        "step": "② 交换机分类入队",
+        "where": "leaf 交换机 ingress",
+        "what": "trust DSCP → 映射到 TC/队列；RDMA lossless 流量进指定队列，CNP 进高优先级队列，存储/管理/普通业务进各自队列。"
+      },
+      {
+        "step": "③ WRED 按队列长度标记",
+        "where": "交换机 egress 队列",
+        "what": "队列 < min 不标记；min≤Q<max 以 p=(Q−min)/(max−min)×max_p 的概率标 CE；Q≥max 全部标 CE。阈值只对 ECT 流量生效，按队列分别配置。"
+      },
+      {
+        "step": "④ 接收端生成 CNP",
+        "where": "接收端网卡",
+        "what": "收到 CE 报文后生成 CNP（Congestion Notification Packet），用高优先级 DSCP 发回源端；CNP 自己不能被丢，否则发送端不知道要降速。"
+      },
+      {
+        "step": "⑤ 发送端 DCQCN 降速",
+        "where": "发送端网卡 / 驱动",
+        "what": "收到 CNP：α←(1−g)α+g，速率 R←R(1−α/2)；没有 CNP：α 衰减并做加性增（AI/RAI）。速率在 R_MIN 与 R_MAX 之间收敛到接近线速。"
+      },
+      {
+        "step": "⑥ PFC 兜底",
+        "where": "交换机 egress → 上游端口",
+        "what": "如果 ECN 还没来得及降速、队列继续涨到 XOFF，就发 802.1Qbb pause 帧暂停上游；降到 XON 以下恢复。PFC 是最后一道防线，不是第一选择。"
+      }
+    ],
+    "note": "简化模型：CNP 延迟 6 tick、每 2 tick 最多一个 CNP、WRED 用入队前 standing queue；真实网卡/交换机还有 EWMA、CNP 聚合、per-flow 状态和更多定时器。"
+  },
+  "switch": {
+    "title": "3 · 交换机怎么组网与配置",
+    "lead": "无损网络从组网开始：leaf-spine 提供无阻塞/可收敛的路径，rail-optimized 让每张网卡走自己的 spine；然后才是 trust DSCP、每队列 PFC/ECN WRED、buffer/headroom 和 PFC 域边界。",
+    "topologies": [
+      {
+        "name": "leaf-spine（标准两层）",
+        "detail": "每台服务器双上联到两台 leaf，leaf 全互联 spine；适合通用推理集群。要关注收敛比（超订比）、ECMP 哈希和 PFC 域边界：PFC 最好限制在同一个无损域内。"
+      },
+      {
+        "name": "rail-optimized（按网卡分 rail）",
+        "detail": "每台机器的第 i 张网卡接到第 i 个 rail 的 leaf/spine；同一 rail 内流量不跨 rail，减少 all-to-all/incast 的拥塞。适合大规模 GPU 集群，但要保证同一 rail 的 PFC/ECN 配置一致。"
+      }
+    ],
+    "steps": [
+      "规划 QoS：列出业务 → DSCP → TC/队列 → PFC priority → ECN 阈值，先画表再配置。",
+      "全局 trust DSCP：接入端口信任 DSCP，而不是按端口默认优先级；host 侧 DSCP 才能生效。",
+      "L3 与 ECMP：leaf-spine 之间走 L3 RoCEv2，多路径用 ECMP；注意哈希极化与乱序，必要时按 flow/五元组调优。",
+      "DSCP → TC 映射一致：所有 leaf/spine/host 用同一张映射表，跨设备不要各配各的。",
+      "每队列 buffer 与 headroom：PFC 队列要留 headroom 覆盖「pause 反应时间内在途的包」，否则 pause 还没生效就已溢出。",
+      "每队列 PFC：只对 RDMA lossless 队列开 PFC（例如 priority 3），其他队列不要开；PFC 域边界要明确。",
+      "每队列 ECN WRED：min/max/max_p 按队列配置，ECN 阈值必须早于 PFC XOFF 触发。",
+      "MTU 端到端一致：RoCE MTU（如 4096）对应 IP MTU 4200/9000，任一段不一致都会碎片或不通。",
+      "PFC watchdog 与计数：开启 PFC watchdog，定期看每端口 PFC/ECN 计数，避免 PFC storm 和单向 PFC。"
+    ],
+    "vendors": [
+      {
+        "vendor": "NVIDIA Spectrum / Cumulus（nv set，示意）",
+        "commands": [
+          "nv set qos mapping dscp 26 traffic-class 3",
+          "nv set qos mapping dscp 48 traffic-class 6",
+          "nv set interface swp1-32 qos trust dscp",
+          "nv set qos pfc priority 3 enable on",
+          "nv set interface swp1-32 qos pfc priority 3",
+          "nv set qos ecn profile rdma-wred min-threshold 200000 max-threshold 500000 probability 20",
+          "nv set interface swp1-32 qos ecn profile rdma-wred",
+          "nv set interface swp1-32 link mtu 9216"
+        ]
+      },
+      {
+        "vendor": "Arista EOS（示意）",
+        "commands": [
+          "priority-flow-control mode on",
+          "priority-flow-control priority 3",
+          "qos trust dscp",
+          "qos map dscp 26 to traffic-class 3",
+          "qos map dscp 48 to traffic-class 6",
+          "qos ecn profile rdma-wred 200000 500000 20",
+          "qos interface Ethernet1 ecn profile rdma-wred",
+          "interface Ethernet1",
+          "  mtu 9216"
+        ]
+      }
+    ],
+    "note": "命令只示意流程，随 ASIC / 软件版本 / SKU 变化（阈值单位可能是 byte、cell 或百分比）；生产配置前用厂商文档校准，并先在实验环境验证。",
+    "topoTitle": "3.1 交互：leaf-spine vs rail-optimized",
+    "topoNote": "两种组网都要保证 PFC/ECN 配置在同一无损域内一致；rail-optimized 对 incast 更友好，但 rail 之间要独立规划。"
+  },
+  "server": {
+    "title": "4 · 服务器侧怎么配：从网卡到 NCCL",
+    "lead": "服务器侧的顺序是「先确认网卡和链路 → 开 RoCEv2 → 配 DSCP/TC → 开 PFC/ECN → 验证」。跳过前面直接调 NCCL，最常见的结果是 NCCL 悄悄回退到 Socket。",
+    "steps": [
+      {
+        "step": "① 确认网卡与链路",
+        "commands": [
+          "lspci | grep -i mellanox",
+          "ibv_devinfo -d mlx5_0",
+          "show_gids",
+          "ip link show eth0",
+          "nvidia-smi topo -m"
+        ],
+        "detail": "确认 HCA 状态 ACTIVE、GID index（RoCEv2 常为 3）、MTU、GPU 与网卡的 PCIe/NUMA 拓扑；GPU Direct RDMA 要求网卡与 GPU 在同一 NUMA/PCIe 树。"
+      },
+      {
+        "step": "② 开启 RoCEv2 与 ToS",
+        "commands": [
+          "cma_roce_mode -d mlx5_0 -p 1 -m 2",
+          "cma_roce_tos -d mlx5_0 -t 106"
+        ],
+        "detail": "m 2 表示 RoCEv2；ToS/TC 106 是常见写法，等价于 DSCP 26 加 ECN 位，必须和交换机 trust DSCP→TC 3 的映射对齐（数字随驱动/OS 版本变化，先用 106 与交换机对表）。"
+      },
+      {
+        "step": "③ 网卡 QoS：trust DSCP + PFC + MTU",
+        "commands": [
+          "mlnx_qos -i eth0 --trust dscp",
+          "mlnx_qos -i eth0 --pfc 0,0,0,1,0,0,0,0",
+          "ip link set dev eth0 mtu 4200"
+        ],
+        "detail": "PFC 只开 priority 3（对应 RDMA lossless 队列），其他队列不开；MTU 端到端一致（RoCE MTU 4096 → IP MTU 4200）。"
+      },
+      {
+        "step": "④ IRQ、GPU Direct 与 NUMA",
+        "commands": [
+          "set_irq_affinity.sh eth0",
+          "modprobe nvidia-peermem      # 视驱动版本，也可能是 nvidia_peermem",
+          "export NCCL_NET_GDR_LEVEL=2"
+        ],
+        "detail": "把网卡中断绑到靠近 GPU 的 CPU；GPU Direct RDMA 让数据从 HBM 直达网卡，避免 host 拷贝；跨 NUMA 会多一次 QPI/UPI 往返。"
+      },
+      {
+        "step": "⑤ 验证",
+        "commands": [
+          "ethtool -S eth0 | grep -iE 'pfc|prio3|ecn'",
+          "ib_write_bw -d mlx5_0 --report_gbits -x 3",
+          "NCCL_DEBUG=INFO all_reduce_perf -b 8 -e 8G -f 2 -g 8"
+        ],
+        "detail": "先看 PFC/ECN 计数是否有增长，再用 perftest 看单向带宽/延迟，最后用 NCCL 确认 transport 是 NET/IB 或 NET/RoCE（不是 NET/Socket）。"
+      }
+    ],
+    "envs": [
+      {
+        "name": "NCCL_IB_TC",
+        "value": "106",
+        "why": "和交换机 DSCP/TC 对齐；106 常见对应 DSCP 26 + ECN 位，改映射时同步改。"
+      },
+      {
+        "name": "NCCL_IB_GID_INDEX",
+        "value": "3",
+        "why": "RoCEv2 常用 GID 索引；用 show_gids 确认，选错能连但会掉速或走错 VLAN。"
+      },
+      {
+        "name": "NCCL_IB_HCA",
+        "value": "mlx5_0,mlx5_1",
+        "why": "指定参与 RDMA 的网卡，避免选到管理口或未接线的口。"
+      },
+      {
+        "name": "NCCL_NET_GDR_LEVEL",
+        "value": "2",
+        "why": "允许 GPU Direct RDMA，避免 H2D/D2H 拷贝进入数据路径。"
+      },
+      {
+        "name": "NCCL_SOCKET_IFNAME",
+        "value": "eth0",
+        "why": "TCP bootstrap 用的网卡；和 NCCL_IB_HCA 分开配置，避免 bootstrap 走错。"
+      },
+      {
+        "name": "NCCL_DEBUG",
+        "value": "INFO",
+        "why": "确认 transport 和选中的 HCA/GID；排查第一项。"
+      }
+    ],
+    "note": "命令和默认值随 Mellanox/NVIDIA 驱动、固件、OS 与交换机版本变化；示例是「按顺序做对」的清单，不是可直接复制的生产脚本。",
+    "envTitle": "4.1 NCCL 侧的关键环境变量"
+  },
+  "lossless": {
+    "title": "5 · 如何实现无损：PFC 兜底 + ECN/DCQCN 细调",
+    "lead": "无损不是「PFC 开满」，而是分层防御：ECN 在队列还小的时候提前降速，PFC 在队列接近溢出时兜底。两者阈值关系、队列范围和 buffer/headroom 必须一起设计。",
+    "principles": [
+      "分层防御：ECN 先于 PFC 生效（ECN max 阈值低于 PFC XOFF），让发送端先细粒度降速，PFC 只处理突发和反馈延迟内的尖峰。",
+      "只对 lossless 队列开：PFC 只开 RDMA 队列（如 priority 3），普通业务/管理/存储各走各的队列，避免一停全停。",
+      "队列与阈值一一对应：每队列独立的 ECN WRED 阈值和 PFC XOFF/XON；不要把不同业务混进同一个 lossless 队列。",
+      "headroom 要覆盖在途包：PFC 从 XOFF 触发到上游真正停下来，链路上还有在途字节；headroom ≥ 端口速率 × 往返时间，否则 pause 没生效就先溢出。",
+      "CNP 不能丢：CNP 用高优先级 DSCP（如 48/TC 6）发送，不能被 PFC 或拥塞丢掉，否则发送端收不到降速信号。",
+      "PFC watchdog：持续 pause / PFC storm 会让整片网络卡死；开启 watchdog，检测异常长 pause 时丢弃并告警，而不是无限等。",
+      "PFC 不是越多越好：跨设备 PFC 域要最小化，避免 pause 传播成 deadlock；非必要队列一律不开。",
+      "验证闭环：配置后看 PFC/ECN 计数、perftest 延迟分布、NCCL busbw，确认「没丢包且没有持续 pause」。"
+    ],
+    "thresholdText": "示例阈值关系（归一化账本）：ECN min=2 < ECN max=5 < PFC XOFF=6 < buffer=20；ECN 先标记，PFC 后兜底。PFC 的 headroom 需要覆盖 pause 反应时间内的在途数据。",
+    "risks": [
+      "PFC storm：某队列持续拥塞导致 pause 不断扩散，整片网络吞吐塌陷。",
+      "deadlock：PFC 依赖环 + 多队列互相等待，流量永久停住。",
+      "HOL blocking：一个 lossless 队列被 pause，可能拖慢共享同一出口的其他业务。",
+      "单向 PFC：只配了一个方向，反方向拥塞时仍然丢包。",
+      "CNP 被丢：发送端收不到降速信号，ECN 形同虚设。"
+    ],
+    "scenarios": [
+      {
+        "id": "a",
+        "name": "A · 只有 PFC",
+        "pfc": "on",
+        "ecn": "off",
+        "drops": "0.0 MB",
+        "throughput": "9.38 MB/t",
+        "avgq": "3.75 MB",
+        "mark": "0.0%",
+        "pauses": "500",
+        "reading": "PFC 兜底能力强、零丢包，但频繁暂停打断链路，吞吐降到 9.38；恢复靠 pause/XON 周期，延迟抖动大，PFC storm 风险最高。"
+      },
+      {
+        "id": "b",
+        "name": "B · ECN + DCQCN（无 PFC）",
+        "pfc": "off",
+        "ecn": "on",
+        "drops": "136.8 MB",
+        "throughput": "9.66 MB/t",
+        "avgq": "3.30 MB",
+        "mark": "38.2%",
+        "pauses": "0",
+        "reading": "ECN 能细粒度降速，但没有 PFC 兜底：突发或反馈延迟内 buffer 溢出仍会丢包（136.8 MB），重传会进一步放大延迟。"
+      },
+      {
+        "id": "c",
+        "name": "C · ECN + DCQCN + PFC（推荐）",
+        "pfc": "on",
+        "ecn": "on",
+        "drops": "0.0 MB",
+        "throughput": "9.55 MB/t",
+        "avgq": "1.66 MB",
+        "mark": "17.1%",
+        "pauses": "59",
+        "reading": "ECN 提前降速把队列压在低位，PFC 只在少数尖峰兜底：零丢包、pause 约 A 的 1/8.5（59 vs 500），吞吐略高于纯 PFC。这是推荐组合。"
+      }
+    ],
+    "scenarioTitle": "5.1 交互：三种组合，丢包 / pause / 吞吐怎么变",
+    "scenarioNote": "数据来自 example/ecn_sim.py 的简化账本（T=2000 tick，ECN min=2/max=5，XOFF=6）；真实网络要看具体端口速率、RTT 和 buffer。",
+    "note": "ECN 与 PFC 不是二选一：ECN 是「提前踩刹车」，PFC 是「最后的安全带」；没有安全带的 ECN 会在突发时丢包，只有安全带的 PFC 会让车一直顿挫。"
+  },
+  "priority": {
+    "title": "6 · RDMA 业务优先级与 PFC 设计",
+    "lead": "无损网络的核心不是「开 PFC」，而是「给正确的流量开正确的队列」：RDMA lossless 一个队列，CNP 一个高优先级队列，存储/管理/普通业务各自隔离。DSCP → TC → PFC priority 必须端到端对齐。",
+    "mapping": [
+      {
+        "traffic": "RDMA lossless（TP all-reduce / PD KV）",
+        "dscp": "26",
+        "tc": "3",
+        "pfc": "priority 3 开",
+        "ecn": "on（lossless 队列）",
+        "note": "NCCL_IB_TC=106 常见对应 DSCP 26 + ECN 位；交换机 trust DSCP 映射到 TC 3，PFC 只保护 TC 3。"
+      },
+      {
+        "traffic": "CNP（拥塞通知）",
+        "dscp": "48",
+        "tc": "6",
+        "pfc": "不开（高优先级调度）",
+        "ecn": "off",
+        "note": "CNP 是控制报文，必须比数据更早被调度、不能被丢；用独立高优先级队列。"
+      },
+      {
+        "traffic": "存储（NVMe-oF 等）",
+        "dscp": "10",
+        "tc": "2",
+        "pfc": "可选，独立域",
+        "ecn": "按需",
+        "note": "存储和 RDMA 若都要无损，最好各自独立 PFC priority/域，避免互相暂停；不需要无损的存储走 best-effort。"
+      },
+      {
+        "traffic": "管理 / 控制面",
+        "dscp": "8",
+        "tc": "1",
+        "pfc": "off",
+        "ecn": "off",
+        "note": "管理流量不能被 PFC 暂停，否则拥塞时连排障都进不去。"
+      },
+      {
+        "traffic": "普通业务 / best-effort",
+        "dscp": "0",
+        "tc": "0",
+        "pfc": "off",
+        "ecn": "off（或按需）",
+        "note": "默认队列，不参与无损；PFC 只开必要队列，减少 pause 传播和 HOL。"
+      }
+    ],
+    "rules": [
+      "交换机 ingress 必须 trust DSCP：否则 host 打的 DSCP 会被端口默认值覆盖。",
+      "DSCP → TC 映射端到端一致：host、leaf、spine 用同一张表；跨设备不一致会出现「标记了但保护错队列」。",
+      "PFC priority 与 TC 对齐：PFC 3 保护的是 TC 3 的队列，不是「所有 RDMA 流量」。",
+      "NCCL_IB_TC 与交换机映射对齐：改 DSCP/TC 后同步改 NCCL_IB_TC，否则 NCCL 流量进错队列。",
+      "多业务隔离：不要把存储、管理、普通业务塞进 lossless 队列；PFC 域越小越安全。",
+      "CNP 独立高优先级：DSCP 48/TC 6，确保拥塞时也能及时回传。"
+    ],
+    "mappingTitle": "6.1 交互：选业务类型，看 DSCP → TC → PFC/ECN",
+    "mappingNote": "映射值是示例，必须与交换机/网卡/NCCL 三侧对齐；不同集群可能用不同 DSCP（如 26/TC3 或 24/TC3），关键是全链路一致。",
+    "note": "PFC 只在「同一无损域内、必要队列上」开启；跨域或全队列开启会把局部拥塞放大成全局暂停。"
+  },
+  "ecn": {
+    "title": "7 · ECN 优先级与阈值设计",
+    "lead": "ECN 阈值决定「多早踩刹车」：设得太早，流量长期低速率、吞吐下降；设得太晚，PFC 频繁兜底、甚至先丢包。阈值要按队列配置，并且和 PFC 的 XOFF/XON 形成明确的先后关系。",
+    "design": [
+      "只标记 ECT/CE：交换机只对打了 ECT 的报文做 WRED 标记，Not-ECT 流量不参与；host 必须把 RDMA 流量标成 ECT。",
+      "每队列独立阈值：RDMA lossless、存储、普通业务各队列分别配置 min/max/max_p，不要共用一套。",
+      "ECN 早于 PFC：ECN max 阈值必须低于 PFC XOFF（示例 2/5 < XOFF 6），让发送端先降速，PFC 只兜底。",
+      "标记率要适中：过高会让 DCQCN 过度降速、吞吐掉；过低则队列持续上涨、PFC 频繁（见仿真阈值扫描）。",
+      "max 不能高于 XOFF：如果 ECN max ≥ PFC XOFF，PFC 会先触发，ECN 基本失效（仿真里 6/12 退化成只有 PFC）。",
+      "CNP 不被丢：CNP 走独立高优先级队列，避免拥塞时反馈被丢。",
+      "与 PFC 队列对应：ECN 标记的队列和 PFC 保护的队列必须是同一个 TC，否则降速和兜底作用在不同流量上。"
+    ],
+    "sim": {
+      "link": 10,
+      "buf": 20,
+      "xoff": 6,
+      "xon": 3,
+      "r0": 12.5,
+      "rmin": 8.5,
+      "rmax": 12.5,
+      "rtt": 6,
+      "g": 0.0625,
+      "rai": 0.15,
+      "cnpInterval": 2,
+      "maxp": 0.2,
+      "ticks": 2000
+    },
+    "params": [
+      {
+        "name": "ECN min",
+        "value": "2 MB（示例）",
+        "why": "低于它不标记；设太低会过早降速。"
+      },
+      {
+        "name": "ECN max",
+        "value": "5 MB（示例）",
+        "why": "高于它全部标 CE；必须低于 PFC XOFF（6 MB）。"
+      },
+      {
+        "name": "max_p",
+        "value": "0.2（20%）",
+        "why": "min~max 区间的最大标记概率；太高过度降速，太低降速不足。"
+      },
+      {
+        "name": "PFC XOFF / XON",
+        "value": "6 / 3 MB（示例）",
+        "why": "队列到 XOFF 发 pause，到 XON 恢复；要留 headroom 覆盖在途包。"
+      },
+      {
+        "name": "DCQCN g",
+        "value": "1/16",
+        "why": "α 的更新权重；越大反应越快、也越容易振荡。"
+      },
+      {
+        "name": "RAI",
+        "value": "0.15 MB/tick",
+        "why": "无 CNP 时的加性增步长；决定恢复速度。"
+      }
+    ],
+    "calcTitle": "7.1 交互：拉 min/max/max_p，看 WRED 曲线与队列/速率收敛",
+    "calcNote": "曲线是 WRED 概率函数；下方小图用同一简化模型跑 300 tick（PFC 开、ECN 开、固定种子），展示队列与速率如何收敛。阈值单位 MB，归一化账本。",
+    "note": "真实 ECN 阈值通常按 buffer 字节数或百分比配置（如 200 KB/500 KB），并用 EWMA 队列长度；这里用 MB/tick 的归一化单位，重点看相对关系。"
+  },
+  "tuning": {
+    "title": "8 · 排障与验证：计数器、压测与常见坑",
+    "lead": "无损配置对不对，不能靠「配了」判断，要看计数器和压测曲线：PFC/ECN 计数、pause 时长、丢包、延迟分布、NCCL busbw。下面每一条都能落到命令或指标。",
+    "commands": [
+      {
+        "cmd": "ethtool -S eth0 | grep -iE 'pfc|prio3|ecn|pause'",
+        "what": "看主机侧 PFC/ECN/pause 计数；持续增长的 pause 是异常信号。"
+      },
+      {
+        "cmd": "mlnx_qos -i eth0",
+        "what": "查看网卡 trust、PFC、priority 映射是否和规划一致。"
+      },
+      {
+        "cmd": "nv show qos / nv show interface counters",
+        "what": "Cumulus/Spectrum 侧查看 PFC、ECN、队列丢弃计数。"
+      },
+      {
+        "cmd": "show interface counters / show qos",
+        "what": "Arista EOS 侧查看每端口/每队列计数与 PFC 状态。"
+      },
+      {
+        "cmd": "ib_write_bw -d mlx5_0 --report_gbits -x 3",
+        "what": "RDMA 单向带宽与稳定性；配合不同消息大小看延迟。"
+      },
+      {
+        "cmd": "NCCL_DEBUG=INFO all_reduce_perf -b 8 -e 8G -f 2 -g 8",
+        "what": "端到端集合通信 busbw；确认 transport 是 IB/RoCE 而不是 Socket。"
+      },
+      {
+        "cmd": "nvidia-smi topo -m",
+        "what": "确认 GPU↔网卡的 NUMA/PCIe/NVLink 拓扑，避免跨 NUMA 拷贝。"
+      },
+      {
+        "cmd": "PFC watchdog 日志/计数器",
+        "what": "检测持续 pause、PFC storm、死锁；异常时告警而不是无限等待。"
+      }
+    ],
+    "checks": [
+      "端到端对表：host DSCP → 交换机 DSCP→TC → PFC priority → ECN 队列是否同一条链。",
+      "双向 PFC：两个方向的 XOFF/XON 都配了，避免单向 PFC 导致反向丢包。",
+      "MTU 一致：RoCE MTU 与 IP MTU 端到端对齐，跨设备不要一半 4200 一半 9000。",
+      "CNP 路径：CNP 是否走高优先级队列、是否被 PFC/拥塞丢弃。",
+      "计数增长是否合理：PFC pause 少量增长正常，持续增长说明 ECN 阈值/速率没调好。",
+      "压测形状：从小消息扫到大消息看 busbw 曲线，同时看 P99 延迟是否抖动。"
+    ],
+    "pitfalls": [
+      "GID index 选错：连接能建立但性能异常，或走错 VLAN。",
+      "trust DSCP 没开：host 的 DSCP 被端口默认值覆盖，PFC 保护错队列。",
+      "DSCP/TC/PFC 三侧不一致：NCCL_IB_TC 与交换机映射不匹配，RDMA 流量进 best-effort。",
+      "MTU 不一致：RoCE 连接能建但性能异常，甚至直接不通。",
+      "PFC 单向：只配了一个方向，反向拥塞时仍丢包。",
+      "CNP 被丢：ECN 标记了但发送端收不到，速率不降。",
+      "ECN max ≥ PFC XOFF：PFC 先触发，ECN 形同虚设。",
+      "headroom 不够：pause 还在路上，buffer 已经溢出丢包。",
+      "PFC 开太多队列：pause 扩散、HOL、甚至 PFC storm/deadlock。"
+    ],
+    "note": "排障顺序：先确认「有没有走 RDMA」，再看「优先级/PFC 是否作用在正确队列」，最后才调 ECN 阈值和速率参数。"
+  },
+  "codeSection": {
+    "title": "9 · 仿真代码：把 ECN/DCQCN/PFC 账本跑一遍",
+    "lead": "这段纯 Python 把交换机队列、ECN/WRED 标记、CNP 延迟反馈、DCQCN 速率更新和 PFC pause 写成可跑的简化模型，对照三种组合并扫描 ECN 阈值。代码在 example/ecn_sim.py，可直接运行；网页里的示例输出就是它的 stdout。",
+    "file": "example/ecn_sim.py",
+    "run": "python3 example/ecn_sim.py",
+    "notes": [
+      "场景 A/B/C 对照：只有 PFC / ECN+DCQCN / 二者结合，打印吞吐、平均队列、ECN 标记率、PFC pause 次数和丢包。",
+      "ECN 阈值扫描：min/max 从 1/3 到 6/12，观察标记率、队列、吞吐和 pause 次数的变化；max 高于 XOFF 时退化为只有 PFC。",
+      "断言：PFC 开时丢包为 0、ECN 把 pause 从 500 降到 59、标记率随阈值单调变化、仿真确定性可复现。",
+      "最后一行把结论落回推理：RoCEv2 上的 TP all-reduce / PD KV 丢包会触发重传，直接表现为 TPOT/TTFT 抖动。"
+    ]
+  },
+  "check": {
+    "title": "10 · 自查清单与自问",
+    "lead": "能不看资料回答下面几条，并说清「配哪一侧、看哪个计数器」，才算真的会配无损网络。",
+    "checklist": [
+      "能说清 RoCEv2 为什么怕丢包，以及 PFC 与 ECN/DCQCN 各自解决什么。",
+      "能画出 ECN 标记的完整链路：host ECT → 交换机 WRED → CE → 接收端 CNP → 发送端 DCQCN。",
+      "能解释 ECN 两位（ECT/CE）与 WRED 的 min/max/max_p，并说出「ECN 阈值必须早于 PFC XOFF」。",
+      "能列出交换机侧至少 5 件事：trust DSCP、DSCP→TC、每队列 PFC、每队列 ECN WRED、buffer/headroom、MTU、PFC 域。",
+      "能列出服务器侧至少 5 件事：RoCEv2、cma_roce_tos、mlnx_qos PFC/trust、GID/MTU、IRQ/GPU Direct、NCCL_IB_TC。",
+      "能解释 DSCP 26 → TC 3 → PFC priority 3 → NCCL_IB_TC=106 的对应关系。",
+      "能说明 PFC 的风险（storm/deadlock/HOL）和为什么只对必要队列开。",
+      "能用计数器与 perftest 验证：PFC/ECN 计数、单向 RDMA 带宽、NCCL busbw、P99 延迟。"
+    ],
+    "questions": [
+      {
+        "q": "PFC 和 ECN/DCQCN 是什么关系？只开一个行不行？",
+        "a": "分工关系：ECN/DCQCN 在队列还小的时候提前标记、让发送端细粒度降速；PFC 在队列接近溢出时暂停上游兜底。只开 PFC 会频繁暂停、吞吐抖动、PFC storm 风险高；只开 ECN 在突发或反馈延迟内仍可能溢出丢包。推荐两者配合，且 ECN 阈值低于 PFC XOFF。"
+      },
+      {
+        "q": "ECN 阈值怎么设？min/max/max_p 和 PFC XOFF 是什么关系？",
+        "a": "按队列设：min 以下不标记，min~max 按 p=(Q−min)/(max−min)×max_p 概率标记，max 以上全标。关键约束是 ECN max < PFC XOFF（例如 5 < 6），让 ECN 先降速、PFC 只兜底；max_p 决定标记强度，过高过度降速、过低则 PFC 频繁。还要留 headroom 覆盖 pause 在途数据。"
+      },
+      {
+        "q": "交换机侧和服务器侧各要做哪几件事？",
+        "a": "交换机：trust DSCP、DSCP→TC 映射、每队列 buffer/headroom、只对 lossless 队列开 PFC、每队列 ECN WRED（ECN 早于 XOFF）、PFC watchdog、MTU 一致、PFC 域边界。服务器：确认 HCA/GID/链路、开 RoCEv2（cma_roce_mode）、设 ToS/TC（cma_roce_tos）、mlnx_qos trust DSCP 与 PFC、MTU、IRQ/GPU Direct、NCCL_IB_TC/GID/HCA/GDR 对齐。"
+      },
+      {
+        "q": "DSCP、TC、PFC priority 和 NCCL_IB_TC 怎么对应？",
+        "a": "示例：RDMA lossless 用 DSCP 26 → 交换机映射到 TC 3 → PFC 只保护 priority 3；NCCL_IB_TC=106 常见对应 DSCP 26 加 ECN 位（26<<2 | 2）。改 DSCP/TC 映射后必须同步改 NCCL_IB_TC，并保证 host、leaf、spine 三侧一致；CNP 用 DSCP 48/TC 6 的高优先级队列。"
+      },
+      {
+        "q": "为什么 PFC 不是越多越好？PFC storm / 死锁怎么来的？",
+        "a": "PFC 是链路级暂停：某队列拥塞会向上游发 pause，上游又可能把暂停传给更上游，形成 PFC storm；多队列互相等待、PFC 依赖成环时会 deadlock；一个 lossless 队列被暂停还可能 HOL 阻塞同端口其他业务。所以要限制 PFC 域、只开必要队列、开 watchdog，并靠 ECN 提前降速减少 pause。"
+      },
+      {
+        "q": "怎么证明你的无损配置真的生效了？",
+        "a": "看四类证据：① 交换机/网卡 PFC 与 ECN 计数（ethtool -S、nv show、show interface counters）不是异常持续增长；② 压测 ib_write_bw 的带宽和延迟分布稳定；③ NCCL_DEBUG=INFO 确认 transport 是 NET/IB 或 NET/RoCE 且 busbw 正常；④ 拥塞注入下不丢包、P99 延迟不抖、PFC watchdog 无告警。"
+      }
+    ]
+  },
+  "lesson": {
+    "think": [
+      {
+        "q": "PFC 和 ECN/DCQCN 的分工是什么？",
+        "options": [
+          "ECN 提前细粒度降速，PFC 在队列接近溢出时兜底",
+          "PFC 负责提前降速，ECN 负责暂停链路",
+          "两者互斥，只能开一个"
+        ],
+        "answer": 0,
+        "why": "ECN/DCQCN 在队列还小的时候标记 CE、让发送端降速；PFC 在 XOFF 处暂停上游，防止已经来不及降速的流量丢包。推荐组合是 ECN 阈值低于 PFC XOFF、PFC 只对 lossless 队列开。"
+      },
+      {
+        "q": "RDMA lossless 流量常见的 DSCP → TC → PFC priority 映射是哪一组？",
+        "options": [
+          "DSCP 26 → TC 3 → PFC priority 3（NCCL_IB_TC=106 常与之对齐）",
+          "DSCP 0 → TC 0 → PFC priority 0",
+          "DSCP 48 → TC 6 → PFC priority 6（给 CNP 用）"
+        ],
+        "answer": 0,
+        "why": "示例映射是 RDMA lossless 用 DSCP 26/TC 3/PFC 3；NCCL_IB_TC=106 常见对应 DSCP 26 加 ECN 位。DSCP 48/TC 6 一般留给 CNP 这类高优先级控制流量。"
+      },
+      {
+        "q": "ECN 的阈值应该比 PFC XOFF 高还是低？",
+        "options": [
+          "低：让 ECN 先标记、先降速，PFC 只兜底",
+          "高：让 PFC 先触发，ECN 再补",
+          "无所谓，两者独立"
+        ],
+        "answer": 0,
+        "why": "ECN max 必须低于 PFC XOFF（例如 max=5、XOFF=6），否则队列先到 XOFF 触发 pause，ECN 根本来不及生效（仿真里 6/12 就退化成只有 PFC）。"
+      }
+    ],
+    "reflect": [
+      {
+        "q": "为什么只有 PFC 的网络会吞吐下降、延迟抖动，而 ECN+PFC 更平稳？",
+        "ref": "PFC 是链路级暂停：队列到 XOFF 就停上游，恢复靠 XON 周期，链路会周期性空转；而且暂停会扩散，增加 PFC storm 风险。ECN 在队列还小时就让发送端降速，队列维持在低位，PFC 只在尖峰兜底。仿真实例：只有 PFC 吞吐 9.38、pause 500；ECN+PFC 吞吐 9.55、pause 59、零丢包。"
+      },
+      {
+        "q": "headroom 为什么必须覆盖「pause 反应时间内的在途包」？怎么估算？",
+        "ref": "交换机从判断队列到 XOFF 发出 pause，再到上游真正停发，中间有链路传播、处理、排队时间；这期间在途数据仍会到达，必须由 headroom 吸收，否则 pause 还没生效 buffer 就溢出。量级估算：headroom ≥ 端口速率 × 往返反应时间（例如 400 Gb/s × 2 µs ≈ 100 KB），再按缓存/芯片实现留余量。"
+      },
+      {
+        "q": "多业务集群里，DSCP/TC/PFC 应该怎么划分，才能避免一个业务把整网停住？",
+        "ref": "按业务重要性/是否无损分队列：RDMA lossless 一个队列（PFC 开）、CNP 一个高优先级队列、存储独立域（如需无损则独立 PFC priority）、管理和 best-effort 不开 PFC。PFC 域越小越安全，交换机 trust DSCP 且三侧映射一致；跨域流量不要共用同一个 PFC priority。"
+      },
+      {
+        "q": "如果线上出现 NCCL 掉速但没报错，你会按什么顺序排查？",
+        "ref": "先确认 transport：NCCL_DEBUG=INFO 是 NET/IB 或 NET/RoCE 还是 Socket；再看 GID/MTU/TC 与交换机映射是否一致；然后看 PFC/ECN/pause 计数和 PFC watchdog；接着用 ib_write_bw 和 all_reduce_perf 看带宽/延迟分布；最后才调 ECN 阈值和 DCQCN 参数。优先修「走错队列/走错链路」，再调拥塞控制。"
+      }
+    ],
+    "summary": {
+      "brief": "RoCEv2 怕丢包，无损 = 不丢包 + 低延迟 + 高吞吐：PFC 在 XOFF 兜底暂停，ECN/DCQCN 提前标记 CE 并降速；交换机要 trust DSCP、DSCP→TC→PFC/ECN 对齐、留 headroom，服务器要配 RoCEv2/ToS/PFC/GID/MTU/NCCL_IB_TC；ECN max 必须低于 PFC XOFF，PFC 只开必要队列。",
+      "detail": "链路：host 打 ECT → 交换机 trust DSCP 入队 → 每队列 WRED（Q<min 不标；min≤Q<max 按 (Q−min)/(max−min)×max_p 标 CE；Q≥max 全标）→ 接收端回 CNP → 发送端 DCQCN（α←(1−g)α+g，R←R(1−α/2)；无 CNP 时衰减 + RAI）。PFC 802.1Qbb 在 XOFF 发 pause、XON 恢复。交换机：leaf-spine/rail-optimized、无阻塞/收敛比、MTU 一致、trust DSCP、DSCP→TC、每队列 buffer/headroom、PFC 只开 lossless 队列、每队列 ECN WRED、PFC watchdog、PFC 域边界。服务器：cma_roce_mode -m 2、cma_roce_tos、mlnx_qos trust dscp/PFC、GID index 3、MTU 4200/9000、IRQ 绑核、GPU Direct、NCCL_IB_TC=106/GID/HCA/GDR。优先级示例：RDMA DSCP 26/TC3/PFC3、CNP DSCP 48/TC6、存储/管理/best-effort 各队列。仿真：A 只有 PFC（0 丢包/500 pause/吞吐 9.38）；B ECN+DCQCN 无 PFC（丢 136.8 MB/标记 38.2%/吞吐 9.66）；C 结合（0 丢包/59 pause/标记 17.1%/吞吐 9.55），阈值扫描 1/3→6/12 标记率 16.2%→0、pause 70→500；ECN max ≥ XOFF 时退化成只有 PFC。"
+    },
+    "attribution": [
+      {
+        "id": "ecn-m1",
+        "label": "RDMA 流量的模式与拥塞点",
+        "bucket": "model",
+        "why": "TP 每层小 all-reduce、PD 大 KV 迁移、MoE all-to-all 突发，这些消息大小/频率由模型和并行方式决定；它们决定拥塞是持续还是突发，从而决定 ECN/PFC 阈值怎么选。"
+      },
+      {
+        "id": "ecn-g1",
+        "label": "网卡/交换机的 buffer、headroom 与 PFC/ECN 能力",
+        "bucket": "gpu",
+        "why": "PFC 能否不丢包取决于端口 buffer 和 headroom 是否覆盖在途包；CNP 生成、DCQCN 速率更新、WRED 标记都由网卡/交换机硬件实现。"
+      },
+      {
+        "id": "ecn-e1",
+        "label": "DSCP→TC→PFC 映射、ECN 阈值与 NCCL_IB_TC",
+        "bucket": "engine",
+        "why": "队列怎么划、PFC 开哪个 priority、ECN 阈值多少、NCCL_IB_TC/GID/HCA 怎么设，都是推理引擎/网络运维的配置决策；配错就会保护错流量或让 NCCL 回退 Socket。"
+      }
+    ]
+  }
+}

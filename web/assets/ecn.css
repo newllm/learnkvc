@@ -1,0 +1,334 @@
+/* ECN + DCQCN chapter — chapter-local styles only.
+ * Every selector targets an .ecn-* hook and every colour comes from a theme
+ * variable, so light mode adapts without a hard-coded palette.
+ * Shared chrome (page-title / page-lead / sec-title / sec-sub / table-wrap /
+ * tagtable / net-cards / net-card / sim-field / compare / stat / note /
+ * thinkbox / train-run / train-code) is reused from style.css. */
+
+/* ------------------------------------------------------- layered map */
+
+.ecn-layers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+.ecn-layer {
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+}
+.ecn-layer b { font-size: 13px; }
+.ecn-where {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--accent-2);
+  font: 10px var(--mono);
+}
+.ecn-layer p {
+  margin: 6px 0 0;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.ecn-steps {
+  margin: 12px 0;
+  padding-left: 22px;
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.85;
+}
+.ecn-steps li { margin: 3px 0; }
+
+.ecn-vendor { margin: 14px 0; }
+.ecn-vendor > b {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12.5px;
+  color: var(--accent);
+}
+.ecn-vendor .train-run { margin: 6px 0; }
+
+.ecn-server-step {
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.ecn-server-step > b { font-size: 13px; }
+.ecn-server-step > p {
+  margin: 5px 0 0;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.ecn-server-step .train-run { margin-bottom: 0; }
+
+.ecn-callout {
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-2);
+  border-radius: 8px;
+}
+.ecn-callout b { font-size: 12px; color: var(--accent-2); }
+.ecn-callout p {
+  margin: 5px 0 0;
+  color: var(--fg);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+.ecn-principles li { color: var(--fg); }
+.ecn-risks li { color: var(--accent-2); }
+.ecn-pitfalls li { color: var(--red); }
+
+/* ------------------------------------------------------- scenario cards */
+
+.ecn-scenario-host { margin: 8px 0 2px; }
+.ecn-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.ecn-scenario {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 9px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+}
+.ecn-scenario b { font-size: 12px; font-weight: 500; }
+.ecn-scenario:hover { border-color: var(--faint); }
+.ecn-scenario.on { border-color: var(--accent); background: var(--hl); }
+.ecn-badge {
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font: 9.5px var(--mono);
+  color: var(--dim);
+}
+.ecn-badge.pfc { color: var(--accent-2); border-color: var(--accent-2); }
+.ecn-badge.ecn { color: var(--accent); border-color: var(--accent); }
+.ecn-badge.both { color: var(--green); border-color: var(--green); }
+.ecn-scen-result {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.ecn-scen-result p {
+  margin: 8px 0 0;
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+/* -------------------------------------------------------- DSCP mapping */
+
+.ecn-mapping-host { margin: 8px 0 2px; }
+.ecn-mapping-buttons,
+.ecn-topo-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.ecn-map-btn,
+.ecn-topo-btn {
+  padding: 7px 11px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ecn-map-btn:hover,
+.ecn-topo-btn:hover { border-color: var(--faint); }
+.ecn-map-btn.on,
+.ecn-topo-btn.on {
+  border-color: var(--accent);
+  background: var(--hl);
+  color: var(--fg);
+}
+.ecn-map-result {
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.ecn-map-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.ecn-map-field {
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.ecn-map-field span { display: block; color: var(--dim); font-size: 10.5px; }
+.ecn-map-field b {
+  display: block;
+  margin-top: 3px;
+  color: var(--fg);
+  font: 12px var(--mono);
+}
+
+/* ---------------------------------------------------------- topology */
+
+.ecn-topo-host { margin: 8px 0 2px; }
+.ecn-topo-diagram {
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.ecn-topo-svg { display: block; width: 100%; height: auto; }
+.ecn-topo-node {
+  fill: var(--panel-2);
+  stroke: var(--line);
+  stroke-width: 1.2;
+}
+.ecn-topo-node.spine { stroke: var(--accent); }
+.ecn-topo-node.leaf { stroke: var(--accent-2); }
+.ecn-topo-node.host { stroke: var(--green); }
+.ecn-topo-node-label {
+  fill: var(--fg);
+  font: 9px var(--mono);
+}
+.ecn-topo-link {
+  stroke: var(--faint);
+  stroke-width: 1;
+}
+.ecn-topo-link.dim { stroke: var(--line); stroke-dasharray: 3 3; }
+.ecn-topo-label {
+  fill: var(--dim);
+  font: 10px var(--mono);
+}
+.ecn-topo-result {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.ecn-topo-result b { font-size: 12.5px; color: var(--accent); }
+.ecn-topo-result p {
+  margin: 6px 0 0;
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+
+/* ------------------------------------------------------------- WRED */
+
+.ecn-wred-host { margin: 8px 0 2px; }
+.ecn-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+.ecn-controls .sim-field b {
+  color: var(--accent);
+  font: 11px var(--mono);
+}
+.ecn-controls input[type="range"] { width: 100%; accent-color: var(--accent); }
+.ecn-wred {
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 10px 0;
+}
+.ecn-wred-svg { display: block; width: 100%; height: auto; }
+.ecn-wred-grid { stroke: var(--line); stroke-width: 1; }
+.ecn-wred-curve {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.ecn-wred-mark {
+  stroke: var(--accent-2);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+}
+.ecn-wred-xoff {
+  stroke: var(--red);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 2;
+}
+.ecn-wred-label { fill: var(--dim); font: 10px var(--mono); }
+.ecn-wred-label.xoff { fill: var(--red); }
+.ecn-wred-axis { fill: var(--faint); font: 10px var(--mono); }
+.ecn-tone.ok { color: var(--green); }
+.ecn-tone.bad { color: var(--red); }
+
+.ecn-trace {
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 10px 0;
+}
+.ecn-trace-svg { display: block; width: 100%; height: auto; }
+.ecn-trace-grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 4 3; }
+.ecn-trace-axis { stroke: var(--faint); stroke-width: 1; }
+.ecn-trace-queue { fill: none; stroke: var(--accent); stroke-width: 1.8; }
+.ecn-trace-rate { fill: none; stroke: var(--accent-2); stroke-width: 1.8; }
+.ecn-trace-mark { fill: none; stroke: var(--green); stroke-width: 1.3; stroke-dasharray: 4 3; }
+.ecn-trace-label { fill: var(--faint); font: 9.5px var(--mono); }
+.ecn-trace-label.queue { fill: var(--accent); }
+.ecn-trace-label.rate { fill: var(--accent-2); }
+.ecn-trace-label.mark { fill: var(--green); }
+
+/* ----------------------------------------------------------------- tables */
+
+.ecn-env-table td:first-child,
+.ecn-tuning-table td:first-child { white-space: nowrap; }
+.ecn-map-table td { vertical-align: top; }
+.ecn-param-table td { vertical-align: top; }
+
+/* --------------------------------------------------------- light + motion */
+
+html[data-theme="light"] .ecn-topo-node { fill: var(--panel-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ecn-wred-svg,
+  .ecn-trace-svg { transition: none; }
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 980px) {
+  .ecn-layers { grid-template-columns: minmax(0, 1fr); }
+  .ecn-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ecn-map-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ecn-scenarios { flex-direction: column; }
+  .ecn-scenario { align-items: flex-start; }
+}
+
+@media (max-width: 480px) {
+  .ecn-controls { grid-template-columns: minmax(0, 1fr); }
+  .ecn-map-fields { grid-template-columns: minmax(0, 1fr); }
+}

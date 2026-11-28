@@ -12,7 +12,7 @@
 
   const kv = D.kv;
   const MAX_GEN = TR.generated.length;
-  const VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "calc", "train", "net", "feedback", "homework"];
+  const VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "calc", "train", "net", "nccl", "cuda", "ecn", "gpu", "opt", "feedback"];
   const state = { view: "think", step: 0, genStep: MAX_GEN, playing: false, timer: null };
 
   const $ = (sel) => document.querySelector(sel);
@@ -25,8 +25,12 @@
     calc: $("#view-calc"),
     train: $("#view-train"),
     net: $("#view-net"),
+    nccl: $("#view-nccl"),
+    cuda: $("#view-cuda"),
+    ecn: $("#view-ecn"),
+    gpu: $("#view-gpu"),
+    opt: $("#view-opt"),
     feedback: $("#view-feedback"),
-    homework: $("#view-homework"),
     tabs: Array.from(document.querySelectorAll("#tabs [data-view]")),
     code: $("#code"),
     codeMeta: $("#code-meta"),
@@ -44,8 +48,12 @@
       paged: $("#stepnav-paged"),
       train: $("#stepnav-train"),
       net: $("#stepnav-net"),
+      nccl: $("#stepnav-nccl"),
+      cuda: $("#stepnav-cuda"),
+      ecn: $("#stepnav-ecn"),
+      gpu: $("#stepnav-gpu"),
+      opt: $("#stepnav-opt"),
     },
-    homeworkBody: $("#homework"),
     doc: $("#doc-card"),
     viz: $("#viz"),
     dots: $("#dots"),
@@ -57,8 +65,18 @@
     calcBody: $("#calc"),
     trainBody: $("#train-body"),
     netBody: $("#net-body"),
+    ncclBody: $("#nccl-body"),
+    cudaBody: $("#cuda-body"),
+    ecnBody: $("#ecn-body"),
+    gpuBody: $("#gpu-body"),
+    optBody: $("#opt-body"),
     trainMain: $("#train-main"),
     netMain: $("#net-main"),
+    ncclMain: $("#nccl-main"),
+    cudaMain: $("#cuda-main"),
+    ecnMain: $("#ecn-main"),
+    gpuMain: $("#gpu-main"),
+    optMain: $("#opt-main"),
     feedbackBody: $("#feedback"),
     ovWhy: $("#ov-why"),
   };
@@ -81,19 +99,26 @@
   state.prefix = { step: 0, scenario: "shared", snap: 0, playing: false, timer: null };
   state.paged = { step: 0, snap: 0, sel: "seq-b", playing: false, timer: null };
   const CHAPTERS = ["kv", "prefix", "paged"];
-  const DOC_CHAPTERS = ["net", "train"];
+  const DOC_CHAPTERS = ["net", "train", "nccl", "cuda", "ecn", "gpu", "opt"];
   const ALL_CHAPTERS = CHAPTERS.concat(DOC_CHAPTERS);
   const DOC_SECTIONS = {
     net: ["why", "nccl", "sim", "roce", "pd", "codeSection", "check"],
     train: ["stepSection", "ledgerSection", "parallelSection", "scriptSection", "codeSection", "checkSection"],
+    nccl: ["why", "collectives", "ring", "tree", "model", "topology", "measure", "codeSection", "check"],
+    cuda: ["why", "exec", "memory", "coalesce", "roofline", "graph", "kv", "codeSection", "check"],
+    ecn: ["why", "layers", "switch", "server", "lossless", "priority", "ecn", "tuning", "codeSection", "check"],
+    gpu: ["why", "compare", "llm", "replace", "memory", "cache", "access", "eco", "codeSection", "check"],
+    opt: ["why", "map", "flash", "paged", "quant", "decode", "schedule", "model", "choose", "codeSection", "check"],
   };
+  const DOC_RENDERERS = { net: "net", train: "train", nccl: "nccl", cuda: "cuda", ecn: "ecn", gpu: "gpu", opt: "opt" };
+  const DOC_MODULES = { net: () => LK.net, train: () => LK.train, nccl: () => LK.nccl, cuda: () => LK.cuda, ecn: () => LK.ecn, gpu: () => LK.gpu, opt: () => LK.opt };
   const CH_NUMS = ["①", "②", "③"];
   const CH_SHORT = ["KV cache", "Prefix cache", "PagedAttention"];
   const STAGE_NAMES = ["think", "explore", "reflect", "summary"];
   state.stages = {};
-  state.docStep = { net: 0, train: 0 };
-  state.docLock = { net: 0, train: 0 };
-  state.navCollapsed = { kv: false, prefix: false, paged: false, net: false, train: false };
+  state.docStep = { net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, opt: 0 };
+  state.docLock = { net: 0, train: 0, nccl: 0, cuda: 0, ecn: 0, gpu: 0, opt: 0 };
+  state.navCollapsed = { kv: false, prefix: false, paged: false, net: false, train: false, nccl: false, cuda: false, ecn: false, gpu: false, opt: false };
   const world = { presets: D.anatomy.presets, gpus: D.anatomy.context.gpus };
 
   const esc = (s) =>
@@ -630,7 +655,7 @@
   /* ------------------------------------------------------- lesson stages */
 
   function docSectionSteps(ch) {
-    const d = ch === "net" ? D.net : D.train;
+    const d = D[ch];
     return DOC_SECTIONS[ch].map((key) => ({ title: (d[key] && d[key].title) || key }));
   }
 
@@ -712,10 +737,7 @@
         setStage(ch, "summary")
       );
     } else {
-      LK.workshop.renderStageSummary(docEl, ch, lesson.summary, () => renderChapterNav(ch), () => {
-        setView("homework");
-        updateHash();
-      });
+      LK.workshop.renderStageSummary(docEl, ch, lesson.summary, () => renderChapterNav(ch));
     }
   }
 
@@ -723,17 +745,17 @@
   /* ------------------------------------------------------- doc chapters */
 
   function docBody(ch) {
-    return ch === "net" ? el.netBody : el.trainBody;
+    return el[ch + "Body"];
   }
 
   function docMainEl(ch) {
-    return ch === "net" ? el.netMain : el.trainMain;
+    return el[ch + "Main"];
   }
 
   function renderDocStage(ch) {
     const view = el[ch];
     if (!view) return;
-    if (ch === "net" && LK.net && LK.net.stop) LK.net.stop();
+    stopDocChapter(ch);
     STAGE_NAMES.forEach((s) => view.classList.toggle("stage-" + s, stageOf(ch) === s));
     renderChapterNav(ch);
     const body = docBody(ch);
@@ -742,8 +764,7 @@
     const stage = stageOf(ch);
 
     if (stage === "explore") {
-      if (ch === "net") LK.net.render(body, D.net, world);
-      else LK.train.render(body, D.train, world);
+      renderDocChapter(ch, body);
       bindDocScroll(ch);
       main.scrollTop = 0;
       const i = chapterStepIndex(ch);
@@ -763,12 +784,28 @@
         renderChapterNav(ch), () => setStage(ch, "summary")
       );
     } else {
-      LK.workshop.renderStageSummary(body, ch, lesson.summary, () => renderChapterNav(ch), () => {
-        setView("homework");
-        updateHash();
-      });
+      LK.workshop.renderStageSummary(body, ch, lesson.summary, () => renderChapterNav(ch));
     }
     main.scrollTop = 0;
+  }
+
+  function docModule(ch) {
+    const get = DOC_MODULES[ch];
+    return get ? get() : null;
+  }
+
+  function stopDocChapter(ch) {
+    const mod = docModule(ch);
+    if (mod && typeof mod.stop === "function") mod.stop();
+  }
+
+  function renderDocChapter(ch, body) {
+    const mod = docModule(ch);
+    if (!mod || typeof mod.render !== "function") {
+      body.innerHTML = '<p class="note">章节渲染器未加载：检查 assets/' + DOC_RENDERERS[ch] + '.js。</p>';
+      return;
+    }
+    mod.render(body, D[ch], world);
   }
 
   function bindDocScroll(ch) {
@@ -817,6 +854,7 @@
     const max = Math.max(lesson.exploreMax || 0, idx + 1);
     if (max !== (lesson.exploreMax || 0)) LK.progress.saveLesson(ch, { exploreMax: max });
     if (em) em.textContent = max + " / " + steps.length;
+    syncNavGroups(ch);
   }
 
   function scrollMainToSection(ch, sec) {
@@ -949,9 +987,18 @@
   }
 
   function syncNavGroups(view) {
+    let stepNo = null;
+    if (CHAPTERS.includes(view) || DOC_CHAPTERS.includes(view)) {
+      stepNo = chapterStepIndex(view) + 1;
+    }
     navGroups.forEach((g) => {
       const items = Array.from(g.menu.querySelectorAll("[data-view]"));
-      const active = items.filter((b) => b.dataset.view === view)[0] || null;
+      const sameView = items.filter((b) => b.dataset.view === view);
+      const stepped = sameView.filter((b) => b.dataset.step);
+      const plain = sameView.filter((b) => !b.dataset.step);
+      const active =
+        stepped.filter((b) => +b.dataset.step === stepNo)[0] ||
+        (stepped.length ? null : plain[0] || sameView[0] || null);
       items.forEach((b) => b.setAttribute("aria-current", b === active ? "true" : "false"));
       g.trigger.classList.toggle("active", !!active);
       g.label.textContent = active ? g.base + " · " + active.dataset.short : g.base;
@@ -962,7 +1009,7 @@
 
   function setView(view) {
     if (!VIEWS.includes(view)) view = "think";
-    if (LK.net && LK.net.stop) LK.net.stop();
+    DOC_CHAPTERS.forEach((ch) => stopDocChapter(ch));
     if (state.playing) stopPlay(false);
     state.view = view;
     document.body.dataset.view = view;
@@ -999,13 +1046,8 @@
         presets: D.anatomy.presets,
         context: D.anatomy.context,
       });
-    } else if (view === "train" || view === "net") {
+    } else if (DOC_CHAPTERS.includes(view)) {
       renderDocStage(view);
-    } else if (view === "homework") {
-      LK.workshop.renderHomework(el.homeworkBody, D.homework, (ch) => {
-        setView(ch);
-        updateHash();
-      });
     } else if (view === "feedback") {
       LK.workshop.renderFeedback(el.feedbackBody, {
         preQuiz: D.think.quiz,
@@ -1014,7 +1056,7 @@
         summary: D.reflect.feedbackSummary,
         totalSteps:
           kv.steps.length + D.prefix.steps.length + D.paged.steps.length +
-          docSectionSteps("net").length + docSectionSteps("train").length,
+          DOC_CHAPTERS.reduce((n, ch) => n + docSectionSteps(ch).length, 0),
       });
     }
   }
@@ -1060,6 +1102,13 @@
       if (tab.disabled) return;
       tab.addEventListener("click", () => {
         if (!VIEWS.includes(tab.dataset.view)) return;
+        if (tab.dataset.step) {
+          const target = tab.dataset.view;
+          if (CHAPTERS.includes(target) || DOC_CHAPTERS.includes(target)) {
+            state.stages[target] = "explore";
+            setChapterStep(target, +tab.dataset.step - 1);
+          }
+        }
         setView(tab.dataset.view);
         updateHash();
       });

@@ -3,9 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>learnkvc · 思考式阅读器</title>
+<title>learnkvc · 启发式阅读器</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="assets/style.css?v=2026-11-23-10">
+<link rel="stylesheet" href="assets/style.css?v=2026-11-28-6">
+<link rel="stylesheet" href="assets/nccl.css?v=2026-11-28-6">
+<link rel="stylesheet" href="assets/cuda.css?v=2026-11-28-6">
+<link rel="stylesheet" href="assets/gpu.css?v=2026-11-28-6">
+<link rel="stylesheet" href="assets/ecn.css?v=2026-11-28-6">
+<link rel="stylesheet" href="assets/opt.css?v=2026-11-28-6">
 </head>
 <body data-view="think">
 <a class="skip" href="#main">跳到正文</a>
@@ -13,10 +18,25 @@
   <div class="brand">
     <span class="logo">λ</span>
     <span class="name">learnkvc</span>
-    <span class="sub">思考式阅读器</span>
+    <span class="sub">启发式阅读器</span>
   </div>
   <nav class="tabs" id="tabs">
     <button data-view="think">请回答 · 前测</button>
+    <div class="nav-group" data-nav-group>
+      <button class="nav-trigger" data-nav-trigger aria-haspopup="menu" aria-expanded="false" aria-controls="menu-gpu">
+        <span data-nav-label>认识 GPU</span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="nav-menu" id="menu-gpu" role="menu" aria-label="认识 GPU" hidden>
+        <button type="button" role="menuitem" data-view="gpu" data-short="总览" aria-current="false">
+          <span class="nav-item-title">认识 GPU · 总览</span>
+          <span class="nav-item-sub">CPU/GPU/NPU 分工、显存与 L1/L2、生态</span>
+        </button>
+        <button type="button" role="menuitem" data-view="cuda" data-short="CUDA" aria-current="false">
+          <span class="nav-item-title">CUDA 执行模型</span>
+          <span class="nav-item-sub">warp / 访存 / occupancy / roofline / graph</span>
+        </button>
+      </div>
+    </div>
     <div class="nav-group" data-nav-group>
       <button class="nav-trigger" data-nav-trigger aria-haspopup="menu" aria-expanded="false" aria-controls="menu-chapters">
         <span data-nav-label>认识 KVCache</span><span class="caret" aria-hidden="true">▾</span>
@@ -36,19 +56,37 @@
         </button>
       </div>
     </div>
-    <button data-view="net">推理网络</button>
+    <div class="nav-group" data-nav-group>
+      <button class="nav-trigger" data-nav-trigger aria-haspopup="menu" aria-expanded="false" aria-controls="menu-network">
+        <span data-nav-label>推理网络</span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="nav-menu" id="menu-network" role="menu" aria-label="推理网络" hidden>
+        <button type="button" role="menuitem" data-view="net" data-short="总览" aria-current="false">
+          <span class="nav-item-title">推理网络 · 总览</span>
+          <span class="nav-item-sub">NCCL / RoCE / PD 分离</span>
+        </button>
+        <button type="button" role="menuitem" data-view="nccl" data-short="NCCL" aria-current="false">
+          <span class="nav-item-title">NCCL 学习章节</span>
+          <span class="nav-item-sub">集合通信 / ring tree / 拓扑 / busbw</span>
+        </button>
+        <button type="button" role="menuitem" data-view="ecn" data-short="ECN" aria-current="false">
+          <span class="nav-item-title">ECN + DCQCN</span>
+          <span class="nav-item-sub">无损网络 / PFC / 优先级与阈值</span>
+        </button>
+      </div>
+    </div>
     <div class="nav-group" data-nav-group>
       <button class="nav-trigger" data-nav-trigger aria-haspopup="menu" aria-expanded="false" aria-controls="menu-tools">
-        <span data-nav-label>模型训练</span><span class="caret" aria-hidden="true">▾</span>
+        <span data-nav-label>认识模型</span><span class="caret" aria-hidden="true">▾</span>
       </button>
-      <div class="nav-menu" id="menu-tools" role="menu" aria-label="模型训练" hidden>
-        <button type="button" role="menuitem" data-view="train" data-short="训练教程" aria-current="false">
-          <span class="nav-item-title">模型训练</span>
-          <span class="nav-item-sub">显存账本 / 并行 / 最小训练脚本</span>
-        </button>
+      <div class="nav-menu" id="menu-tools" role="menu" aria-label="认识模型" hidden>
         <button type="button" role="menuitem" data-view="anatomy" data-short="模型解剖" aria-current="false">
           <span class="nav-item-title">模型解剖</span>
           <span class="nav-item-sub">参数 / 结构 / 模型包 / 运行时</span>
+        </button>
+        <button type="button" role="menuitem" data-view="train" data-short="模型训练" aria-current="false">
+          <span class="nav-item-title">模型训练</span>
+          <span class="nav-item-sub">显存账本 / 并行 / 最小训练脚本</span>
         </button>
         <button type="button" role="menuitem" data-view="calc" data-short="显存计算器" aria-current="false">
           <span class="nav-item-title">显存计算器</span>
@@ -56,11 +94,33 @@
         </button>
       </div>
     </div>
+    <div class="nav-group" data-nav-group>
+      <button class="nav-trigger" data-nav-trigger aria-haspopup="menu" aria-expanded="false" aria-controls="menu-opt">
+        <span data-nav-label>LLM 优化</span><span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="nav-menu" id="menu-opt" role="menu" aria-label="LLM 优化" hidden>
+        <button type="button" role="menuitem" data-view="opt" data-step="1" data-short="总览" aria-current="false">
+          <span class="nav-item-title">LLM 优化 · 总览</span>
+          <span class="nav-item-sub">先找瓶颈，再选技术</span>
+        </button>
+        <button type="button" role="menuitem" data-view="opt" data-step="3" data-short="FlashAttention" aria-current="false">
+          <span class="nav-item-title">FlashAttention</span>
+          <span class="nav-item-sub">IO-aware tiling / HBM 流量</span>
+        </button>
+        <button type="button" role="menuitem" data-view="opt" data-step="5" data-short="量化" aria-current="false">
+          <span class="nav-item-title">模型量化</span>
+          <span class="nav-item-sub">W4A16 / FP8 / KV 量化</span>
+        </button>
+        <button type="button" role="menuitem" data-view="opt" data-step="6" data-short="投机解码" aria-current="false">
+          <span class="nav-item-title">投机解码</span>
+          <span class="nav-item-sub">draft + verify / 加速比</span>
+        </button>
+      </div>
+    </div>
     <button data-view="feedback">学习反馈</button>
-    <button data-view="homework">课后作业</button>
   </nav>
   <button class="theme-btn" id="theme-toggle" aria-pressed="false" title="切换亮/暗主题">☀ 亮色</button>
-  <div class="badge">v2.2 · 学习闭环</div>
+  <div class="badge">v2.7 · 硬件认知</div>
 </header>
 
 <main id="main">
@@ -68,9 +128,9 @@
   <section class="view scrollable active" id="view-think">
     <div class="workshop">
       <p class="kicker">开始之前 · 先做前测</p>
-      <h1 class="page-title">先做 6 题前测，带着问题去学</h1>
+      <h1 class="page-title">先做 10 题前测，带着问题去学</h1>
       <p class="page-lead">
-        先凭直觉选完 6 题并提交，得到基线分数；学完后回到「学习反馈」做后测，对照前后变化。
+        先凭直觉选完 10 题并提交，得到基线分数；学完后回到「学习反馈」做后测，对照前后变化。
         分数不是考核——它帮你看见自己哪里真的懂了、哪里还要回去看。上方「本次学习设定」说明了锚点模型和 GPU 硬件；
         计算器里的显存/带宽数字都会随你选的 GPU 变化。
       </p>
@@ -172,15 +232,52 @@
     </div>
   </section>
 
+
+  <!-- 4e. NCCL 学习章节（四段式章节） -->
+  <section class="view" id="view-nccl">
+    <div class="chapter doc-chapter">
+      <aside class="stepnav" id="stepnav-nccl"></aside>
+      <div class="doc-main" id="nccl-main"><div class="workshop" id="nccl-body"></div></div>
+    </div>
+  </section>
+
+  <!-- 4f. CUDA 执行模型（四段式章节） -->
+  <section class="view" id="view-cuda">
+    <div class="chapter doc-chapter">
+      <aside class="stepnav" id="stepnav-cuda"></aside>
+      <div class="doc-main" id="cuda-main"><div class="workshop" id="cuda-body"></div></div>
+    </div>
+  </section>
+
+  <!-- 4g. ECN + DCQCN（四段式章节） -->
+  <section class="view" id="view-ecn">
+    <div class="chapter doc-chapter">
+      <aside class="stepnav" id="stepnav-ecn"></aside>
+      <div class="doc-main" id="ecn-main"><div class="workshop" id="ecn-body"></div></div>
+    </div>
+  </section>
+
+  <!-- 4h. LLM 优化（四段式章节） -->
+  <section class="view" id="view-opt">
+    <div class="chapter doc-chapter">
+      <aside class="stepnav" id="stepnav-opt"></aside>
+      <div class="doc-main" id="opt-main"><div class="workshop" id="opt-body"></div></div>
+    </div>
+  </section>
+
+  <!-- 4g. 认识 GPU（四段式章节） -->
+  <section class="view" id="view-gpu">
+    <div class="chapter doc-chapter">
+      <aside class="stepnav" id="stepnav-gpu"></aside>
+      <div class="doc-main" id="gpu-main"><div class="workshop" id="gpu-body"></div></div>
+    </div>
+  </section>
+
   <!-- 5. 学习反馈 -->
   <section class="view scrollable" id="view-feedback">
     <div class="workshop" id="feedback"></div>
   </section>
 
-  <!-- 6. 课后作业 -->
-  <section class="view scrollable" id="view-homework">
-    <div class="workshop" id="homework"></div>
-  </section>
 </main>
 
 <footer class="timeline">
@@ -196,18 +293,23 @@
 </noscript>
 
 <!-- bump ?v= below whenever web/assets or web/data change (GitHub Pages caches assets) -->
-<script src="data/data.js?v=2026-11-23-10"></script>
-<script src="data/traces.js?v=2026-11-23-10"></script>
-<script src="assets/codeview.js?v=2026-11-23-10"></script>
-<script src="assets/viz/kv.js?v=2026-11-23-10"></script>
-<script src="assets/viz/prefix.js?v=2026-11-23-10"></script>
-<script src="assets/viz/paged.js?v=2026-11-23-10"></script>
-<script src="assets/workshop.js?v=2026-11-23-10"></script>
-<script src="assets/anatomy.js?v=2026-11-23-10"></script>
-<script src="assets/calc.js?v=2026-11-23-10"></script>
-<script src="assets/train.js?v=2026-11-23-10"></script>
-<script src="assets/net.js?v=2026-11-23-10"></script>
-<script src="assets/sectionnav.js?v=2026-11-23-10"></script>
-<script src="assets/app.js?v=2026-11-23-10"></script>
+<script src="data/data.js?v=2026-11-28-6"></script>
+<script src="data/traces.js?v=2026-11-28-6"></script>
+<script src="assets/codeview.js?v=2026-11-28-6"></script>
+<script src="assets/viz/kv.js?v=2026-11-28-6"></script>
+<script src="assets/viz/prefix.js?v=2026-11-28-6"></script>
+<script src="assets/viz/paged.js?v=2026-11-28-6"></script>
+<script src="assets/workshop.js?v=2026-11-28-6"></script>
+<script src="assets/anatomy.js?v=2026-11-28-6"></script>
+<script src="assets/calc.js?v=2026-11-28-6"></script>
+<script src="assets/train.js?v=2026-11-28-6"></script>
+<script src="assets/net.js?v=2026-11-28-6"></script>
+<script src="assets/nccl.js?v=2026-11-28-6"></script>
+<script src="assets/cuda.js?v=2026-11-28-6"></script>
+<script src="assets/gpu.js?v=2026-11-28-6"></script>
+<script src="assets/opt.js?v=2026-11-28-6"></script>
+<script src="assets/ecn.js?v=2026-11-28-6"></script>
+<script src="assets/sectionnav.js?v=2026-11-28-6"></script>
+<script src="assets/app.js?v=2026-11-28-6"></script>
 </body>
 </html>

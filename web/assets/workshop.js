@@ -16,7 +16,7 @@
   /* ============================================ progress + think tests */
 
   const PROGRESS_KEY = "learnkvc.progress.v1";
-  const LEARNING_VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "train", "net"];
+  const LEARNING_VIEWS = ["think", "kv", "prefix", "paged", "anatomy", "train", "net", "nccl", "cuda", "ecn", "gpu", "opt"];
   const EMPTY_PROGRESS = { pre: null, post: null, gpu: "rtx4090", views: [], steps: [] };
 
   function loadProgress() {
@@ -95,9 +95,10 @@
       '<div class="learnctx">' +
       '<div class="ctx-title"><span>本次学习设定</span><b>' + esc(preset.name) + "</b></div>" +
       '<p class="note">' + esc(context.note) + "</p>" +
-      '<div class="ctx-chips"><span>① KV cache 章</span><span>② Prefix 章（含多次提问）</span>' +
-      "<span>③ PagedAttention 章</span><span>模型解剖（参数/结构/运行时）</span>" +
-      "<span>显存计算器</span><span>课后作业</span></div>" +
+      '<div class="ctx-chips"><span>认识 GPU（GPU/CPU/显存）</span><span>① KV cache 章</span>' +
+      "<span>② Prefix 章（含多次提问）</span><span>③ PagedAttention 章</span>" +
+      "<span>推理网络（NCCL / 无损）</span><span>认识模型（解剖 / 训练 / 计算器）</span>" +
+      "<span>LLM 优化（FlashAttention / 量化 / 投机）</span></div>" +
       '<div class="ctx-grid">' +
       '<div class="ctx-model"><h4>模型信息</h4>' +
       row("总参数 / 激活", calcP(m.total) + " / " + calcP(m.active)) +
@@ -222,6 +223,11 @@
 
   W.renderThink = function (el, data) {
     const p = loadProgress();
+    // 题目数量变化（例如 6 → 10）时，旧基线不再可比：作废旧分数。
+    if (p.pre && Object.keys(p.pre.answers || {}).length !== data.quiz.length) {
+      p.pre = null;
+      saveProgress(p);
+    }
     const submitted = !!p.pre;
     const answers = submitted ? p.pre.answers : draftPre;
     const n = data.quiz.length;
@@ -446,10 +452,21 @@
 
   W.renderFeedback = function (el, data) {
     const p = loadProgress();
-    const pre = p.pre;
-    const post = p.post;
+    let pre = p.pre;
+    let post = p.post;
     const qs = data.postTest.questions;
     const n = qs.length;
+    // 题目数量变化时，旧前/后测分数作废，避免用旧分母展示。
+    if (p.pre && Object.keys(p.pre.answers || {}).length !== data.preQuiz.length) {
+      p.pre = null;
+      pre = null;
+      saveProgress(p);
+    }
+    if (p.post && Object.keys(p.post.answers || {}).length !== qs.length) {
+      p.post = null;
+      post = null;
+      saveProgress(p);
+    }
     const head =
       '<p class="kicker">学习反馈</p>' +
       '<h1 class="page-title">学完再答一遍</h1>' +
@@ -534,7 +551,6 @@
         : "") +
       "</div>" +
       '<div class="test-actions"><button class="btn ghost" id="post-reset">重做后测</button>' +
-      '<button class="btn" data-go="homework">去课后作业 →</button>' +
       '<button class="btn ghost" data-go="think">回到前测 →</button></div>';
 
     bindTest(el, qs, "post", () => W.renderFeedback(el, data));
@@ -770,7 +786,7 @@
 
   /* =================================================== lesson stages */
 
-  const CHAPTER_LABELS = { kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention", net: "推理网络", train: "模型训练" };
+  const CHAPTER_LABELS = { kv: "单请求 KV cache", prefix: "Prefix cache", paged: "PagedAttention", net: "推理网络", train: "模型训练", nccl: "NCCL 学习章节", cuda: "CUDA 执行模型", ecn: "ECN + DCQCN", gpu: "认识 GPU", opt: "LLM 优化" };
 
   function lessonOf(chapter) {
     const p = loadProgress();
@@ -794,19 +810,8 @@
     saveProgress(p);
   }
 
-  function homeworkOf() {
-    const p = loadProgress();
-    return Object.assign({ answers: {}, submitted: false, at: null }, p.homework || {});
-  }
-
   LK.progress.lesson = lessonOf;
   LK.progress.saveLesson = saveLesson;
-  LK.progress.homework = homeworkOf;
-  LK.progress.saveHomework = (patch) => {
-    const p = loadProgress();
-    p.homework = Object.assign(homeworkOf(), patch);
-    saveProgress(p);
-  };
 
   const stageAnswers = {};
 
@@ -1005,14 +1010,14 @@
     }
   };
 
-  W.renderStageSummary = function (el, chapter, summary, onChange, onHomework) {
+  W.renderStageSummary = function (el, chapter, summary, onChange) {
     const p = lessonOf(chapter);
     const complete = p.summary;
 
     el.innerHTML =
       '<div class="doc-kicker">' + esc(CHAPTER_LABELS[chapter]) + " · 总结归纳</div>" +
       '<h2>把这一章压缩成你自己的三句话</h2>' +
-      '<p class="hint">先写自己的版本，再展开参考总结对照；写完点「完成本章」。三章 KV 总结完成后解锁课后作业。</p>' +
+      '<p class="hint">先写自己的版本，再展开参考总结对照；写完点「完成本章」，进度会保存在本地。</p>' +
       '<div class="summarycard"><b>参考总结 · 概要</b><p>' + esc(summary.brief) + "</p>" +
       '<details><summary>详细描述</summary><p>' + esc(summary.detail) + "</p></details></div>" +
       '<div class="rprompt"><label for="stage-summary">我的总结</label>' +
@@ -1020,100 +1025,16 @@
       '<div class="reuse-actions"><button class="btn primary" id="stage-summary-done">' +
       (complete ? "已完成的章 · 重新标记" : "完成本章 →") + "</button>" +
       (complete ? '<span class="tool-note">完成于 ' + new Date(p.summaryAt).toLocaleString() + "</span>" : "") +
-      "</div>" +
-      (complete ? '<div class="reuse-actions"><button class="btn" id="stage-homework">去课后作业 →</button></div>' : "");
+      "</div>";
 
     const ta = el.querySelector("#stage-summary");
     ta.addEventListener("input", () => saveLesson(chapter, { summaryText: ta.value }));
     el.querySelector("#stage-summary-done").addEventListener("click", () => {
       saveLesson(chapter, { summary: true, summaryText: ta.value, summaryAt: Date.now() });
       if (onChange) onChange();
-      W.renderStageSummary(el, chapter, summary, onChange, onHomework);
-    });
-    const go = el.querySelector("#stage-homework");
-    if (go) go.addEventListener("click", onHomework);
-  };
-
-  W.renderHomework = function (el, data, onGoChapter, onChange) {
-    const chapters = ["kv", "prefix", "paged"];
-    const done = chapters.filter((ch) => lessonOf(ch).summary);
-    const hw = homeworkOf();
-
-    if (done.length < chapters.length) {
-      el.innerHTML =
-        '<p class="kicker">课后作业</p>' +
-        '<h1 class="page-title">先把三章学完，再来做迁移</h1>' +
-        '<p class="page-lead">课后作业会把 KV cache 的「复用、共享、分页、淘汰」和模型解剖的「参数/结构/运行时」迁移到其他领域。' +
-        "完成下面三章的总结归纳后解锁。</p>" +
-        '<div class="completion">' +
-        chapters
-          .map(
-            (ch) =>
-              '<div><b>' + (lessonOf(ch).summary ? "✓" : "—") + "</b><span>" +
-              esc(CHAPTER_LABELS[ch]) + "</span>" +
-              '<button class="btn ghost" data-chapter="' + ch + '">去学习 →</button></div>'
-          )
-          .join("") +
-        "</div>" +
-        '<p class="note">已完成 ' + done.length + " / " + chapters.length + " 章。</p>";
-      el.querySelectorAll("[data-chapter]").forEach((b) =>
-        b.addEventListener("click", () => onGoChapter(b.dataset.chapter))
-      );
-      return;
-    }
-
-    el.innerHTML =
-      '<p class="kicker">课后作业 · 迁移</p>' +
-      '<h1 class="page-title">把三章 + 模型解剖落到另一个领域</h1>' +
-      '<p class="page-lead">' + esc(data.intro) + "</p>" +
-      '<h3 class="sec-title">三章对照</h3>' +
-      '<div class="table-wrap"><table class="tagtable"><thead><tr>' +
-      data.matrix.columns.map((c) => "<th>" + esc(c) + "</th>").join("") +
-      "</tr></thead><tbody>" +
-      data.matrix.rows
-        .map((r) => "<tr>" + r.map((v) => "<td>" + esc(v) + "</td>").join("") + "</tr>")
-        .join("") +
-      "</tbody></table></div>" +
-      (data.anatomyMatrix
-        ? '<h3 class="sec-title">模型解剖对照</h3>' +
-          '<div class="table-wrap"><table class="tagtable"><thead><tr>' +
-          data.anatomyMatrix.columns.map((c) => "<th>" + esc(c) + "</th>").join("") +
-          "</tr></thead><tbody>" +
-          data.anatomyMatrix.rows
-            .map((r) => "<tr>" + r.map((v) => "<td>" + esc(v) + "</td>").join("") + "</tr>")
-            .join("") +
-          "</tbody></table></div>"
-        : "") +
-      '<h3 class="sec-title">作业</h3>' +
-      data.tasks
-        .map(
-          (t) =>
-            '<div class="rprompt"><label for="hw-' + t.id + '"><b>' + esc(t.title) + "</b><br>" +
-            esc(t.prompt) + "</label>" +
-            '<textarea id="hw-' + t.id + '" data-hw="' + t.id + '" rows="4">' +
-            esc((hw.answers || {})[t.id] || "") + "</textarea>" +
-            '<details class="thinkbox"><summary>参考答案 / 评分要点</summary><p>' + esc(t.ref) + "</p></details></div>"
-        )
-        .join("") +
-      '<div class="reuse-actions"><button class="btn primary" id="hw-submit">' +
-      (hw.submitted ? "已提交 · 重新提交" : "提交作业") + "</button>" +
-      (hw.submitted ? '<span class="tool-note">提交于 ' + new Date(hw.at).toLocaleString() + "</span>" : "") +
-      "</div>" +
-      '<p class="note">' + esc(data.closing) + "</p>";
-
-    el.querySelectorAll("[data-hw]").forEach((ta) =>
-      ta.addEventListener("input", () => {
-        const all = Object.assign({}, homeworkOf().answers || {});
-        all[ta.dataset.hw] = ta.value;
-        LK.progress.saveHomework({ answers: all });
-      })
-    );
-    el.querySelector("#hw-submit").addEventListener("click", () => {
-      const all = Object.assign({}, homeworkOf().answers || {});
-      LK.progress.saveHomework({ answers: all, submitted: true, at: Date.now() });
-      W.renderHomework(el, data, onGoChapter, onChange);
-      if (onChange) onChange();
+      W.renderStageSummary(el, chapter, summary, onChange);
     });
   };
+
 
 })();

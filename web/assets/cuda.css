@@ -1,0 +1,255 @@
+/* CUDA execution model chapter — chapter-local styles only.
+ * Every selector below targets a .cuda-* hook, and every colour comes from a
+ * theme variable, so the light theme (html[data-theme="light"]) adapts for free.
+ * Shared chrome (page-title / page-lead / sec-title / table / stat / note) is
+ * intentionally reused from style.css. */
+
+/* ------------------------------------------------ interactive control rows */
+
+.cuda-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+.cuda-controls-1 { grid-template-columns: minmax(0, 1fr); max-width: 340px; }
+.cuda-controls-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 460px; }
+.cuda-controls input[type="range"] { width: 100%; accent-color: var(--accent); }
+.cuda-controls .sim-field b { color: var(--accent); font-family: var(--mono); }
+
+.cuda-occ,
+.cuda-coalesce,
+.cuda-roofline,
+.cuda-graph { margin: 8px 0 2px; }
+
+/* ------------------------------------------------------- occupancy meter */
+
+.cuda-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 8px;
+}
+.cuda-meter-bar {
+  flex: 1 1 auto;
+  height: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.cuda-meter-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width .18s ease;
+}
+.cuda-meter-bar i.ok { background: var(--green); }
+.cuda-meter-bar i.warn { background: var(--accent-2); }
+.cuda-meter-bar i.bad { background: var(--red); }
+.cuda-meter > span {
+  flex: 0 0 auto;
+  min-width: 132px;
+  text-align: right;
+  font: 11.5px var(--mono);
+  color: var(--fg);
+}
+
+.cuda-limit-table td { white-space: nowrap; }
+.cuda-limit-table tr.on td { background: var(--hl-b); color: var(--accent-2); }
+.cuda-limit-table tr.on td:first-child { font-weight: 600; }
+
+/* --------------------------------------------------- coalescing sector grid */
+
+.cuda-legend {
+  margin: 4px 0 8px;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.cuda-sector-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+  margin: 8px 0 12px;
+}
+.cuda-sector {
+  padding: 5px 3px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--faint);
+  border-radius: 6px;
+  text-align: center;
+}
+.cuda-sector b {
+  display: block;
+  font: 10px var(--mono);
+  color: var(--fg);
+}
+.cuda-sector em {
+  display: block;
+  margin-top: 1px;
+  font: 9px var(--mono);
+  font-style: normal;
+  color: var(--dim);
+}
+.cuda-sector.cuda-sec-0 { border-top-color: var(--accent); }
+.cuda-sector.cuda-sec-1 { border-top-color: var(--accent-2); }
+.cuda-sector.cuda-sec-2 { border-top-color: var(--green); }
+.cuda-sector.cuda-sec-3 { border-top-color: var(--purple); }
+.cuda-sector.cuda-sec-4 { border-top-color: var(--red); }
+.cuda-sector.cuda-sec-5 { border-top-color: var(--dim); }
+
+.cuda-util { margin: 12px 0 6px; }
+.cuda-util-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+  font: 11px var(--mono);
+  color: var(--dim);
+}
+.cuda-util-bar {
+  height: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.cuda-util-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width .18s ease;
+}
+.cuda-util-bar i.ok { background: var(--green); }
+.cuda-util-bar i.warn { background: var(--accent-2); }
+.cuda-util-bar i.bad { background: var(--red); }
+
+/* -------------------------------------------------------------- roofline */
+
+.cuda-roof {
+  margin: 10px 0;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.cuda-roof-svg { display: block; width: 100%; height: auto; }
+.cuda-roof-grid { stroke: var(--line); stroke-width: 1; }
+.cuda-roof-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.cuda-roof-ridge {
+  stroke: var(--faint);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.cuda-roof-point {
+  fill: var(--accent-2);
+  stroke: var(--bg);
+  stroke-width: 1.5;
+}
+.cuda-roof-point.prefill { fill: var(--purple); }
+.cuda-roof-label {
+  fill: var(--dim);
+  font: 10px var(--mono);
+}
+.cuda-roof-label.ridge { fill: var(--faint); }
+.cuda-roof-label.prefill { fill: var(--purple); }
+.cuda-roof-label.decode { fill: var(--accent-2); }
+.cuda-roof-label.axis { fill: var(--faint); }
+
+.cuda-bound.ok { color: var(--green); }
+.cuda-bound.warn { color: var(--accent-2); }
+
+/* ----------------------------------------------------------------- formula */
+
+.cuda-formula {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.cuda-formula b {
+  font-size: 12px;
+  color: var(--accent);
+}
+.cuda-formula p {
+  margin: 4px 0 0;
+  color: var(--dim);
+  font: 11.5px/1.7 var(--mono);
+}
+
+/* --------------------------------------------------------- CUDA Graph bars */
+
+.cuda-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.cuda-bar-row {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr) 82px;
+  align-items: center;
+  gap: 8px;
+}
+.cuda-bar-row > span {
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.cuda-bar-row > b {
+  text-align: right;
+  color: var(--fg);
+  font: 11px var(--mono);
+}
+.cuda-bar-track {
+  height: 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cuda-bar-track i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  transition: width .18s ease;
+}
+.cuda-bar-track i.eager { background: var(--accent-2); }
+.cuda-bar-track i.gpu { background: var(--accent); }
+.cuda-bar-track i.graph { background: var(--green); }
+
+/* --------------------------------------------------------- light + motion */
+
+html[data-theme="light"] .cuda-sector { background: var(--panel-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cuda-meter-bar i,
+  .cuda-util-bar i,
+  .cuda-bar-track i { transition: none; }
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 980px) {
+  .cuda-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cuda-controls-1,
+  .cuda-controls-2 { grid-template-columns: minmax(0, 1fr); max-width: none; }
+  .cuda-sector-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cuda-bar-row { grid-template-columns: 96px minmax(0, 1fr) 76px; }
+  .cuda-meter > span { min-width: 108px; }
+}
+
+@media (max-width: 480px) {
+  .cuda-controls { grid-template-columns: minmax(0, 1fr); }
+  .cuda-sector-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cuda-meter { flex-wrap: wrap; }
+  .cuda-meter > span { min-width: 0; width: 100%; text-align: left; }
+}

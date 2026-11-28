@@ -1,0 +1,202 @@
+/* NCCL chapter styles — only new components; base classes come from style.css.
+ * Every selector is scoped with .nccl- and colors use CSS variables. */
+
+.nccl-dim {
+  color: var(--faint);
+  font-style: normal;
+}
+
+.nccl-formula {
+  display: block;
+  margin: 5px 0 2px;
+  color: var(--accent);
+  font: 11.5px var(--mono);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.nccl-collective-table td { vertical-align: top; }
+
+.nccl-player {
+  margin: 14px 0 6px;
+  padding: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.nccl-step-label {
+  font: 11px var(--mono);
+  color: var(--dim);
+}
+
+.nccl-hint { margin-bottom: 0; }
+
+.nccl-take {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+
+.nccl-take-card {
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 8px;
+}
+
+.nccl-take-card b {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent-2);
+  font-size: 11.5px;
+}
+
+.nccl-take-card p {
+  margin: 0;
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+
+/* ------------------------------------------------------------ charts */
+
+.nccl-scan,
+.nccl-topo {
+  margin: 14px 0 6px;
+  padding: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.nccl-scan-controls,
+.nccl-topo-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.nccl-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 8px;
+}
+
+.nccl-chart {
+  margin: 0;
+  padding: 10px;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.nccl-chart figcaption {
+  margin-bottom: 6px;
+  color: var(--dim);
+  font-size: 11.5px;
+}
+
+.nccl-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.nccl-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  opacity: 0.75;
+}
+
+.nccl-tick {
+  fill: var(--faint);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.nccl-line-ring {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.nccl-line-tree {
+  fill: none;
+  stroke: var(--accent-2);
+  stroke-width: 2;
+}
+
+.nccl-cross {
+  stroke: var(--purple);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.nccl-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 10px;
+  color: var(--dim);
+  font-size: 11.5px;
+}
+
+.nccl-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.nccl-legend span::before {
+  content: "";
+  width: 14px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--faint);
+}
+
+.nccl-legend .ring::before { background: var(--accent); }
+.nccl-legend .tree::before { background: var(--accent-2); }
+.nccl-legend .cross::before { background: var(--purple); }
+
+.nccl-scan-formula {
+  margin: 10px 0 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.nccl-topo-table tr.on td { background: var(--hl); }
+
+/* -------------------------------------------------------- tree chart */
+
+.nccl-tree-edge {
+  stroke: var(--line);
+  stroke-width: 1.5;
+  fill: none;
+}
+
+.nccl-tree-edge.on {
+  stroke: var(--accent-2);
+  stroke-width: 2.5;
+}
+
+.nccl-tree-hub {
+  fill: var(--panel-2);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+/* ------------------------------------------------------- responsive */
+
+/* light theme: --purple / --faint are tuned for dark surfaces */
+html[data-theme="light"] .nccl-cross { stroke: var(--dim); }
+html[data-theme="light"] .nccl-legend .cross::before { background: var(--dim); }
+html[data-theme="light"] .nccl-tick { fill: var(--dim); }
+
+@media (max-width: 980px) {
+  .nccl-charts,
+  .nccl-take { grid-template-columns: 1fr; }
+
+  .nccl-scan-controls,
+  .nccl-topo-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .nccl-player { padding: 10px; }
+}

@@ -1,0 +1,511 @@
+{
+  "kicker": "学习章节 · 推理网络",
+  "title": "NCCL 深挖：一次 all-reduce 怎么搬数据",
+  "lead": "上一章回答「推理为什么需要网络」；这一章回答「NCCL 这个库到底怎么搬数据」。同样是 8 张卡、128 MiB：ring 用 14 步、每卡发 224 MiB，tree 只用 6 步却慢了 3.4 倍。算法、消息大小和拓扑一起决定延迟与带宽，这一章把它们算成一本账。",
+  "why": {
+    "title": "1 · 从推理网络总览到 NCCL：这一章补哪一块",
+    "lead": "推理网络总览站在系统层讲「为什么需要网络、PD 怎么拆、RoCE 怎么配」；NCCL 章节下沉到库层讲「一个 all_reduce 调用背后，数据被切成什么、走几步、选哪条链路」。先建立两张地图的对应关系，后面每一节才能落到「为什么 / 怎么算 / 推理里对应什么」。",
+    "contrast": [
+      {
+        "name": "上一章 · 推理网络总览",
+        "scope": "系统层：为什么需要网络",
+        "answers": "TP/EP/PD 各需要什么网络；RoCE 为什么必须 PFC + ECN；PD 的 KV 怎么搬。"
+      },
+      {
+        "name": "本章 · NCCL 深挖",
+        "scope": "库层：一次集合通信怎么执行",
+        "answers": "collective 语义与字节；ring/tree 调度；α-β 时间模型；拓扑选路与 nccl-tests 读法。"
+      },
+      {
+        "name": "连接点 · KV cache 与推理",
+        "scope": "把库层数字对回请求",
+        "answers": "decode 的 TP all-reduce 只有 4 KiB 但每层都做；PD 的 KV 迁移是一次大 SendRecv。"
+      }
+    ],
+    "mapping": [
+      {
+        "name": "TP（张量并行）",
+        "collective": "AllReduce ×2 / 层",
+        "size": "batch × hidden × 2 B",
+        "when": "decode 时约 4 KiB，延迟敏感；放同机 NVLink，优先低延迟路径。"
+      },
+      {
+        "name": "EP / MoE",
+        "collective": "AllToAll ×2 / 层",
+        "size": "tokens × hidden × 2 B",
+        "when": "token 按 expert 分发再回收，突发流量大，跨机要 rail-optimized。"
+      },
+      {
+        "name": "PP（流水线并行）",
+        "collective": "SendRecv / P2P",
+        "size": "batch × seq × hidden × 2 B",
+        "when": "stage 之间传激活；消息中等、频率低于 TP，适合跨机。"
+      },
+      {
+        "name": "DP（数据并行，训练）",
+        "collective": "AllReduce / ReduceScatter",
+        "size": "参数量 × 2 B（很大）",
+        "when": "梯度同步是大消息，ring 的带宽利用率最高。"
+      },
+      {
+        "name": "PD 分离",
+        "collective": "SendRecv（RDMA KV 传输）",
+        "size": "prompt × KV/token",
+        "when": "每请求一次的大消息，决定 TTFT 与网络容量，和 TP 的小消息是两类问题。"
+      }
+    ],
+    "decode": "decode 每步只处理 1 个 token：TP all-reduce 的消息是 batch × hidden × 2 B = 4 KiB 量级，很小，但每一层都有、每一个 token 都做。这时决定速度的是「步数 × 固定延迟」，而不是链路标称带宽；小消息看 α，大消息才看 BW。",
+    "kv": "KV cache 让推理网络出现两类流量：per-token 的小 all-reduce（延迟敏感、TP 用）和 per-request 的 KV 迁移（带宽敏感、PD 用）。NCCL 的 ring 适合后者，tree / LL 这类低延迟路径适合前者。",
+    "takeaway": {
+      "why": "总览讲系统取舍，本章讲库内部实现；不把两层混在一起，才知道该换网络还是该调算法。",
+      "calc": "把并行方式映射成 collective，再套「每 rank 字节 = 系数 × S、步数 = 系数 × N」的账本。",
+      "infer": "TP 的 4 KiB 小消息与 PD 的百 MB 级 KV 迁移，对 NCCL 的要求完全相反。"
+    }
+  },
+  "collectives": {
+    "title": "2 · 六个 collective：语义、字节与步数",
+    "lead": "NCCL 把「多卡一起算」抽象成 collective。每个 collective 都能写成三个数：每 rank 发多少字节、ring 走几步、在推理里谁在用。记住 S 是这次通信的总字节数（按结果大小计），chunk = S/N，后面所有公式都从这两个量长出来。",
+    "rows": [
+      {
+        "name": "AllReduce",
+        "api": "ncclAllReduce",
+        "what": "所有 rank 的输入做 sum / avg，结果写回每个 rank。",
+        "bytes": "每 rank 发出 2(N−1)/N × S",
+        "steps": "ring 2(N−1) 步",
+        "use": "TP 每层 attention / MLP 后各一次；训练梯度同步。"
+      },
+      {
+        "name": "AllGather",
+        "api": "ncclAllGather",
+        "what": "每个 rank 的 S/N chunk 拼到所有 rank，输出 N × S/N。",
+        "bytes": "每 rank 发出 (N−1)/N × S",
+        "steps": "ring N−1 步",
+        "use": "FSDP 前向收集参数；MoE 专家权重分发。"
+      },
+      {
+        "name": "ReduceScatter",
+        "api": "ncclReduceScatter",
+        "what": "先逐块归约，再把不同的结果 chunk 分给不同 rank。",
+        "bytes": "每 rank 发出 (N−1)/N × S",
+        "steps": "ring N−1 步",
+        "use": "ZeRO 梯度 reduce-scatter；ring all-reduce 的前半段。"
+      },
+      {
+        "name": "AllToAll",
+        "api": "ncclAllToAll（或 ncclSend + ncclRecv）",
+        "what": "每个 rank 向其他每个 rank 各发一个不同的 S/N。",
+        "bytes": "每 rank 发出 (N−1)/N × S",
+        "steps": "ring N−1 步",
+        "use": "MoE 的 token dispatch / combine，EP 的核心通信。"
+      },
+      {
+        "name": "Broadcast",
+        "api": "ncclBcast",
+        "what": "root 的 S 字节复制给所有 rank。",
+        "bytes": "root 发 S（每 rank 平均 S/N）",
+        "steps": "tree ⌈log₂N⌉ 步",
+        "use": "权重、配置、采样种子分发；tree all-reduce 的下行段。"
+      },
+      {
+        "name": "Send / Recv",
+        "api": "ncclSend / ncclRecv",
+        "what": "两个 rank 之间的点对点传输，S 字节。",
+        "bytes": "每个 pair 发 S",
+        "steps": "1 步",
+        "use": "PP 的 stage 间激活；PD 的 KV 迁移（走 RDMA）。"
+      }
+    ],
+    "rules": [
+      "ring 里每步只传一个 S/N chunk，所有 rank 同时动，所以 busbw 能逼近链路带宽。",
+      "tree 里每步传整块 S，步数降到 O(log N)，但单步带宽需求高，小消息才划算。",
+      "AllReduce 的 2(N−1)/N × S 不是拍脑袋：reduce-scatter 和 all-gather 各搬 (N−1)/N × S。"
+    ],
+    "note": "NCCL 还可能用 NVLS（NVSwitch 内归约）或 SHARP（IB 交换机内归约）把步数和流量再降一档；上面的步数是 ring 的理论值，也是排障时最常用的基线。S 的统计口径是「结果大小」，所以 AllReduce 的每 rank 输入输出都等于 S。",
+    "takeaway": {
+      "why": "先把语义和账本对齐，看到 all_reduce 才知道它其实是 reduce-scatter + all-gather 两笔账。",
+      "calc": "N=8、S=128 MiB：AllReduce 每 rank 224 MiB / 14 步；AllGather、ReduceScatter、AllToAll 各 112 MiB / 7 步。",
+      "infer": "TP 用 AllReduce、EP 用 AllToAll、PP / PD 用 SendRecv——三种流量对算法和网络的要求不同。"
+    }
+  },
+  "ring": {
+    "title": "3 · Ring all-reduce：两个阶段，2(N−1) 步",
+    "lead": "ring 把 N 个 rank 连成一个环，每个 rank 只和左右邻居说话。一次 all-reduce 被拆成 reduce-scatter（先归约，每个 rank 留一块完整结果）和 all-gather（再把各自的块绕环传一圈）。下面的播放器可以逐步看「谁把哪个 chunk 发给谁」。",
+    "stages": [
+      {
+        "name": "reduce-scatter（N−1 步）",
+        "detail": "第 s 步（s = 0…N−2），rank r 把 chunk (r − s) mod N 发给 rank r+1。走完后 rank r 手里有一块完整归约结果，chunk 编号是 (r+1) mod N。"
+      },
+      {
+        "name": "all-gather（N−1 步）",
+        "detail": "第 t 步（t = 0…N−2），rank r 把 chunk (r − t + 1) mod N 发给 rank r+1。走完后每卡都有全部 N 块，all-reduce 结束。"
+      }
+    ],
+    "rules": [
+      "总步数 2(N−1)：N=8 是 14 步；每步每卡只发 S/N = 16 MiB，合计 2(N−1)/N × S = 224 MiB。",
+      "α-β 估算：每步 2 µs + 16 MiB / 50 GB/s = 337.54 µs，14 步共 4.726 ms。",
+      "同一份账：algbw = S / T = 28.40 GB/s；busbw = 每卡字节 / T = 49.70 GB/s，已经贴近 50 GB/s 的链路上限。",
+      "ring 的带宽利用率接近链路带宽，但步数随 N 线性增长；卡越多，延迟项 2(N−1)·α 越贵。"
+    ],
+    "note": "播放器里的每步说明、发送表和累计字节都由 JSON 之外的同一套公式实时算出，和 example/nccl_sim.py 的打印逐行一致。ring 是理解 NCCL 的主线：先把 ring 的步数和字节算熟，再看 tree 和 NVLS 才知道它们省掉了哪一部分。",
+    "takeaway": {
+      "why": "ring 是 NCCL 大消息的默认基线：带宽利用率最高，公式最简单，也是排障时对比的参照。",
+      "calc": "T = 2(N−1) × (α + S/(N·BW))；每卡字节 = 2(N−1)/N × S；N=8、128 MiB 时 4.726 ms。",
+      "infer": "TP 的 decode all-reduce 走 ring 要 28.14 µs/层（4 KiB），可见小消息时 ring 的步数劣势很明显。"
+    }
+  },
+  "tree": {
+    "title": "4 · Tree：O(log N) 步，拿带宽换延迟",
+    "lead": "tree 把所有卡组织成二叉树：上行 reduce 把部分和收敛到 root，下行 broadcast 再把完整结果散回所有卡。步数从 2(N−1) 降到 2⌈log₂N⌉，代价是每步要搬整块 S，单步带宽需求高。",
+    "compare": [
+      {
+        "name": "Ring",
+        "steps": "2(N−1) = 14（N=8）",
+        "bytes": "每步每卡 S/N = 16 MiB",
+        "bandwidth": "busbw 可以逼近链路带宽（49.70 / 50 GB/s）",
+        "when": "大消息：128 MiB、1 GiB、DP 梯度同步"
+      },
+      {
+        "name": "Tree",
+        "steps": "2⌈log₂N⌉ = 6（N=8）",
+        "bytes": "每步整块 S = 128 MiB",
+        "bandwidth": "busbw 只有约 14.57 GB/s（29% 链路带宽）",
+        "when": "小消息：4 KiB 的 decode all-reduce"
+      }
+    ],
+    "walkthrough": [
+      { "step": "1", "phase": "reduce", "level": "L1", "pairs": "1→0, 3→2, 5→4, 7→6" },
+      { "step": "2", "phase": "reduce", "level": "L2", "pairs": "2→0, 6→4" },
+      { "step": "3", "phase": "reduce", "level": "L3", "pairs": "4→0" },
+      { "step": "4", "phase": "broadcast", "level": "L1", "pairs": "0→4" },
+      { "step": "5", "phase": "broadcast", "level": "L2", "pairs": "0→2, 4→6" },
+      { "step": "6", "phase": "broadcast", "level": "L3", "pairs": "0→1, 2→3, 4→5, 6→7" }
+    ],
+    "rules": [
+      "N=8、S=128 MiB：6 步 × (2 µs + 128 MiB / 50 GB/s) = 16.118 ms，是 ring 4.726 ms 的 3.41 倍。",
+      "只做 tree broadcast 是 3 步、8.059 ms；tree all-reduce = 上行 reduce + 下行 broadcast，步数翻倍。",
+      "同样 4 KiB：tree 12.49 µs，ring 28.14 µs——小消息时 tree 的 log N 步优势反过来。",
+      "crossover 约 183.8 KiB（N=8、α=2 µs、BW=50 GB/s）：小于它 tree 快，大于它 ring 快。"
+    ],
+    "note": "NCCL 会按消息大小和拓扑自动选算法：小消息偏 tree / LL，大消息偏 ring / Simple。排障时才用 NCCL_ALGO 固定算法做对比，平时不要手动锁死。",
+    "takeaway": {
+      "why": "tree 解释了「步数少不等于快」：每步搬整块 S 会浪费带宽，只有 α 占比高的小消息才值得。",
+      "calc": "T = 2⌈log₂N⌉ × (α + S/BW)；N=8 时 6 步；128 MiB 下 16.118 ms，4 KiB 下 12.49 µs。",
+      "infer": "decode 的 TP all-reduce 正落在 tree 优势区；prefill 与 DP 落在 ring 优势区。"
+    }
+  },
+  "model": {
+    "title": "5 · α-β 模型：crossover 在哪里",
+    "lead": "把一次集合通信看成「步数 ×（固定延迟 α + 每步字节 / BW）」。α 是每步的启动与传播延迟，β = 1/BW 是每字节成本；消息越大，第二项越占主导，crossover 就是两项打平的地方。",
+    "formulas": [
+      {
+        "name": "α-β 单步",
+        "expr": "T_step = α + bytes / BW",
+        "detail": "α 是每步固定开销（launch + 传播），bytes / BW 是串行化时间；α 用 µs、BW 用 GB/s。"
+      },
+      {
+        "name": "ring all-reduce",
+        "expr": "T_ring = 2(N−1) × (α + S/(N·BW))",
+        "detail": "步数 2(N−1)，每步只搬 S/N；大消息时 T ≈ 2(N−1)/N × S/BW，busbw → BW。"
+      },
+      {
+        "name": "tree all-reduce",
+        "expr": "T_tree = 2⌈log₂N⌉ × (α + S/BW)",
+        "detail": "步数 2⌈log₂N⌉，每步搬整块 S；小消息时 α 主导，步数少就赢。"
+      },
+      {
+        "name": "algbw",
+        "expr": "algbw = S / T",
+        "detail": "按「结果大小 / 总时间」算的算法带宽，与 N 无关，适合横向比较不同消息规模。"
+      },
+      {
+        "name": "busbw",
+        "expr": "busbw = (2(N−1)/N × S) / T",
+        "detail": "按「每卡实际发出字节 / 总时间」算，才和链路带宽可比；ring all-reduce 的上限就是单链路 BW。"
+      },
+      {
+        "name": "crossover",
+        "expr": "S* = BW·α·[(N−1) − ⌈log₂N⌉] / [⌈log₂N⌉ − (N−1)/N]",
+        "detail": "令 T_ring = T_tree 解出；N=8、α=2 µs、BW=50 GB/s 时约 183.8 KiB。"
+      }
+    ],
+    "crossover": {
+      "expr": "S* ≈ 183.8 KiB",
+      "why": "N=8、α=2 µs、BW=50 GB/s：64 KiB 时 tree 19.86 µs < ring 30.29 µs；1 MiB 时 ring 64.70 µs < tree 137.83 µs。"
+    },
+    "sweep": [
+      { "size": "1 KiB", "ring": "28.04 µs", "tree": "12.12 µs", "winner": "tree" },
+      { "size": "64 KiB", "ring": "30.29 µs", "tree": "19.86 µs", "winner": "tree" },
+      { "size": "1 MiB", "ring": "64.70 µs", "tree": "137.83 µs", "winner": "ring" },
+      { "size": "16 MiB", "ring": "615.20 µs", "tree": "2.025 ms", "winner": "ring" },
+      { "size": "1 GiB", "ring": "37.609 ms", "tree": "128.861 ms", "winner": "ring" }
+    ],
+    "protocols": [
+      { "name": "Simple", "when": "大消息、带宽敏感", "detail": "每步搬大块数据，带宽利用率高；decoder 的开销被摊薄。" },
+      { "name": "LL", "when": "小消息、延迟敏感", "detail": "低延迟协议，128 B 粒度、flag 少；CPU 参与更多，大消息反而慢。" },
+      { "name": "LL128", "when": "中等消息、想兼顾", "detail": "128 B 负载 + flag，延迟和带宽的折中；NCCL 常在中间档位选它。" }
+    ],
+    "extras": [
+      "多 QP：把一个连接拆成多条队列对，提高单连接吞吐；但拥塞与 CPU 开销上升，不是越多越好。",
+      "NVLS / NVLink SHARP：在 NVSwitch 里做归约，少一次数据往返；Hopper/Blackwell 单机多卡会自动尝试。",
+      "CollNet / SHARP：把归约卸载到 InfiniBand 交换机，跨机大集群有效；需要 IB 网络与支持 SHARP 的交换机。",
+      "协议和算法是两层：先选算法（ring/tree/NVLS），再选协议（Simple/LL/LL128），两者都要和消息大小匹配。"
+    ],
+    "note": "busbw 的上限就是单条链路带宽，小消息时因为 α 占比高，busbw 会远低于它。判断网络好坏要看 busbw 随消息大小的曲线，而不是拿 1 KiB 的 busbw 下结论。",
+    "takeaway": {
+      "why": "α-β 把「算法选择」变成一条可计算的曲线，而不是背「小消息 tree、大消息 ring」。",
+      "calc": "T_ring / T_tree 两条式子相减解出 S*；N=8 时约 183.8 KiB，和 nccl_sim 的扫描一致。",
+      "infer": "decode 的 4 KiB 落在 tree 区；TP prefill 的 8 MiB 和 DP 梯度落在 ring 区。"
+    }
+  },
+  "topology": {
+    "title": "6 · 拓扑与链路：NVLink / PCIe / IB / RoCE",
+    "lead": "算法只决定步数，链路决定 α 和 BW。先看 GPU 之间怎么连（nvidia-smi topo -m），再看跨机走 IB 还是 RoCE；同一个 all-reduce，放在 NVLink 和放在 TCP 上是两个数量级。",
+    "rows": [
+      {
+        "link": "NVLink 4（H100）",
+        "bw": "≈450 GB/s 单向/GPU（900 GB/s 双向）",
+        "latency": "< 1 µs",
+        "scope": "单机 GPU 全互联；TP 首选，配合 NVSwitch 可用 NVLS。"
+      },
+      {
+        "link": "NVSwitch",
+        "bw": "聚合数 TB/s",
+        "latency": "< 1 µs",
+        "scope": "单机 8 / 16 卡全互联；NVLS 在交换机内做归约。"
+      },
+      {
+        "link": "PCIe 4.0 x16",
+        "bw": "≈16 GB/s 单向（32 GB/s 双向）",
+        "latency": "1–2 µs",
+        "scope": "无 NVLink 的单机；部分平台 P2P 被禁用，NCCL 回退 host 中转。"
+      },
+      {
+        "link": "PCIe 5.0 x16",
+        "bw": "≈32 GB/s 单向（64 GB/s 双向）",
+        "latency": "~1 µs",
+        "scope": "新平台单机；比 NVLink 慢一个档，仍好于跨机。"
+      },
+      {
+        "link": "InfiniBand HDR",
+        "bw": "25 GB/s 单向/port（200 Gb/s）",
+        "latency": "1–2 µs",
+        "scope": "跨机；支持 SHARP 与 GPUDirect RDMA。"
+      },
+      {
+        "link": "InfiniBand NDR",
+        "bw": "50 GB/s 单向/port（400 Gb/s）",
+        "latency": "1–2 µs",
+        "scope": "跨机主流；本章 α-β 模型用的就是这一档。"
+      },
+      {
+        "link": "RoCEv2 400G",
+        "bw": "50 GB/s 单向/port",
+        "latency": "2–5 µs",
+        "scope": "跨机以太网；需要 PFC + ECN 无损配置，GID / MTU 要对齐。"
+      },
+      {
+        "link": "TCP Socket",
+        "bw": "1.25–12.5 GB/s（10–100 Gb/s）",
+        "latency": "几十–几百 µs",
+        "scope": "兜底；NCCL 检测不到 RDMA 时回退，性能差一个量级。"
+      }
+    ],
+    "reading": [
+      "nvidia-smi topo -m：NV12 表示 12 条 NVLink；PIX 表示同一个 PCIe switch；PHB 表示过 host bridge；SYS 表示跨 NUMA / 跨 socket，最慢。",
+      "同一 NVSwitch 域内的 GPU 两两带宽相同，跨域就会掉到 PCIe；看拓扑表比看 GPU 型号更可靠。",
+      "rail-optimized：8 卡机配 8 张网卡，每张接不同 spine/rail，避免 AllToAll 时所有流量挤一条上行。",
+      "NCCL 的 transport 由拓扑 + 环境变量共同决定；NCCL_DEBUG=INFO 会明确打印 P2P / NVLink / IB / Socket。"
+    ],
+    "rules": [
+      "TP 放同机：每层 all-reduce 都做，跨机会被 α 和 PCIe/IB 延迟拖死（decode 尤其明显）。",
+      "PP / DP 适合跨机：消息大、频率低，走 IB/RoCE 更划算。",
+      "单机但没有 NVLink 时，先确认 P2P 是否可用；被禁用时 NCCL 走 host 中转，带宽和延迟都会明显变差。",
+      "PD 的 KV 迁移要走 GPUDirect RDMA：GPU 显存直达网卡，少两次 host 拷贝。"
+    ],
+    "note": "本章所有数字都用「50 GB/s、2 µs/跳」的链路，对应 400 Gb/s IB/RoCE 一档；换成 NVLink 时 α 和 β 都会更小，ring/tree 的绝对时间下降，但相对关系不变。",
+    "takeaway": {
+      "why": "拓扑决定 α 和 BW，而 α、β 决定 ring/tree 谁赢；选错链路，算法再好也白搭。",
+      "calc": "把 50 GB/s、2 µs 代入 α-β 模型；NVLink 档把 BW 提高、α 降低，时间按比例缩短。",
+      "infer": "TP 放 NVLink 域内、PP / DP / PD 跨机走 IB/RoCE，是推理集群最常见的分层。"
+    }
+  },
+  "measure": {
+    "title": "7 · 测量与排查：nccl-tests + NCCL_DEBUG",
+    "lead": "不要只看网卡标称 400G。跑 all_reduce_perf 从小消息扫到大消息，读 busbw 曲线：小消息看 α，大消息看 BW；再用 NCCL_DEBUG=INFO 确认 transport 到底是 NET/IB、NET/RoCE 还是 NET/Socket。",
+    "commands": [
+      "NCCL_DEBUG=INFO all_reduce_perf -b 8 -e 8G -f 2 -g 8   # 扫消息大小，看 algbw / busbw 与选中的 transport",
+      "nvidia-smi topo -m                                      # GPU 之间是 NVLink、PCIe 还是跨 NUMA",
+      "show_gids && ibv_devinfo                               # RoCE 的 GID index、link state、MTU",
+      "NCCL_ALGO=Ring NCCL_PROTO=Simple all_reduce_perf ...   # 固定算法/协议做对比，排障用",
+      "NCCL_P2P_DISABLE=1 all_reduce_perf ...                 # 确认问题是否出在 P2P"
+    ],
+    "envs": [
+      { "name": "NCCL_DEBUG", "value": "INFO", "why": "第一排查项：确认 transport 是 IB/RoCE 还是 Socket，以及选了什么算法/协议。" },
+      { "name": "NCCL_ALGO", "value": "Ring / Tree / NVLS", "why": "排障时固定算法对比；平时交给 NCCL 自动选。" },
+      { "name": "NCCL_PROTO", "value": "Simple / LL / LL128", "why": "小消息用 LL 降延迟，大消息用 Simple 拉带宽。" },
+      { "name": "NCCL_IB_HCA", "value": "mlx5_0,mlx5_1", "why": "指定参与 RDMA 的网卡，避免选到管理口。" },
+      { "name": "NCCL_IB_GID_INDEX", "value": "3", "why": "RoCEv2 常用 GID 索引；用 show_gids 确认，选错能连但掉速。" },
+      { "name": "NCCL_NET_GDR_LEVEL", "value": "2", "why": "允许 GPUDirect RDMA，避免 KV / 梯度经 host 拷贝。" },
+      { "name": "NCCL_P2P_DISABLE", "value": "1", "why": "排障用：关闭 P2P 看是否是 PCIe/P2P 问题；平时不要开。" }
+    ],
+    "checklist": [
+      "transport：NCCL_DEBUG=INFO 里必须是 NET/IB 或 NET/RoCE；出现 NET/Socket 直接判网络没走通。",
+      "带宽：all_reduce_perf 扫 8 B → 8 GB，看 busbw 是否随消息增大收敛到链路带宽，而不是只看一个点。",
+      "拓扑：nvidia-smi topo -m 确认 NVLink / PCIe / 跨 NUMA，并确认 P2P 是否可用。",
+      "RoCE：GID index、MTU、TC 与 PFC/ECN 计数器对齐，容器透传了 /dev/infiniband 与 IPC 权限。",
+      "推理：分别测 decode 消息大小（约 4 KiB）和 PD KV 迁移大小（百 MB 级）两个点，不要只测大消息。"
+    ],
+    "pitfalls": [
+      "日志里是 NET/Socket：说明没走 RDMA，先查网卡、GID、容器透传，而不是怀疑算法。",
+      "只测单流 ib_write_bw：集合通信的瓶颈常在多打一 / incast，必须用 all_reduce_perf。",
+      "小消息 busbw 低是正常的（α 主导）；拿 1 KiB 的 busbw 判断网络坏，会误判。",
+      "容器里 RDMA 设备没透传、IPC 权限不足：NCCL 会静默回退 Socket 或直接初始化失败。",
+      "PFC 配了但 ECN / DCQCN 没配：拥塞时排队爆炸，延迟抖动，吞吐反而下降。",
+      "MTU 端到端不一致：RoCE 连接能建但性能异常，甚至直接不通。"
+    ],
+    "note": "读法总结：先看 transport，再看 busbw 曲线是否随消息增大收敛到链路带宽；小消息看延迟（µs 级）、大消息看带宽（GB/s 级），最后才调算法/协议。",
+    "takeaway": {
+      "why": "所有公式都要靠测量验证；nccl-tests 是把 α-β 曲线画出来的最直接工具。",
+      "calc": "all_reduce_perf 给 algbw / busbw；把 busbw 和链路 BW 对比，差距大就找 transport、拓扑或拥塞。",
+      "infer": "推理上线前，至少测「decode 消息大小」和「KV 迁移大小」两个点，而不是只跑一个大消息。"
+    }
+  },
+  "codeSection": {
+    "title": "8 · 仿真代码：把 NCCL 的账本跑一遍",
+    "lead": "example/nccl_sim.py 用纯标准库打印 ring 的 14 步、tree 的 6 步、α-β 扫描、collective 账本和 TP decode 估算，末尾用断言检查每个数字自洽。它不依赖 GPU / NCCL，直接 python3 就能跑。",
+    "file": "example/nccl_sim.py",
+    "run": "python3 example/nccl_sim.py",
+    "notes": [
+      "ring 部分逐行打印每步哪个 rank 把哪个 chunk 发给谁、累计字节与累计时间；14 步 = reduce-scatter 7 + all-gather 7。",
+      "tree 部分按二叉树的 reduce 上行 / broadcast 下行打印 6 步，并和 ring 在同一消息大小下对比。",
+      "α-β 扫描固定 N=8、2 µs、50 GB/s，打印 1 KiB–1 GiB 的 ring/tree 时间与 busbw，标出 crossover ≈ 183.8 KiB。",
+      "断言包括：每卡字节 = 2(N−1)/N × S、busbw 上限、扫描单调性、crossover 落在 64 KiB 与 1 MiB 之间。"
+    ],
+    "takeaway": {
+      "why": "代码是本章的唯一事实来源：页面引用的每个数字都能在输出里找到，改参数即可复算。",
+      "calc": "运行后把输出和你手算的 337.54 µs × 14 = 4.726 ms、183.8 KiB crossover 对照。",
+      "infer": "把 hidden / batch / dtype 换成你的模型，就能估出 decode 每层 all-reduce 的量级。"
+    }
+  },
+  "check": {
+    "title": "9 · 自查清单与常见坑",
+    "lead": "下面的清单不是名词表：每一条都能落成一个公式、一条命令或一个推理场景。能自己讲清楚，再去做 lesson 里的三道预测题。",
+    "checklist": [
+      "语义：能说出六个 collective 的每 rank 字节与步数，并解释 AllReduce = ReduceScatter + AllGather。",
+      "算法：能推导 2(N−1) 与 2⌈log₂N⌉ 从哪来，并解释为什么 tree 步数少却可能更慢。",
+      "时间：会用 T = steps × (α + bytes/BW) 手算 ring/tree，并知道 α、β 的物理含义。",
+      "指标：分得清 algbw 与 busbw，知道 ring all-reduce 的 busbw 上限就是单链路 BW。",
+      "crossover：会解 T_ring = T_tree，N=8 时算出约 183.8 KiB。",
+      "拓扑：读得懂 nvidia-smi topo -m 的 NV / PIX / PHB / SYS，知道 TP 要放同机。",
+      "测量：会用 all_reduce_perf 扫消息大小，用 NCCL_DEBUG=INFO 确认 transport。",
+      "推理：知道 decode 的 4 KiB all-reduce 是延迟敏感、PD 的 KV 迁移是带宽敏感。"
+    ],
+    "questions": [
+      {
+        "q": "N=8 的 ring all-reduce 为什么是 14 步，每卡到底发了多少？",
+        "a": "reduce-scatter 7 步 + all-gather 7 步，共 2(N−1) = 14 步；每步每卡发一个 S/N = 16 MiB 的 chunk，14 × 16 MiB = 224 MiB = 2(N−1)/N × 128 MiB。"
+      },
+      {
+        "q": "tree 只有 6 步，为什么 128 MiB 时反而比 ring 慢 3.4 倍？",
+        "a": "tree 每步搬整块 S = 128 MiB，6 步的串行化时间 ≈ 6 × 2.686 ms；ring 每步只搬 16 MiB，14 步共 224 MiB。大消息下看总字节和单步带宽，tree 的带宽利用率只有 ring 的约 29%。"
+      },
+      {
+        "q": "为什么小消息的 busbw 很低，却不代表网络坏了？",
+        "a": "busbw = 每卡字节 / 总时间；小消息时每卡字节很少，而每步固定延迟 α 不变，α 占比高，busbw 自然低。要看 busbw 随消息大小的曲线是否收敛到链路带宽。"
+      },
+      {
+        "q": "decode 的 TP all-reduce 只有 4 KiB，优化方向是什么？",
+        "a": "它是延迟敏感的小消息：优先降低 α（NVLink / 同机、tree/LL 协议、NVLS），减少步数和 launch 开销；而不是盲目追求更高链路带宽。"
+      },
+      {
+        "q": "PD 的 KV 迁移和 TP all-reduce 对网络的要求有什么不同？",
+        "a": "KV 迁移是每请求一次的大消息，带宽敏感，要走 GPUDirect RDMA 并保证容量；TP all-reduce 是每层、每 token 的小消息，延迟敏感。两类流量要分开测、分开优化。"
+      },
+      {
+        "q": "NCCL_DEBUG=INFO 看到 NET/Socket，先查什么？",
+        "a": "先确认 NCCL 是否识别到 IB/RoCE 网卡与 GID（NCCL_IB_HCA、NCCL_IB_GID_INDEX、show_gids、ibv_devinfo），再看容器是否透传 RDMA 设备；transport 不对时先修网络，不要先调算法。"
+      }
+    ],
+    "takeaway": {
+      "why": "清单把本章的公式、命令和推理场景串起来；能逐条讲清楚，才算把 NCCL 从术语变成账本。",
+      "calc": "每条清单都能落成一个数字或一条命令：14 步、183.8 KiB、NET/Socket、busbw 曲线。",
+      "infer": "回到推理：decode 的 4 KiB 与 PD 的 KV 迁移是两个必须分开测的点。"
+    }
+  },
+  "lesson": {
+    "think": [
+      {
+        "q": "N=8 的 ring all-reduce 一共要走多少步？",
+        "options": [
+          "14 步",
+          "8 步",
+          "7 步"
+        ],
+        "answer": 0,
+        "why": "all-reduce = reduce-scatter（N−1 步）+ all-gather（N−1 步），所以是 2(N−1) = 14 步；每步每卡只发 S/N。"
+      },
+      {
+        "q": "同样 128 MiB，tree 的步数更少，为什么反而更慢？",
+        "options": [
+          "tree 每步搬整块 S，单步带宽需求高、带宽利用率低",
+          "tree 只能用于 2 张卡",
+          "tree 不支持 all-reduce"
+        ],
+        "answer": 0,
+        "why": "tree 用 O(log N) 步换延迟，但每步传整块 S；大消息时总时间和带宽才是主导，ring 每步只传 S/N，busbw 更高。"
+      },
+      {
+        "q": "decode 时 TP 每层的 all-reduce 约 4 KiB，优先考虑哪种路径？",
+        "options": [
+          "低延迟路径（tree / LL / NVLink、同机）",
+          "一定是 ring + Simple",
+          "直接走 TCP Socket"
+        ],
+        "answer": 0,
+        "why": "4 KiB 是延迟敏感的小消息，α 占主导；tree/LL 与同机 NVLink 能把每步延迟压下来，ring/Simple 更适合大消息。"
+      }
+    ],
+    "reflect": [
+      {
+        "q": "自己推一遍 N=4 的 ring all-reduce：6 步里每步谁发哪个 chunk？",
+        "ref": "reduce-scatter 第 s 步 rank r 发 chunk (r−s) mod 4；all-gather 第 t 步发 (r−t+1) mod 4，都是发给 (r+1) mod 4。可以对照 nccl_sim.py 的 N=8 表按同样规则推 N=4，验证 6 步和每卡 1.5S。"
+      },
+      {
+        "q": "为什么小消息的 busbw 低是正常的？那你该看什么指标？",
+        "ref": "busbw = 每卡字节 / 时间；小消息每卡字节少、α 固定，占比高所以 busbw 低。应看 busbw 随消息大小的曲线是否收敛到链路带宽，以及小消息的绝对延迟。"
+      },
+      {
+        "q": "TP 放同机、PP 跨机，各自的通信理由是什么？",
+        "ref": "TP 每层两次 all-reduce、消息小且频繁，跨机的 α 和 PCIe/IB 延迟会直接拖慢 decode；PP 只在 stage 间传激活，消息大、频率低，适合跨机走 IB/RoCE。"
+      },
+      {
+        "q": "PD 的 KV 迁移和 TP all-reduce，对网络的要求哪里相反？",
+        "ref": "KV 迁移是每请求一次的大消息，带宽敏感、要 GPUDirect 和容量规划；TP all-reduce 是每层每 token 的小消息，延迟敏感。一个优化方向是提高 BW，另一个是压低 α。"
+      }
+    ],
+    "summary": {
+      "brief": "NCCL 把集合通信拆成 collectives 和算法：ring 用 2(N−1) 步、每卡 2(N−1)/N × S 换高带宽；tree 用 2⌈log₂N⌉ 步换低延迟；α-β 模型给出 crossover（N=8 约 183.8 KiB）；拓扑决定 α 和 BW，decode 小消息看延迟、prefill/PD 大消息看带宽。",
+      "detail": "六个 collective 的账本：AllReduce 每 rank 2(N−1)/N × S、ring 2(N−1) 步；AllGather/ReduceScatter/AllToAll 每 rank (N−1)/N × S、N−1 步；Broadcast root 发 S、tree ⌈log₂N⌉ 步；SendRecv S、1 步。ring all-reduce 分 reduce-scatter 与 all-gather 两段，N=8、S=128 MiB、50 GB/s、2 µs 时 14 步 × 337.54 µs = 4.726 ms，busbw 49.70 GB/s。tree 6 步却要 16.118 ms，说明大消息时带宽优先；4 KiB 时 tree 12.49 µs < ring 28.14 µs，说明小消息时延迟优先。α-β 模型 T = steps × (α + bytes/BW) 把选择变成可计算的 crossover ≈ 183.8 KiB。拓扑上 TP 放 NVLink 同机、PP/DP/PD 走 IB/RoCE；测量用 all_reduce_perf 看 busbw 曲线，用 NCCL_DEBUG=INFO 确认 transport。"
+    },
+    "attribution": [
+      {
+        "id": "nccl-m1",
+        "label": "TP 每层的 4 KiB 消息与层数",
+        "bucket": "model",
+        "why": "消息大小由 batch × hidden × dtype 决定，层数决定 all-reduce 次数；这些是模型结构给的输入。"
+      },
+      {
+        "id": "nccl-g1",
+        "label": "NVLink/IB 的 α、BW 与拓扑",
+        "bucket": "gpu",
+        "why": "链路延迟与带宽、GPU 之间是 NVLink 还是 PCIe，属于硬件与拓扑，直接决定 ring/tree 谁快。"
+      },
+      {
+        "id": "nccl-e1",
+        "label": "ring/tree/协议选择与 NCCL 调参",
+        "bucket": "engine",
+        "why": "用哪个算法、哪个协议、是否开 NVLS、怎么设 NCCL_ALGO/NCCL_PROTO，是 NCCL 运行时/引擎的策略。"
+      }
+    ]
+  }
+}
