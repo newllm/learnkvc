@@ -45,6 +45,8 @@ for f in web/assets/*.js web/assets/viz/*.js; do node --check "$f" || exit 1; do
 node web/tools/smoke.mjs   # 19 路由 × 1440/760：active view、console error、横向溢出
 ```
 
+CI（`.github/workflows/ci.yml`）跑 build + `node --check` + smoke。Pages 部署（`.github/workflows/pages.yml`）用 `upload-pages-artifact@v5` + `deploy-pages@v5`，并在部署前按 upload 输出的 `artifact_id` 轮询（`gh api .../artifacts`）等 artifact 可见：刚上传完立刻按名字查会有竞态，报 `No artifacts named "github-pages" were found`（[actions/deploy-pages#451](https://github.com/actions/deploy-pages/issues/451)），**别删这一步或改回 v3/v4 组合**。
+
 环境里没有 PyTorch 时：KV 章的 trace 用 `print_summary` 的断言公式解析生成（标注 `source: analytic`）；Prefix 章直接 import 纯标准库 demo 真实运行；Paged 章用纯记账复刻 `main()`。**不要为了「有 torch」而改示例代码。**
 
 ## 3. 单一事实来源（硬性）

@@ -10,13 +10,17 @@ on:
 
 permissions:
   contents: read
+  # deploy-pages 用 artifacts 服务按名字找 artifact，偶尔会滞后；
+  # 下面按 artifact_id 轮询就先靠 actions: read 读 run 的 artifact 列表。
   actions: read
   pages: write
   id-token: write
 
+# 生产部署不中途取消：官方 Pages 模板同样用 cancel-in-progress: false，
+# 否则新提交可能把已经创建、正在写 CDN 的 deployment 砍在半路。
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -24,11 +28,47 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        id: upload
+        uses: actions/upload-pages-artifact@v5
         with:
           path: .
-      - id: deployment
-        uses: actions/deploy-pages@v4
+
+      # deploy-pages 在当前 workflow run 里按名字查 artifact；刚 upload 完立刻查，
+      # 偶尔会查到 0 个，于是报 "No artifacts named 'github-pages' were found"
+      # （actions/deploy-pages#451）。本仓库 2026-11-28 的两次失败就是
+      # upload 与 deploy 落在同一秒、deploy 1s 内失败，而 artifact 事后可见。
+      # 这里先用 upload 出来的 artifact_id 轮询，确认可见后再部署。
+      - name: Wait for the Pages artifact to be listed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact_id }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${ARTIFACT_ID}" =~ ^[0-9]+$ ]]; then
+            echo "::error::upload-pages-artifact did not return an artifact_id (got '${ARTIFACT_ID}')"
+            exit 1
+          fi
+          for delay in 1 2 4 8 16 32 64; do
+            if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+              --jq ".artifacts[] | select(.id == ${ARTIFACT_ID} and .expired == false)" | grep -q .; then
+              echo "Pages artifact ${ARTIFACT_ID} is listed"
+              exit 0
+            fi
+            echo "Pages artifact ${ARTIFACT_ID} not listed yet, retrying in ${delay}s"
+            sleep "${delay}"
+          done
+          echo "::error::Pages artifact ${ARTIFACT_ID} never became visible"
+          exit 1
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
